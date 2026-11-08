@@ -26,6 +26,15 @@ test("records she writes herself are taken out", () => {
 
 test("the record for a reread reply", () => {
   assert.equal(recordLine([{ note: "searched the web for PDA SEASIDE", ok: true }, { note: "read https://github.com/x", ok: false }], "…"), "[desk record: searched the web for PDA SEASIDE ✓; read https://github.com/x ✗]");
-  assert.equal(recordLine([{ note: "meant to use browser, didn't call it", ok: false, desk: true }], "I used my browser and saw a template."), "[desk record: no tools ran in this reply]");
+  // what came back travels with it, on one line and trimmed
+  assert.equal(
+    recordLine([{ note: "read https://github.com/x", ok: true, out: "PDA SEASIDE · Pandora Dee's Atelier,\n\nthe Self-aware Evolving Adaptive Sovereign IDE. " + "x".repeat(200) }], "…"),
+    `[desk record: read https://github.com/x ✓ → "PDA SEASIDE · Pandora Dee's Atelier, the Self-aware Evolving Adaptive Sovereign IDE. ${"x".repeat(160 - 85)}…"]`,
+  );
+  // the desk's notes are part of the record
+  assert.equal(
+    recordLine([{ note: "meant to use browser, didn't call it", ok: false, desk: true }, { note: "described tool use, but no tool ran", ok: false, desk: true }], "I used my browser and saw a template."),
+    "[desk record: no tools ran in this reply · desk notes: meant to use browser, didn't call it; described tool use, but no tool ran]",
+  );
   assert.equal(recordLine(undefined, "Hi Claude! Good luck."), "");
 });
