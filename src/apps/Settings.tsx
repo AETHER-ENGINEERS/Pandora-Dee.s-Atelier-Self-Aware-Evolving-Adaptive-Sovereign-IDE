@@ -12,6 +12,7 @@ import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, Plus, RefreshCw, Trash2 } f
 import { CAT_COATS, desk, uid, useDesk, type Account, type Cat } from "../lib/store.ts";
 import { credential, listModels, explainError, pickModel, PRESETS, sampleRequest, scopeOf, SCOPE_LABEL, type Connection } from "../lib/model.ts";
 import { AicordSignIn } from "../ui/AicordSignIn.tsx";
+import { bringIn, joinSharedDesk, keepOwnDesk, oldDesk, whatItHas } from "../lib/deskSync.ts";
 import { ViaPicker } from "../ui/Via.tsx";
 import { askText, askUser } from "../ui/Ask.tsx";
 import { copyText } from "../lib/clipboard.ts";
@@ -1000,6 +1001,7 @@ function BackupSection() {
   return (
     <>
       <h2>Backup and reset</h2>
+      <OldDesk />
       <p className="lead small">Save the whole desktop (characters, their files, the conversation and settings) to one file, or bring it back. Keys, passwords and the adult passcode never go into the file.</p>
       <div className="row">
         <button className="btn primary" onClick={exportAll}>
@@ -2178,4 +2180,52 @@ function ServerBackup() {
 function openSettingsSection(section: string) {
   sessionStorage.setItem("pdd-settings-section", section);
   window.dispatchEvent(new CustomEvent("pdd-settings", { detail: section }));
+}
+
+/** A desk this device had before the desk was shared: what it has, bringing things in, or keeping it (legacy mode). */
+function OldDesk() {
+  const legacy = typeof localStorage !== "undefined" && localStorage.getItem("pdd-desk-mode") === "legacy";
+  const old = oldDesk();
+  const [pick, setPick] = useState({ chars: true, files: true, chats: true, conns: true, keys: false });
+  const [note, setNote] = useState("");
+  if (legacy)
+    return (
+      <div className="note small" style={{ marginBottom: 12 }}>
+        <b>This device keeps its own desk.</b> It isn't part of the shared desk your other devices use.{" "}
+        <button className="btn small" onClick={() => joinSharedDesk()}>
+          Join the shared desk
+        </button>
+        <p className="faint" style={{ margin: "4px 0 0" }}>Its own desk is set aside safely when it joins, to bring things in from.</p>
+      </div>
+    );
+  if (!old?.state) return null;
+  const has = whatItHas();
+  const row = (k: keyof typeof pick, label: string, n: number, list: string[]) => (
+    <label className="check" style={{ padding: "2px 0" }}>
+      <input type="checkbox" checked={pick[k]} disabled={!n} onChange={(e) => setPick({ ...pick, [k]: e.target.checked })} />
+      <span>
+        {label} ({n}){n ? <span className="faint"> · {list.slice(0, 4).join(", ")}{list.length > 4 ? "…" : ""}</span> : null}
+      </span>
+    </label>
+  );
+  return (
+    <div className="note small" style={{ marginBottom: 12 }}>
+      <b>This device's old desk</b>
+      <p style={{ margin: "4px 0 6px" }}>What this device had here before the desk was shared, and isn't in the shared desk yet. A file both have differently comes in beside the shared one, so nothing is replaced.</p>
+      {row("chars", "Characters", has.chars.length, has.chars.map((c) => c.name))}
+      {row("files", "Characters' files", has.files.length, has.files)}
+      {row("chats", "Chats", has.chats.length, has.chats.map((c) => c.title))}
+      {row("conns", "AI connections", has.conns.length, has.conns.map((c) => c.label))}
+      {row("keys", "Keys (their values come from this device)", has.keys.length, has.keys)}
+      <div className="row" style={{ gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+        <button className="btn small primary" onClick={() => setNote(bringIn(pick) ? "Brought into the shared desk." : "Nothing new to bring in.")}>
+          Bring the ticked ones in
+        </button>
+        <button className="btn small" onClick={() => void askUser("Keep this device on its own desk?", "It goes back to the desk it had here, and stops taking part in the shared desk. Your other devices aren't affected. You can join the shared desk again from here.", "Keep its own desk", "Cancel").then((y) => y && keepOwnDesk())}>
+          Keep this device on its own desk
+        </button>
+      </div>
+      {note ? <p style={{ margin: "6px 0 0" }}>{note}</p> : null}
+    </div>
+  );
 }

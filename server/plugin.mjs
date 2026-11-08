@@ -24,6 +24,7 @@ import { createVecMem } from "./vecmem.mjs";
 import { createMcpStdio } from "./mcpstdio.mjs";
 import { createResidentKeys } from "./residentKeys.mjs";
 import { createHeart } from "./heart.mjs";
+import { createDeskState } from "./deskState.mjs";
 import { createBodies } from "./bodies.mjs";
 import { createModules } from "./modules.mjs";
 import { createTheater, PIECE_MAX } from "./theater.mjs";
@@ -196,6 +197,9 @@ export function deskServer() {
   };
   const stdioPrint = (b) => createHash("sha256").update(JSON.stringify([String(b.command || ""), (b.args ?? []).map(String), String(b.cwd || ""), Object.entries(b.env ?? {}).map(([k, v]) => [k, String(v)]).sort()])).digest("hex").slice(0, 32);
   const engine = createEngine({ dataDir: () => dataDir, getChoice: () => readConfig().browserEngine, deskPorts: () => [...deskPorts] });
+  // the shared desk (deskState.mjs): SEASIDE's state on the server, sealed, one desk every device opens
+  const desk = createDeskState({ dataDir: () => dataDir, seal: (o) => residentKeys.seal(o), open: (x) => residentKeys.open(x) });
+
   // the heart (heart.mjs): one page does the background work; with "keep them running" on, the keeper opens the
   // desktop headless, in its own profile, while the desktop on this computer is closed
   const heart = createHeart({
@@ -890,6 +894,22 @@ export function deskServer() {
         }
       } catch (e) {
         return send(res, e?.status ?? 400, { error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+    // the shared desk: the desktop's own pages and devices over Tailscale's https or the LAN (as the desktop itself is);
+    // the first copy is made from the desktop's own computer
+    if (parts[0] === "desk") {
+      try {
+        if (m === "GET" && !parts[1]) return send(res, 200, { ...desk.get(Number(url.searchParams.get("since")) || 0), here: onThisPc(req) });
+        if (m === "GET" && parts[1] === "legacy") return send(res, 200, parts[2] ? JSON.parse(desk.legacyRead(decodeURIComponent(parts[2]))) : { kept: desk.legacyList() });
+        if (m === "POST") {
+          const b = JSON.parse((await readBody(req, 200_000_000)).toString("utf8") || "{}");
+          if (parts[1] === "save") return send(res, 200, desk.put(b, { mayFound: onThisPc(req) }));
+          if (parts[1] === "legacy") return send(res, 200, desk.keepLegacy(String(b.device || ""), String(b.blob || "")));
+        }
+        return send(res, 404, { error: "Not found" });
+      } catch (e) {
+        return send(res, e.status && e.status < 600 ? e.status : 500, { error: e.message });
       }
     }
     // the heart (heart.mjs): which page does the background work, and the keeper's copy of the desktop

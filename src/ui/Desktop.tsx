@@ -30,6 +30,8 @@ import { startHeart } from "../lib/heart.ts";
 import { startOwnTime } from "../lib/ownTime.ts";
 import { startBodies } from "../lib/bodies.ts";
 import { startTerminalSync } from "../lib/terminal.ts";
+import { doneAsking, shouldAsk, startDeskSync } from "../lib/deskSync.ts";
+import { askUser } from "./Ask.tsx";
 import { startPadsControl } from "../lib/padsControl.ts";
 import { loadNotes } from "../lib/notes.ts";
 import { ContextMenuHost, openMenu, openMenuAt, type MenuItem } from "./ContextMenu.tsx";
@@ -166,6 +168,18 @@ export function Desktop() {
     startOwnTime();
     startBodies();
     startTerminalSync();
+    // the shared desk, live; and a device that had its own desk before is asked what to do with it, once
+    startDeskSync();
+    // (the flag is cleared before asking, so the question comes once even if this runs twice)
+    if (shouldAsk() && (doneAsking(), true))
+      void askUser(
+        "This device has its own SEASIDE from before",
+        "Your desk is shared between your devices now. This one had a desk of its own here, and it's been set aside safely (a copy is kept on the server too, keys left out). You can look at what it has and bring things into the shared desk, or keep this device on its own desk.",
+        "Look at it",
+        "Later",
+      ).then((yes) => {
+        if (yes) openSettings("backup");
+      });
     void loadNotes();
     if (desk().api.on) void applyInbound();
     for (const srv of desk().mcp) if (srv.enabled) void connectServer(srv);
