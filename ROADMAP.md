@@ -106,6 +106,36 @@ Still to build:
 - **Merged features on the desktop**: everything in the table, as desktop apps and settings, each
   with a switch.
 
+## The shared house (added 2026-11-08, with LUCID Forge)
+
+SEASIDE as one house across your devices and your network, with the characters living in it.
+
+- ✅ **A real terminal** (3.16): real shells in workspace folders of their own, from this computer or the tailnet,
+  off until Privacy allows it. Next: **Claude Code as a resident** at a desk in SEASIDE (signed in with your own
+  subscription), joined to the room through SEASIDE's tool server.
+- ✅ **Vector 0.5.1 in host mode**: Vector's own app inside the desktop, its title bar working the desktop's window.
+- **PADS** (Pandora's Atelier's Distributed Systems), in stages:
+  - ✅ The PADS Manager: your devices arranged like monitors, live miniatures, linked servers, Send to.
+  - ✅ **Edge crossing** between SEASIDE desks on one server: mouse and keyboard pass at the edges (seamless where
+    the browser can capture the mouse, mirror mode where it can't), Ctrl+Alt+arrow, Esc home; each device chooses
+    whether it may be driven.
+  - **Characters and the cat wandering the whole desk**: walking off one screen onto the next, "holding a device"
+    to show they're talking from another room.
+  - **Controllers following you** (the Xbox through Edge included).
+  - **A device's screen coming to you** (the broken-screen phone), and each device's terminal and shares.
+  - **Whole-system control** through a small helper on each machine (the app edition, or a browser extension):
+    driving the computer itself, not only SEASIDE on it.
+- **Network places** in Explorer: Samba shares on the LAN (anonymous ones too) and mounted shares, to browse, play
+  and copy from on any device; characters get them only when given access.
+- **Sentry on the network**: a new device on the LAN, a share or port that appears, SEASIDE reached from somewhere
+  unexpected; Jade mentions it.
+- **The fserve**: a character (Pandora as the librarian) keeps shelves of shared files (models, markdown, Mini
+  Apps, character backups) and answers in Vector and Discord the old-school way: `!list`, `@find`, queues and
+  slots. Small files go as attachments (encrypted on Vector); big ones as links over the tailnet or the LAN, and
+  later through #OneMoment's peer-to-peer caching. Every file listed with its SHA-256; a Discord channel can be the
+  storefront for a Vector shelf, or the other way round. Shelves are read-only folders you choose, off until
+  Privacy allows them; a ratio in #OneMoment's barter tokens if wanted.
+
 ## Feature map: Pandora Dee 2.9.9.2 and Jade Vault 2.18.2
 
 Both apps share 30 modules (vault, memory, steering, providers, MCP, Python, SQLite, context guard,
