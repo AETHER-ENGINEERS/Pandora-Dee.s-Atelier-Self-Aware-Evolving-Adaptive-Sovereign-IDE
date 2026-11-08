@@ -33,6 +33,7 @@ import { currentChat } from "./chats.ts";
 import { compact, shouldCompact } from "./context.ts";
 import { fitTurns, isCtxError, learnLimit, learnedLimit, sizeOf } from "./ctxfit.ts";
 import { missedNote, missedTool } from "./missedTool.ts";
+import { CLAIM_NOTE, claimsTool } from "./deskRecord.ts";
 import { bookFor, bookHeader, parseScene, redactKeys, sceneText } from "./storybook.ts";
 import { allKeyValues, envFor } from "./residentKeys.ts";
 import { isLimitError, recordLimit, recordUsage } from "./meter.ts";
@@ -281,6 +282,7 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
       let ctxTries = 0;
       let noteGiven = false;
       let heardGiven = false;
+      let claimGiven = false;
       let final = "";
       let thought = "";
       for (let step = 0; step <= ai.maxSteps; step++) {
@@ -334,6 +336,19 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
             patch({ tools: [...used] });
             turns.push({ role: "assistant", content: result.text });
             turns.push({ role: "user", content: UNSAID_NOTE });
+            continue;
+          }
+          // she describes using a tool, and none ran in this reply: the desk says so, once, and her words stay shown
+          const claimed = !missed && !claimGiven && step < ai.maxSteps && tools.length > 0 && !used.some((u) => !u.desk) && claimsTool(parts.text);
+          if (claimed) {
+            claimGiven = true;
+            used.push({ name: "reply", ok: false, note: "described tool use, but no tool ran", out: CLAIM_NOTE, desk: true });
+            shown += `${parts.text.trim()}
+
+`;
+            patch({ tools: [...used] });
+            turns.push({ role: "assistant", content: result.text });
+            turns.push({ role: "user", content: CLAIM_NOTE });
             continue;
           }
           if (missed) {

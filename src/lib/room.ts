@@ -1,6 +1,7 @@
 // The shared room: who answers, what each character is told, and the loop breaker.
 
 import type { Character } from "./characters.ts";
+import { recordLine, stripRecords } from "./deskRecord.ts";
 import { skillsNote } from "./skills.ts";
 
 export type Source = "desk" | "discord" | "vector";
@@ -267,7 +268,12 @@ export function transcriptFor(me: Character, history: Message[], limit = 40, cha
     if (m.kind === "notice") {
       turns.push({ role: "user", content: `[Room note] ${m.text}` });
     } else if (m.kind === "character" && m.who === me.id) {
-      turns.push({ role: "assistant", content: opts.stamp ? `${stamp(m)}${m.text}` : m.text });
+      // her earlier reply, then the desk's record of what actually ran in it, as the desk's own line (inside her reply
+      // a model learns to write it herself)
+      const said = stripRecords(m.text).trim();
+      turns.push({ role: "assistant", content: opts.stamp ? `${stamp(m)}${said}` : said });
+      const record = recordLine(m.tools, m.text);
+      if (record) turns.push({ role: "user", content: record });
     } else {
       const via = m.source === "desk" ? "" : ` (via ${m.source === "discord" ? "Discord" : "Vector"})`;
       turns.push({ role: "user", content: `${stamp(m)}${m.name}${via}: ${m.text}${attachmentNote(m.files)}` });
@@ -325,7 +331,8 @@ export function splitThink(raw: string): { text: string; thinking: string } {
 
 /** Clean up what a model sends back: drop a leading "Name:" and anything it wrote for others. */
 export function tidyReply(me: Character, raw: string, room: Character[]): string {
-  let text = splitThink(raw).text.trim();
+  // a record only ever comes from the desk: one she writes herself is taken out
+  let text = stripRecords(splitThink(raw).text).trim();
   // their own name at the start ("Name:"): the full name, the short one, or any word of it (Test Fae wrote "Fae:")
   const words = me.name.split(/\s+/).filter((w) => w.length >= 3);
   const own = [...new Set([me.name, me.short, ...words])].sort((x, y) => y.length - x.length).map(escape).join("|");
