@@ -29,6 +29,7 @@ import { loadResidentKeys } from "../lib/residentKeys.ts";
 import { startHeart } from "../lib/heart.ts";
 import { startOwnTime } from "../lib/ownTime.ts";
 import { startBodies } from "../lib/bodies.ts";
+import { startTerminalSync } from "../lib/terminal.ts";
 import { loadNotes } from "../lib/notes.ts";
 import { ContextMenuHost, openMenu, openMenuAt, type MenuItem } from "./ContextMenu.tsx";
 import { formatClock, validLocale, validZone, type ClockPrefs } from "../lib/clock.ts";
@@ -162,6 +163,7 @@ export function Desktop() {
     startHeart();
     startOwnTime();
     startBodies();
+    startTerminalSync();
     void loadNotes();
     if (desk().api.on) void applyInbound();
     for (const srv of desk().mcp) if (srv.enabled) void connectServer(srv);

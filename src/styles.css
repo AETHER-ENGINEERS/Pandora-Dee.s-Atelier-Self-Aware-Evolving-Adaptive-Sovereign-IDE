@@ -1124,3 +1124,9 @@ html { touch-action: pan-x pan-y; }
 .luanti-desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .luanti-how { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
 .theater-playlist-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 12px 8px; }
+
+/* the real terminal (RealTerminal.tsx): a bar of shells, then xterm filling the rest */
+.real-term { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.real-term-bar { gap: 6px; padding: 6px 8px; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
+.real-term-view { flex: 1; min-height: 0; padding: 4px 6px; background: #0b0912; }
+.real-term-view .xterm { height: 100%; }

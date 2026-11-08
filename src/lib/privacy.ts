@@ -3,7 +3,7 @@
 
 export type Mode = "none" | "some" | "conditional";
 
-export type Feature = "network-models" | "online-models" | "bridges" | "web" | "remote-tools" | "sensors" | "ssh" | "api" | "backup";
+export type Feature = "network-models" | "online-models" | "bridges" | "web" | "remote-tools" | "sensors" | "ssh" | "api" | "backup" | "terminal";
 
 export type Privacy = {
   mode: Mode;
@@ -77,6 +77,12 @@ export const FEATURES: { id: Feature; label: string; risk: string; why: string }
     label: "Backups to your own server",
     risk: "A copy of your characters, their files and chats is sent to the server you name. With encryption on (recommended) only someone with your passphrase can read it; without it, anyone with access to that server or the network can.",
     why: "Keeps a copy somewhere safe, on a schedule.",
+  },
+  {
+    id: "terminal",
+    label: "A real terminal on this computer",
+    risk: "The Terminal window can open real shells (PowerShell on Windows, your own shell on a Mac or Linux) on the computer running the desktop, as you, from this computer or your devices on the tailnet. Anything typed there can change or delete anything you can, and programs started there (Claude Code, say) act with your permissions. Each starts in its own folder under the data folder's workspaces.",
+    why: "A real desk inside SEASIDE: build, run and fix things, and give residents like Claude Code a place to work.",
   },
   {
     id: "sensors",

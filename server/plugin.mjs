@@ -35,6 +35,8 @@ import { createLuanti } from "./luanti.mjs";
 import { createLuantiWeb } from "./luantiWeb.mjs";
 import { createLuantiRelay } from "./luantiRelay.mjs";
 import { openDuplex } from "./wsduplex.mjs";
+import { createTerminals } from "./terminal.mjs";
+import { createRequire } from "node:module";
 import { createPeers } from "./peers.mjs";
 import { createPadsLink } from "./padsLink.mjs";
 import os from "node:os";
@@ -144,6 +146,15 @@ export function deskServer() {
   const vecmem = createVecMem({ dataDir: () => dataDir });
   const residentKeys = createResidentKeys({ dataDir: () => dataDir });
   const bodies = createBodies({ dataDir: () => dataDir });
+  // real terminals (terminal.mjs): node-pty is loaded only when one is opened, so SEASIDE still runs without it
+  let ptySpawn = null;
+  const terminals = createTerminals({
+    dataDir: () => dataDir,
+    spawn: (...a) => {
+      ptySpawn ||= createRequire(import.meta.url)("@lydell/node-pty").spawn;
+      return ptySpawn(...a);
+    },
+  });
   const modules = createModules({ dataDir: () => dataDir, importXdc: (bytes, name) => library().importAny(bytes, name) });
   const stdio = createMcpStdio();
   // Media Theater: videos kept in the vault (see theater.mjs)
@@ -356,6 +367,23 @@ export function deskServer() {
         if (parts[1] === "installed" && m === "GET") return send(res, 200, modules.installed());
         if (parts[1] === "look" && m === "POST") return send(res, 200, await modules.look((Array.isArray(b.orgs) ? b.orgs : []).map(String).slice(0, 10)));
         if (parts[1] === "install" && m === "POST") return send(res, 200, await modules.install(String(b.org || ""), String(b.repo || ""), String(b.commit || "")));
+        return send(res, 404, { error: "Not found" });
+      } catch (e) {
+        return send(res, e.status && e.status < 600 ? e.status : 500, { error: e.message });
+      }
+    }
+    // real terminals: from this computer or Tailscale's https only; switching them on only from this computer
+    if (parts[0] === "terminal") {
+      try {
+        if (!onThisPc(req) && !viaTailnet(req)) return send(res, 403, { error: "The real terminal opens on the desktop's own computer or over your tailnet." });
+        const b = m === "POST" ? JSON.parse((await readBody(req, 20_000)).toString("utf8") || "{}") : {};
+        if (!parts[1] && m === "GET") return send(res, 200, { ...terminals.settings(), sessions: terminals.list(), workspaces: terminals.workspaces() });
+        if (parts[1] === "on" && m === "POST") {
+          if (b.on && !onThisPc(req)) return send(res, 403, { error: "Switch the real terminal on from the desktop's own computer." });
+          return send(res, 200, terminals.setOn(Boolean(b.on)));
+        }
+        if (parts[1] === "open" && m === "POST") return send(res, 200, terminals.open({ workspace: b.workspace, cols: b.cols, rows: b.rows }));
+        if (parts[1] === "close" && m === "POST") return send(res, 200, { ok: terminals.close(String(b.id || "")) });
         return send(res, 404, { error: "Not found" });
       } catch (e) {
         return send(res, e.status && e.status < 600 ? e.status : 500, { error: e.message });
@@ -1119,6 +1147,12 @@ export function deskServer() {
       if (fromElsewhere(req)) return void socket.destroy();
       const conn = openDuplex(req, socket);
       return void (conn ? luantiRelay.attach(conn) : socket.destroy());
+    }
+    // a real terminal's window: same rules as its routes
+    if (where === "/api/terminal/ws") {
+      if (fromElsewhere(req) || (!onThisPc(req) && !viaTailnet(req))) return void socket.destroy();
+      const conn = openDuplex(req, socket);
+      return void (conn ? terminals.attach(new URL(req.url || "/", "http://x").searchParams.get("id") || "", conn) : socket.destroy());
     }
     if (where !== "/api/engine/ws") return;
     if (fromElsewhere(req)) return void socket.destroy();
