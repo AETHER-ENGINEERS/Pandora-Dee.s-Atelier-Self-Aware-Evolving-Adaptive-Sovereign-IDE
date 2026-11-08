@@ -21,7 +21,8 @@ export function RealTerminal() {
       setServerOn(s.on);
       setSessions(s.sessions);
       setWorkspaces(s.workspaces);
-      if (current && !s.sessions.some((x) => x.id === current)) setCurrent("");
+      // against the terminal shown now (this runs from a timer, so a remembered `current` would be an old one)
+      setCurrent((c) => (c && !s.sessions.some((x) => x.id === c) ? "" : c));
     } catch (e) {
       setNote(e instanceof Error ? e.message : String(e));
     }
