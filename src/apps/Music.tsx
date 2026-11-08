@@ -1,6 +1,6 @@
 import { toCss } from "../lib/zoom.ts";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AudioWaveform, ChevronUp, ChevronsRight, Disc3, Folder, FolderOpen, FolderPlus, Globe2, ListMusic, Maximize2, Mic2, Pause, Play, Radio, Repeat, Repeat1, Search, Shuffle, SkipBack, Sparkles, SkipForward, Star, Trash2, Upload, Users, Volume2 } from "lucide-react";
+import { AudioWaveform, ChevronUp, ChevronsRight, Disc3, Folder, FolderOpen, FolderPlus, Globe2, ListMusic, Maximize2, Mic2, MonitorSmartphone, Pause, Play, Radio, Repeat, Repeat1, Search, Shuffle, SkipBack, Sparkles, SkipForward, Star, Trash2, Upload, Users, Volume2 } from "lucide-react";
 import { desk, useDesk } from "../lib/store.ts";
 import {
   addFiles,
@@ -27,6 +27,8 @@ import {
   skipBy,
 } from "../lib/music.ts";
 import { Num } from "../ui/Num.tsx";
+import { copyToServer, shareMusicFiles, shareMusicFolder, thisDevice, useServerName, useSharedLibraries, AUDIO } from "../lib/musicShare.ts";
+import { canShareFolder, stopSharing, useMyShares } from "../lib/devshare.ts";
 import { openMenu, openMenuAt, type MenuItem } from "../ui/ContextMenu.tsx";
 import { useWidth } from "../ui/hooks.ts";
 import { Visualizer, importPresets, milkdropPresets } from "./Visualizer.tsx";
@@ -38,7 +40,7 @@ import { askText } from "../ui/Ask.tsx";
 
 const PAGE = 400;
 
-type View = "songs" | "make" | "albums" | "artists" | "world" | "radio" | "find" | "folders";
+type View = "songs" | "make" | "albums" | "artists" | "world" | "radio" | "find" | "folders" | "shared";
 const time = (s: number) => (Number.isFinite(s) && s > 0 ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}` : "–:––");
 const setPrefs = (p: Partial<ReturnType<typeof desk>["music"]>) => desk().set({ music: { ...desk().music, ...p } });
 const asItems = (ts: Track[]): Item[] => ts.map((t) => ({ kind: "track", ...t }));
@@ -140,6 +142,7 @@ export function MusicApp() {
           ["radio", <Radio size={15} key="ra" />, `Radio (${prefs.stations.length})`],
           ["find", <Search size={15} key="f" />, "Find stations"],
           ["folders", <FolderPlus size={15} key="fo" />, "Folders"],
+          ["shared", <MonitorSmartphone size={15} key="sh" />, "Other devices"],
         ] as [View, React.ReactNode, string][]
       ).map(([id, icon, text]) => (
         <button key={id} className={`item${view === id ? " on" : ""}`} onClick={() => (setView(id), setAlbum(null))}>
@@ -319,7 +322,8 @@ export function MusicApp() {
             {view === "make" ? <SongMaker /> : null}
             {view === "radio" ? <Stations list={prefs.stations} saved /> : null}
             {view === "find" ? <FindStations /> : null}
-            {view === "folders" ? <Folders onFiles={() => files.current?.click()} /> : null}
+            {view === "folders" ? <Folders onFiles={() => files.current?.click()} onShared={() => setView("shared")} /> : null}
+            {view === "shared" ? <SharedLibraries /> : null}
           </div>
         </section>
       </div>
@@ -521,7 +525,8 @@ function FindStations() {
   );
 }
 
-function Folders({ onFiles }: { onFiles: () => void }) {
+function Folders({ onFiles, onShared }: { onFiles: () => void; onShared: () => void }) {
+  const server = useServerName();
   const own = useMusic((s) => s.own);
   // the server's list, shared by every device (this device's own copy is kept in step with it)
   const serverFolders = useMusic((s) => s.folders);
@@ -542,7 +547,14 @@ function Folders({ onFiles }: { onFiles: () => void }) {
   return (
     <div style={{ padding: 10 }}>
       <h3 style={{ marginTop: 0 }}>Where your music is</h3>
-      <p className="small muted">Folders on the computer running the desktop. They're read where they are (nothing is copied), including folders inside them.</p>
+      <p className="small muted">
+        On <b>{server || "the server"}</b>, the computer running SEASIDE: folders there are read where they are (nothing is copied), folders inside them too, and every
+        device sees this library. Music on this device, or on your other devices, is under{" "}
+        <button className="linkish" onClick={onShared}>
+          Other devices
+        </button>
+        .
+      </p>
       {[own, ...serverFolders].filter(Boolean).map((f) => (
         <div key={f} className="kv" style={{ gridTemplateColumns: "1fr auto" }}>
           <span className="mono small">
@@ -589,8 +601,8 @@ function Folders({ onFiles }: { onFiles: () => void }) {
       </form>
       {browse ? <FolderPicker onPick={(f) => (setBrowse(false), addFolder(f))} onClose={() => setBrowse(false)} /> : null}
       <div className="row" style={{ marginTop: 8, gap: 6 }}>
-        <button className="btn" onClick={onFiles}>
-          <Upload size={14} /> Add files…
+        <button className="btn" onClick={onFiles} title={"Songs from this device, copied to " + (server || "the server")}>
+          <Upload size={14} /> Copy songs from this device…
         </button>
         <button className="btn" disabled={Boolean(scanning)} onClick={() => void rescan()}>
           Read the folders again
@@ -647,6 +659,131 @@ function FolderPicker({ onPick, onClose }: { onPick: (path: string) => void; onC
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Music on this device and the others: each device sharing its music is one more library, played from it (the files
+ *  stay there), and any of it can be copied to the server's library. */
+function SharedLibraries() {
+  const libs = useSharedLibraries();
+  const mine = useMyShares();
+  const server = useServerName() || "the server";
+  const cur = useMusic((st) => st.queue[st.index]);
+  const [busy, setBusy] = useState("");
+  const pick = useRef<HTMLInputElement>(null);
+  const run = async (what: string, f: () => Promise<unknown>) => {
+    setBusy(what);
+    try {
+      await f();
+    } catch (e) {
+      desk().say(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy("");
+    }
+  };
+  const mineIds = new Set(mine.map((x) => x.id));
+  const shareFolder = () =>
+    run("Reading the folder…", async () => {
+      const n = await shareMusicFolder();
+      if (n !== null) desk().say(`Sharing ${n} songs from this device.`);
+    });
+  const copy = (lib: { tracks: Track[] }) =>
+    run(`Copying ${lib.tracks.length} songs…`, async () => {
+      const r = await copyToServer(lib.tracks);
+      desk().say(`${r.tracks} songs in ${server}'s library.`);
+    });
+  const copyOne = (t: Track) =>
+    run(`Copying ${t.title}…`, async () => {
+      await copyToServer([t]);
+      desk().say(`“${t.title}” is in ${server}'s library.`);
+    });
+  return (
+    <div style={{ padding: 10 }}>
+      <h3 style={{ marginTop: 0 }}>This device</h3>
+      <p className="small muted">
+        Share music from <b>{thisDevice()}</b>: the files stay here, and your other devices play them from here while this page is open. Or copy them to {server} so
+        they're there for good.
+      </p>
+      <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+        {canShareFolder() ? (
+          <button className="btn primary" disabled={Boolean(busy)} onClick={() => void shareFolder()}>
+            <FolderOpen size={14} /> Share a music folder
+          </button>
+        ) : null}
+        <button className="btn" disabled={Boolean(busy)} onClick={() => pick.current?.click()}>
+          <MonitorSmartphone size={14} /> Share songs from this device…
+        </button>
+      </div>
+      {mine.length ? (
+        <div style={{ marginTop: 8 }}>
+          {mine.map((x) => (
+            <div key={x.id} className="row small" style={{ gap: 6, alignItems: "center" }}>
+              <span>Sharing “{x.name}”</span>
+              <button className="btn small" onClick={() => stopSharing(x.id)}>
+                Stop
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {busy ? <p className="small muted">{busy}</p> : null}
+      <input
+        ref={pick}
+        type="file"
+        multiple
+        hidden
+        accept="audio/*,.flac,.opus,.m4a"
+        onChange={(e) => {
+          const list = [...(e.target.files ?? [])].filter((x) => AUDIO.test(x.name) || x.type.startsWith("audio/"));
+          e.target.value = "";
+          if (list.length) void run("Sharing…", async () => desk().say(`Sharing ${await shareMusicFiles(list)} songs from this device.`));
+        }}
+      />
+
+      <h3>Your other devices</h3>
+      {libs.length ? null : <p className="small muted">No device is sharing music right now. On a phone or another computer, open Music → Other devices there and share from it.</p>}
+      {libs.map((lib) => (
+        <div key={lib.id} style={{ marginBottom: 14 }}>
+          <div className="row" style={{ gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+            <b>{lib.device}</b>
+            <span className="muted small">
+              · {lib.name} · {lib.tracks.length} songs{mineIds.has(lib.id) ? " · this device" : ""}
+            </span>
+            <span className="grow" />
+            <button className="btn small" onClick={() => playList(asItems(lib.tracks), 0)}>
+              <Play size={13} /> Play all
+            </button>
+            <button className="btn small" onClick={() => playList(asItems(shuffled(lib.tracks)), 0, true)}>
+              <Shuffle size={13} /> Shuffle
+            </button>
+            {mineIds.has(lib.id) ? null : (
+              <button className="btn small" disabled={Boolean(busy)} onClick={() => void copy(lib)}>
+                <Upload size={13} /> Copy all to {server}
+              </button>
+            )}
+          </div>
+          <div style={{ marginTop: 4 }}>
+            {lib.tracks.slice(0, 400).map((t, i) => (
+              <div key={t.id} className={`row small${cur?.kind === "track" && cur.id === t.id ? " on" : ""}`} style={{ gap: 6, alignItems: "center", padding: "2px 0" }}>
+                <button className="icon-btn" aria-label={`Play ${t.title}`} onClick={() => playList(asItems(lib.tracks), i)}>
+                  <Play size={12} />
+                </button>
+                <span className="grow">
+                  {t.title}
+                  <span className="faint">{[t.artist, t.album].filter(Boolean).length ? ` · ${[t.artist, t.album].filter(Boolean).join(" · ")}` : ""}</span>
+                </span>
+                {mineIds.has(lib.id) ? null : (
+                  <button className="icon-btn" aria-label={`Copy ${t.title} to ${server}`} title={`Copy to ${server}`} disabled={Boolean(busy)} onClick={() => void copyOne(t)}>
+                    <Upload size={12} />
+                  </button>
+                )}
+              </div>
+            ))}
+            {lib.tracks.length > 400 ? <p className="small faint">…and {lib.tracks.length - 400} more (Play all and Shuffle use them all).</p> : null}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

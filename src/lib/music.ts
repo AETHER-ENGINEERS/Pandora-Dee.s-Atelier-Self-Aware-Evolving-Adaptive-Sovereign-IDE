@@ -10,7 +10,11 @@ import { speech } from "./voice.ts";
 export type { MusicPrefs, Station } from "./musicPrefs.ts";
 import type { Station } from "./musicPrefs.ts";
 export type Item = ({ kind: "track" } & Track) | ({ kind: "radio" } & Station);
-export type Track = { id: string; title: string; artist: string; album: string; year: number; track: number; genre: string; duration: number; cover: boolean; bitrate: number; size: number; folder: string; comment?: string; /** the file's own name */ file?: string };
+export type Track = {
+  id: string; title: string; artist: string; album: string; year: number; track: number; genre: string; duration: number; cover: boolean; bitrate: number; size: number; folder: string; comment?: string;
+  /** the file's own name */ file?: string;
+  /** a song another device is sharing (lib/musicShare.ts): where it plays from, and which device has it */ src?: string; device?: string;
+};
 
 type Runtime = {
   tracks: Track[];
@@ -66,6 +70,8 @@ const playsKind = (ext: string) => Boolean(KIND_OF[ext] && new Audio().canPlayTy
 /** Which file wouldn't play, why, and where it is, in plain words. */
 async function whyNot(t: Track, code: number) {
   const which = `"${t.title}${t.artist ? ` · ${t.artist}` : ""}"`;
+  // a song shared by another device plays only while that device's page is open and awake
+  if (t.src) return `${which} is on ${t.device || "another device"}, which isn't answering: its SEASIDE page closed, or it's asleep.`;
   const name = t.file ?? "";
   const ext = name.includes(".") ? name.split(".").pop()!.toLowerCase() : "";
   const where = `${name ? `${name}, ` : ""}in ${t.folder || "your music"}`;
@@ -270,8 +276,8 @@ export function forgetStation(url: string) {
 // ---------- playing ----------
 
 export const current = (): Item | undefined => mu().queue[mu().index];
-const srcOf = (it: Item) => (it.kind === "track" ? `/api/music/file?id=${it.id}` : `/api/music/radio?url=${encodeURIComponent(it.url)}`);
-export const coverOf = (it?: Item) => (!it ? "" : it.kind === "track" ? (it.cover ? `/api/music/cover?id=${it.id}` : "") : it.favicon ?? "");
+const srcOf = (it: Item) => (it.kind === "track" ? (it.src ?? `/api/music/file?id=${it.id}`) : `/api/music/radio?url=${encodeURIComponent(it.url)}`);
+export const coverOf = (it?: Item) => (!it ? "" : it.kind === "track" ? (it.cover && !it.src ? `/api/music/cover?id=${it.id}` : "") : it.favicon ?? "");
 export const label = (it?: Item) => (!it ? "" : it.kind === "track" ? `${it.title}${it.artist ? ` · ${it.artist}` : ""}` : it.name);
 
 const listeners = new Set<(it: Item) => void>();

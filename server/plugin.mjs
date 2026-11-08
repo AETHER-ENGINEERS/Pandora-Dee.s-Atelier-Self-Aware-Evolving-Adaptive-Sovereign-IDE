@@ -681,6 +681,12 @@ export function deskServer() {
         const id = url.searchParams.get("id"), token = url.searchParams.get("token");
         if (parts[1] === "next" && m === "GET") return devices.next(id, token, res);
         if (parts[1] === "reply" && m === "POST") return send(res, 200, { ok: await devices.reply(id, token, url.searchParams.get("rid"), req) });
+        // a device sharing its music library: the list of songs Music shows the other devices (files stay there).
+        // Before the general POST below, which reads the body (a body can only be read once).
+        if (parts[1] === "music" && m === "POST") {
+          const b = JSON.parse((await readBody(req, 20_000_000)).toString("utf8") || "{}");
+          return send(res, 200, devices.setMusic(id, token, b.tracks));
+        }
         if (m === "POST") {
           const b = JSON.parse((await readBody(req, 10_000)).toString("utf8") || "{}");
           if (parts[1] === "open") return send(res, 200, devices.open(b));
@@ -838,6 +844,8 @@ export function deskServer() {
     if (parts[0] === "music") {
       const M = music();
       if (parts[1] === "library" && m === "GET") return send(res, 200, M.list());
+      // the libraries other devices are sharing right now (their files stay on them; played through /api/files/raw)
+      if (parts[1] === "shared" && m === "GET") return send(res, 200, { libraries: devices.libraries() });
       if (parts[1] === "scan" && m === "POST") {
         const b = JSON.parse((await readBody(req, 100_000)).toString("utf8") || "{}");
         return send(res, 200, await M.scan(Array.isArray(b.folders) ? b.folders.map(String) : M.folders()));

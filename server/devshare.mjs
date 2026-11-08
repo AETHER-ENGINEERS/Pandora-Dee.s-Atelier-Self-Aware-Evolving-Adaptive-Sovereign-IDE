@@ -172,10 +172,27 @@ export function createDevShare() {
   }
 
   /** Who's sharing what right now, for Explorer's sidebar. */
+  /** A shared music library: the songs a device shares (what Music lists; the files stay on that device). */
+  function setMusic(id, token, tracks) {
+    const s = own(id, token);
+    const t = (v, n) => String(v ?? "").replace(/[\u0000-\u001f]/g, "").slice(0, n);
+    s.music = (Array.isArray(tracks) ? tracks : []).slice(0, 20_000).flatMap((x) => {
+      const p = t(x?.path, 500).replace(/\\/g, "/");
+      if (!p || p.split("/").includes("..")) return [];
+      return [{ path: p, title: t(x.title, 200) || p.split("/").pop(), artist: t(x.artist, 200), album: t(x.album, 200), folder: t(x.folder, 300), size: Math.max(0, Number(x.size) || 0) }];
+    });
+    return { ok: true, songs: s.music.length };
+  }
+  /** Every device sharing music now: who, what it's called, its songs. */
+  function libraries() {
+    sweep();
+    return [...shares.values()].filter((s) => s.music?.length).map((s) => ({ id: s.id, name: s.name, device: s.device, tracks: s.music }));
+  }
+
   function places() {
     sweep();
     return [...shares.values()].map((s) => ({ id: `device-${s.id}`, name: `${s.name} (${s.device})`, path: `device:${s.id}`, kind: "device" }));
   }
 
-  return { open, close, next, reply, list, raw, places, isDevicePath };
+  return { open, close, next, reply, list, raw, places, setMusic, libraries, isDevicePath };
 }

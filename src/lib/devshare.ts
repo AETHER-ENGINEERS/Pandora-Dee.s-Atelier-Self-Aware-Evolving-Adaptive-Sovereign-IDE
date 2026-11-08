@@ -5,8 +5,8 @@
 import { useSyncExternalStore } from "react";
 import { desk } from "./store.ts";
 
-type DirHandle = FileSystemDirectoryHandle & { values(): AsyncIterable<FileSystemHandle> };
-type Source = { kind: "folder"; dir: DirHandle } | { kind: "files"; files: File[] };
+export type DirHandle = FileSystemDirectoryHandle & { values(): AsyncIterable<FileSystemHandle> };
+export type Source = { kind: "folder"; dir: DirHandle } | { kind: "files"; files: File[] };
 export type MyShare = { id: string; token: string; name: string; kind: "folder" | "files"; count?: number };
 
 const mine = new Map<string, MyShare & { src: Source; stop: boolean }>();
@@ -117,6 +117,18 @@ async function start(name: string, src: Source) {
   emit();
   void serve(s);
   return s;
+}
+
+/** Share a folder or files this device already has in hand (Music's shared libraries), named as given. */
+export function shareSource(name: string, src: Source) {
+  return start(name, src);
+}
+
+/** The songs a share offers as a music library (Music lists them on the other devices; the files stay here). */
+export async function publishMusic(id: string, tracks: { path: string; title: string; artist: string; album: string; folder: string; size: number }[]) {
+  const s = mine.get(id);
+  if (!s) return;
+  await fetch(`/api/devshare/music?id=${s.id}&token=${s.token}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tracks }) });
 }
 
 /** Ask for a folder on this device and share it (Chrome / Edge). Null if they changed their mind. */

@@ -1141,3 +1141,6 @@ html { touch-action: pan-x pan-y; }
 .pads-hint[data-side="top"] { top: 8px; left: 50%; transform: translateX(-50%); }
 .pads-hint[data-side="bottom"] { bottom: 8px; left: 50%; transform: translateX(-50%); }
 .pads-shield { position: fixed; inset: 0; z-index: 2147483644; cursor: none; background: rgba(10, 8, 20, .18); }
+
+/* a button that reads like a link, inside a sentence */
+.linkish { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-decoration: underline; text-underline-offset: 2px; }
