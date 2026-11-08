@@ -110,3 +110,22 @@ test("a watched folder is a shelf of its own, read in the background, and left a
   assert.ok(!W.list().shelves.includes("Movies"));
   assert.ok(fs.existsSync(path.join(away, "Films", "1999", "matrix.mkv")), "the folder stays where it was");
 });
+
+test("videos know their show and season folder; collections keep shows in an order of their own", () => {
+  const v = fs.mkdtempSync(path.join(os.tmpdir(), "theater-c-"));
+  const C = createTheater({ vaultDir: () => v });
+  for (const s of ["Season 1", "Season 2", "Season 10"]) {
+    fs.mkdirSync(path.join(v, "Videos", "Kids", "SpongeBob", s), { recursive: true });
+    fs.writeFileSync(path.join(v, "Videos", "Kids", "SpongeBob", s, `ep ${s}.mp4`), s);
+  }
+  const l = C.list();
+  assert.deepEqual(l.videos.filter((x) => x.shelf === "Kids").map((x) => x.folder).sort(), ["SpongeBob/Season 1", "SpongeBob/Season 10", "SpongeBob/Season 2"]);
+  const kids = C.saveCollection({ name: "Kids", items: ["Kids/SpongeBob"] });
+  const films = C.saveCollection({ name: "Films", items: [] });
+  C.saveCollection({ id: films.id, at: 0 });
+  assert.deepEqual(C.list().collections.map((c) => c.name), ["Films", "Kids"], "moved to the front");
+  C.saveCollection({ id: kids.id, items: ["Kids/Bluey", "Kids/SpongeBob"] });
+  assert.deepEqual(C.list().collections[1].items, ["Kids/Bluey", "Kids/SpongeBob"]);
+  C.dropCollection(films.id);
+  assert.deepEqual(C.list().collections.map((c) => c.name), ["Kids"]);
+});

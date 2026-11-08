@@ -28,9 +28,9 @@ export function createTheater({ vaultDir }) {
   function readMeta() {
     try {
       const j = JSON.parse(fs.readFileSync(metaFile(), "utf8"));
-      return { favs: j.favs ?? {}, seconds: j.seconds ?? {}, playlists: Array.isArray(j.playlists) ? j.playlists : [], folders: Array.isArray(j.folders) ? j.folders.filter((f) => f && typeof f.path === "string") : [] };
+      return { favs: j.favs ?? {}, seconds: j.seconds ?? {}, playlists: Array.isArray(j.playlists) ? j.playlists : [], folders: Array.isArray(j.folders) ? j.folders.filter((f) => f && typeof f.path === "string") : [], collections: Array.isArray(j.collections) ? j.collections : [] };
     } catch {
-      return { favs: {}, seconds: {}, playlists: [], folders: [] };
+      return { favs: {}, seconds: {}, playlists: [], folders: [], collections: [] };
     }
   }
 
@@ -74,7 +74,8 @@ export function createTheater({ vaultDir }) {
     const m = readMeta();
     const out = [];
     const shelves = [];
-    const walk = (dir, shelf, depth) => {
+    // (rel: the folder inside the shelf a video is in, "Show/Season 1", so shelves can be browsed show by show)
+    const walk = (dir, shelf, depth, rel = "") => {
       let entries;
       try {
         entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -86,7 +87,7 @@ export function createTheater({ vaultDir }) {
         const full = path.join(dir, e.name);
         if (e.isDirectory()) {
           if (depth === 0) shelves.push(e.name);
-          if (depth < 3) walk(full, shelf ?? e.name, depth + 1);
+          if (depth < 5) walk(full, shelf ?? e.name, depth + 1, depth === 0 ? "" : rel ? `${rel}/${e.name}` : e.name);
           continue;
         }
         const ext = path.extname(e.name).slice(1).toLowerCase();
@@ -104,6 +105,7 @@ export function createTheater({ vaultDir }) {
           name: e.name.slice(0, e.name.length - ext.length - 1),
           ext,
           shelf: shelf ?? "",
+          folder: rel,
           size: st.size,
           mtime: st.mtimeMs,
           seconds: m.seconds[id] ?? 0,
@@ -139,7 +141,7 @@ export function createTheater({ vaultDir }) {
     }
     out.sort((a, b) => b.mtime - a.mtime);
     shelves.sort((a, b) => (a === "From devices") - (b === "From devices") || a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
-    return { root: root(), shelves: [...shelves, ...watchedShelves.filter((s) => !shelves.includes(s))], videos: out, playlists: m.playlists, folders: m.folders, scanning };
+    return { root: root(), shelves: [...shelves, ...watchedShelves.filter((s) => !shelves.includes(s))], videos: out, playlists: m.playlists, folders: m.folders, collections: m.collections, scanning };
   }
 
   // What's in each watched folder, read without holding the server up (a network share can take seconds).
@@ -150,7 +152,7 @@ export function createTheater({ vaultDir }) {
     if (scans.has(dir)) return scans.get(dir);
     const items = [];
     let budget = 20_000; // entries looked at (a very big share is read a part at a time)
-    const walk = async (d, depth) => {
+    const walk = async (d, depth, rel = "") => {
       let entries;
       try {
         entries = await fs.promises.readdir(d, { withFileTypes: true });
@@ -162,14 +164,14 @@ export function createTheater({ vaultDir }) {
         if (--budget <= 0) return;
         const full = path.join(d, e.name);
         if (e.isDirectory()) {
-          if (depth < 5) await walk(full, depth + 1);
+          if (depth < 6) await walk(full, depth + 1, rel ? `${rel}/${e.name}` : e.name);
           continue;
         }
         const ext = path.extname(e.name).slice(1).toLowerCase();
         if (!VIDEO_EXT.has(ext)) continue;
         try {
           const st = await fs.promises.stat(full);
-          items.push({ id: idOf(st), path: full, name: e.name.slice(0, e.name.length - ext.length - 1), ext, size: st.size, mtime: st.mtimeMs });
+          items.push({ id: idOf(st), path: full, name: e.name.slice(0, e.name.length - ext.length - 1), ext, folder: rel, size: st.size, mtime: st.mtimeMs });
         } catch {
           /* gone, or not ours to read */
         }
@@ -303,6 +305,37 @@ export function createTheater({ vaultDir }) {
     writeMeta(m);
     return p;
   }
+  // Collections: shows (folders, from any shelf) gathered under a name, "Kids", in an order of one's own. An item is
+  // "<shelf>/<folder inside it>"; collections themselves are kept in order too.
+  function saveCollection({ id, name, items, at }) {
+    const m = readMeta();
+    const clean = String(name ?? "").replace(/\s+/g, " ").trim().slice(0, 60);
+    const list = (Array.isArray(items) ? items : []).map((x) => String(x).slice(0, 600)).filter(Boolean).slice(0, 2000);
+    let i = m.collections.findIndex((c) => c.id === id);
+    if (i < 0) {
+      if (!clean) throw fail(400, "A collection needs a name.");
+      m.collections.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: clean, items: [...new Set(list)] });
+      i = m.collections.length - 1;
+    } else {
+      if (clean) m.collections[i].name = clean;
+      if (Array.isArray(items)) m.collections[i].items = [...new Set(list)];
+    }
+    const c = m.collections[i];
+    // moved among the collections
+    if (Number.isInteger(at)) {
+      m.collections.splice(i, 1);
+      m.collections.splice(Math.max(0, Math.min(m.collections.length, at)), 0, c);
+    }
+    writeMeta(m);
+    return c;
+  }
+  function dropCollection(id) {
+    const m = readMeta();
+    m.collections = m.collections.filter((c) => c.id !== id);
+    writeMeta(m);
+    return { ok: true };
+  }
+
   function dropPlaylist(id) {
     const m = readMeta();
     m.playlists = m.playlists.filter((p) => p.id !== id);
@@ -339,5 +372,5 @@ export function createTheater({ vaultDir }) {
     return target;
   }
 
-  return { root, list, folders, addFolder, dropFolder, have, mkShelf, uploadState, uploadPiece, dropUpload, sweep, thumbFile, setThumb, setFav, owns, moveTo, savePlaylist, dropPlaylist };
+  return { root, list, folders, addFolder, dropFolder, saveCollection, dropCollection, have, mkShelf, uploadState, uploadPiece, dropUpload, sweep, thumbFile, setThumb, setFav, owns, moveTo, savePlaylist, dropPlaylist };
 }

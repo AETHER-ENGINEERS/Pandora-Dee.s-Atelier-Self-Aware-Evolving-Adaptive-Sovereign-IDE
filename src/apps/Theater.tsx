@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Download, Film, FolderInput, FolderPlus, ListMusic, ListPlus, MoreHorizontal, Pencil, Play, Plus, RefreshCw, Repeat, Search, Shuffle, Star, Trash2, Upload, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Download, Film, Folder, FolderInput, FolderOpen, FolderPlus, ListMusic, ListPlus, MoreHorizontal, Pencil, Play, Plus, RefreshCw, Repeat, Search, Shuffle, Star, Trash2, Upload, X } from "lucide-react";
 import { desk, useDesk } from "../lib/store.ts";
 import { downloadToDevice, fileApi, pickInExplorer } from "../lib/explorer.ts";
 import {
   backUp,
   cancelJob,
+  changeCollection,
   changePlaylist,
   deletePlaylist,
   clearFinished,
@@ -21,14 +22,16 @@ import {
   useJobs,
   useLibrary,
   videoUrl,
+  type Collection,
   type Playlist,
   type Video,
 } from "../lib/theater.ts";
 import { openMenu, openMenuAt, type MenuItem } from "../ui/ContextMenu.tsx";
 import { askText, askUser } from "../ui/Ask.tsx";
+import { inFolder, underFolder } from "../lib/episodes.ts";
 import { useWidth } from "../ui/hooks.ts";
 
-const ALL = "\u0000all", FAVS = "\u0000favs", LIST = "\u0000list:", DEV = "\u0000device:";
+const ALL = "\u0000all", FAVS = "\u0000favs", LIST = "\u0000list:", DEV = "\u0000device:", COL = "\u0000col:";
 
 /** "Add to playlist" lines for a video's menus: each playlist (ticked where it already is), and a new one. */
 function addToPlaylistItems(v: Video, playlists: Playlist[]): MenuItem[] {
@@ -108,6 +111,62 @@ export function TheaterApp() {
     );
   }, [onDevice]);
   const watched = (lib?.folders ?? []).find((f) => f.name === shelf);
+  // collections ("Kids"): shows from any shelf, in an order of one's own
+  const collections = lib?.collections ?? [];
+  const collection = shelf.startsWith(COL) ? (collections.find((c) => c.id === shelf.slice(COL.length)) ?? null) : null;
+  // a shelf is browsed show by show, season by season: where in it we are (and the collection we came from, if any)
+  const [loc, setLoc] = useState({ shelf: "", where: "" });
+  const where = loc.shelf === shelf ? loc.where : "";
+  const [via, setVia] = useState<Collection | null>(null);
+  const browsing = !q && !playlist && !onDevice && !collection && shelf !== ALL && shelf !== FAVS;
+  const open = (s: string, rel: string, from: Collection | null = via) => (setVia(from), setShelf(s), setLoc({ shelf: s, where: rel }), setOrder(null));
+  const videosOf = (s: string) => (lib?.videos ?? []).filter((v) => v.shelf === s);
+  /** Play a show from an episode on: through its seasons, in order. */
+  const playOn = (list: Video[], from?: Video) => {
+    if (!list.length) return;
+    setOrder(list.map((v) => v.id));
+    setPlaying((from ?? list[0]).id);
+  };
+  const showMenu = (s: string, rel: string, inCollection?: { c: Collection; i: number }): MenuItem[] => {
+    const key = rel ? `${s}/${rel}` : s;
+    const fail = (e: unknown) => desk().say(e instanceof Error ? e.message : String(e));
+    const items: MenuItem[] = [{ label: "Play from the start", icon: <Play size={14} />, run: () => playOn(underFolder(videosOf(s), rel)) }];
+    if (toddler) return items;
+    if (inCollection) {
+      const { c, i } = inCollection;
+      const move = (to: number) => {
+        const ids = c.items.filter((x) => x !== key);
+        ids.splice(Math.max(0, Math.min(ids.length, i + to)), 0, key);
+        void changeCollection({ id: c.id, items: ids }).catch(fail);
+      };
+      items.push(
+        { sep: true },
+        { label: "Earlier", icon: <ArrowUp size={14} />, disabled: i === 0, run: () => move(-1) },
+        { label: "Later", icon: <ArrowDown size={14} />, disabled: i === c.items.length - 1, run: () => move(1) },
+        { label: `Take out of ${c.name}`, icon: <X size={14} />, run: () => void changeCollection({ id: c.id, items: c.items.filter((x) => x !== key) }).catch(fail) },
+      );
+    }
+    items.push(
+      { sep: true },
+      { heading: "In collections" },
+      ...collections.map(
+        (c): MenuItem => ({
+          label: c.name,
+          checked: c.items.includes(key),
+          run: () => void changeCollection({ id: c.id, items: c.items.includes(key) ? c.items.filter((x) => x !== key) : [...c.items, key] }).catch(fail),
+        }),
+      ),
+      {
+        label: "New collection…",
+        icon: <Plus size={14} />,
+        run: () =>
+          void askText("A new collection", "", { body: "Shows from any shelf, gathered under a name, in an order of your own.", placeholder: "Kids", yes: "Make it" }).then(
+            (name) => name?.trim() && void changeCollection({ name: name.trim(), items: [key] }).then((c) => desk().say(`${c.name}: made, with ${rel.split("/").pop() || s} in it.`), fail),
+          ),
+      },
+    );
+    return items;
+  };
   const addFolder = async () => {
     const dir = (await pickInExplorer({ mode: "folder", title: "Which folder of videos? (Network places are in the sidebar)" }))?.[0];
     if (!dir) return;
@@ -125,13 +184,16 @@ export function TheaterApp() {
     const words = q.toLowerCase().split(/\s+/).filter(Boolean);
     const match = (v: Video) => words.every((w) => `${v.name} ${v.shelf}`.toLowerCase().includes(w));
     if (onDevice) return (devVideos?.videos ?? []).filter(match);
+    // a collection's shows can come from any shelf: everything stays in reach of the player
+    if (collection) return (lib?.videos ?? []).filter(match);
     // a playlist shows its videos in its own order (those still here)
     if (playlist) {
       const byId = new Map((lib?.videos ?? []).map((v) => [v.id, v]));
       return playlist.items.map((id) => byId.get(id)).filter((v): v is Video => Boolean(v) && match(v!));
     }
     return (lib?.videos ?? []).filter((v) => (shelf === ALL || (shelf === FAVS ? v.fav : v.shelf === shelf)) && match(v));
-  }, [lib, shelf, q, playlist, onDevice, devVideos]);
+  }, [lib, shelf, q, playlist, onDevice, devVideos, collection]);
+  const here = useMemo(() => (browsing ? inFolder(shown, where) : null), [browsing, shown, where]);
   // what the player steps through: the shuffled order while one is playing shuffled, otherwise what's shown
   const queue = useMemo(() => {
     if (!order) return shown;
@@ -244,11 +306,12 @@ export function TheaterApp() {
         {[
           [ALL, "All"],
           [FAVS, "★ Favourites"],
+          ...collections.map((c) => [COL + c.id, `▦ ${c.name}`]),
           ...playlists.map((p) => [LIST + p.id, `≡ ${p.name}`]),
           ...(lib?.shelves ?? []).map((s) => [s, watchedNames.has(s) ? `⇄ ${s}` : s]),
           ...devices.map((d) => [DEV + d.path, `📱 ${d.name}`]),
         ].map(([id, label]) => (
-          <button key={id} role="tab" aria-selected={shelf === id} className={`chip${shelf === id ? " focus" : ""}`} onClick={() => (setShelf(id), setOrder(null))}>
+          <button key={id} role="tab" aria-selected={shelf === id} className={`chip${shelf === id ? " focus" : ""}`} onClick={() => (setShelf(id), setOrder(null), setVia(null), setLoc({ shelf: id, where: "" }))}>
             {label}
           </button>
         ))}
@@ -310,6 +373,63 @@ export function TheaterApp() {
         </div>
       ) : null}
 
+      {collection && !toddler ? (
+        <div className="theater-playlist-bar">
+          <span className="small muted grow">Shows gathered from any shelf, in your order. Add one from a show's menu (right-click, or hold).</span>
+          {(() => {
+            const i = collections.findIndex((c) => c.id === collection.id);
+            return (
+              <>
+                <button className="btn small ghost" disabled={i <= 0} onClick={() => void changeCollection({ id: collection.id, at: i - 1 })} title="Earlier among the collections">
+                  <ArrowUp size={13} />
+                </button>
+                <button className="btn small ghost" disabled={i >= collections.length - 1} onClick={() => void changeCollection({ id: collection.id, at: i + 1 })} title="Later among the collections">
+                  <ArrowDown size={13} />
+                </button>
+              </>
+            );
+          })()}
+          <button className="btn small ghost" onClick={() => void askText("Rename the collection", collection.name, { yes: "Rename" }).then((name) => name?.trim() && void changeCollection({ id: collection.id, name: name.trim() }))}>
+            <Pencil size={13} /> Rename
+          </button>
+          <button
+            className="btn small ghost"
+            onClick={() =>
+              void askUser(`Delete ${collection.name}?`, "Only the collection goes; the shows and their videos stay where they are.", "Delete it", "Keep it").then(
+                (yes) => yes && void theaterApi.dropCollection(collection.id).then(() => (setShelf(ALL), refreshLibrary())),
+              )
+            }
+          >
+            <Trash2 size={13} /> Delete
+          </button>
+        </div>
+      ) : null}
+      {browsing && (where || via) ? (
+        <div className="theater-crumbs small">
+          {via ? (
+            <>
+              <button className="link-btn" onClick={() => (setShelf(COL + via.id), setVia(null))}>
+                ‹ {via.name}
+              </button>
+              <span className="faint"> · </span>
+            </>
+          ) : null}
+          <button className="link-btn" onClick={() => open(shelf, "")}>
+            {shelf}
+          </button>
+          {where
+            .split("/")
+            .filter(Boolean)
+            .map((seg, i, all) => (
+              <span key={i}>
+                <span className="faint"> › </span>
+                <button className="link-btn" onClick={() => open(shelf, all.slice(0, i + 1).join("/"))}>
+                  {seg}
+                </button>
+              </span>
+            ))}
+        </div>
+      ) : null}
       {watched ? (
         <div className="theater-playlist-bar small">
           <span className="muted grow" title={watched.path}>
@@ -358,7 +478,54 @@ export function TheaterApp() {
             {playlist ? (q ? "Nothing in this playlist matches." : "This playlist is empty. Add videos from their menus: right-click one (or hold it), then Add to playlist.") : `Nothing on this shelf${q ? " matches" : " yet"}.`}
           </p>
         ) : null}
-        {groups.map((g) => (
+        {collection ? (
+          collection.items.length ? (
+            <div className="theater-grid">
+              {collection.items.map((key, i) => {
+                const [s, ...rest] = key.split("/");
+                const rel = rest.join("/");
+                const vs = underFolder(videosOf(s), rel);
+                return (
+                  <FolderTile
+                    key={key}
+                    name={rest.at(-1) || s}
+                    hint={rel ? s : undefined}
+                    videos={vs}
+                    onOpen={() => open(s, rel, collection)}
+                    menu={() => showMenu(s, rel, { c: collection, i })}
+                  />
+                );
+              })}
+            </div>
+          ) : (
+            <p className="small muted">Nothing in {collection.name} yet. Open a shelf, then add shows from their menus (right-click a show, or hold it).</p>
+          )
+        ) : null}
+        {here ? (
+          <>
+            {here.folders.length ? (
+              <div className="theater-grid">
+                {here.folders.map((f) => (
+                  <FolderTile key={f.rel} name={f.name} videos={f.videos} onOpen={() => open(shelf, f.rel)} menu={() => showMenu(shelf, f.rel)} />
+                ))}
+              </div>
+            ) : null}
+            {here.here.length ? (
+              <div className="theater-grid" style={{ marginTop: 10 }}>
+                {here.here.map((v) => (
+                  <Card
+                    key={v.id}
+                    v={v}
+                    // on from this one: through the rest of the show (its seasons in order), or what's loose here
+                    onPlay={() => playOn(where ? underFolder(shown, where.split("/")[0]) : here.here, v)}
+                    menu={() => (toddler ? [] : addToPlaylistItems(v, playlists))}
+                  />
+                ))}
+              </div>
+            ) : null}
+          </>
+        ) : null}
+        {here || collection ? null : groups.map((g) => (
           <section key={g.label}>
             <h3 className="theater-month">{g.label}</h3>
             <div className="theater-grid">
@@ -406,6 +573,33 @@ export function TheaterApp() {
         />
       ) : null}
     </div>
+  );
+}
+
+/** A show or a season: a folder of videos, with a picture from the first that has one, and how many it holds. */
+function FolderTile({ name, hint, videos, onOpen, menu }: { name: string; hint?: string; videos: Video[]; onOpen: () => void; menu: () => MenuItem[] }) {
+  const sample = videos.find((v) => v.thumb === 1);
+  return (
+    <button
+      className="theater-card theater-folder"
+      onClick={onOpen}
+      onContextMenu={(e) => {
+        const items = menu();
+        if (items.length) openMenu(e, items);
+      }}
+      title={`${name}${hint ? ` · ${hint}` : ""} · ${videos.length} video${videos.length === 1 ? "" : "s"}`}
+    >
+      <span className="theater-thumb">
+        {sample ? <img src={thumbUrl(sample.id)} alt="" loading="lazy" /> : <FolderOpen size={30} />}
+        <span className="theater-len">
+          {videos.length} video{videos.length === 1 ? "" : "s"}
+        </span>
+      </span>
+      <span className="theater-name">
+        <Folder size={12} /> {name}
+        {hint ? <span className="faint small"> · {hint}</span> : null}
+      </span>
+    </button>
   );
 }
 
