@@ -147,7 +147,7 @@ function BridgePanel({ id }: { id: BridgeId }) {
   return (
     <>
       <h2>
-        {name} <Sensitive />
+        {name} <Sensitive feature="bridges" />
       </h2>
       <p className="lead small">
         The characters take part in {name} through the {name} bridge, the same bridge Pandora Dee and Jade Vault use. It runs on a computer you keep on; the characters' minds stay here. Discord and Vector can both be on: the characters answer one conversation at a time.
@@ -751,7 +751,7 @@ function SshPanel() {
   return (
     <>
       <h2>
-        SSH <Sensitive />
+        SSH <Sensitive feature="ssh" />
       </h2>
       <p className="lead small">Machines the characters (and you) can open terminal sessions on. Passwords and keys stay on this computer; the characters only ever see the names. The first connection to a machine asks you to approve its key.</p>
       <Permission feature="ssh" />
@@ -916,7 +916,7 @@ function ApiPanel() {
   return (
     <>
       <h2>
-        Inbound API <Sensitive />
+        Inbound API <Sensitive feature="api" />
       </h2>
       <p className="lead small">
         Other programs (scripts, shortcuts, home automation) can talk to the characters, the same way as Pandora Dee and Jade Vault on Android: GET requests to <span className="mono">/v1/chat</span>, <span className="mono">/v1/status</span>, <span className="mono">/v1/history</span>, <span className="mono">/v1/chats</span> and <span className="mono">/v1/health</span>, with a token. The desktop has to be open to answer.

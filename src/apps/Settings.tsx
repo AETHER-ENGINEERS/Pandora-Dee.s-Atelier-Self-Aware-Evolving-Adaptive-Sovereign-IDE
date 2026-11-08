@@ -308,7 +308,7 @@ function AiSection() {
               <span className="faint small">{i + 1}.</span>
               <input className="input" style={{ maxWidth: 240, fontWeight: 600 }} value={c.label} onChange={(e) => patchConn(c.id, { label: e.target.value })} aria-label="Connection name" />
               <span className={`pill ${scope === "device" ? "good" : "warn"}`}>{SCOPE_LABEL[scope]}</span>
-              {f ? <Sensitive /> : null}
+              {f ? <Sensitive feature={f} /> : null}
               <span className="grow" />
               <button className="icon-btn" aria-label="Try earlier" disabled={i === 0} onClick={() => move(c.id, -1)}>
                 <ArrowUp size={14} />
@@ -642,10 +642,25 @@ function PrivacySection() {
   const [anon, setAnon] = useState("");
   const set = (patch: Partial<typeof p>) => desk().set({ privacy: { ...desk().privacy, ...patch } });
   const keyholder = s.role() === "keyholder";
+  // arriving from a Sensitive tag elsewhere: scroll to that feature and light it for a moment
+  const [lit, setLit] = useState<string>("");
+  useEffect(() => {
+    const go = () => {
+      const f = sessionStorage.getItem("pdd-privacy-focus");
+      if (!f) return;
+      sessionStorage.removeItem("pdd-privacy-focus");
+      setLit(f);
+      requestAnimationFrame(() => document.getElementById(`privacy-${f}`)?.scrollIntoView({ block: "center", behavior: "smooth" }));
+      window.setTimeout(() => setLit(""), 2400);
+    };
+    go();
+    window.addEventListener("pdd-privacy-focus", go);
+    return () => window.removeEventListener("pdd-privacy-focus", go);
+  }, []);
   return (
     <>
       <h2>
-        Privacy <Sensitive />
+        Privacy <Sensitive plain />
       </h2>
       <p className="lead small">Everything that could leave this computer starts off. Each feature asks you to read what it shares before it can be turned on. The bar at the top always shows “Local only” or that something is going out.</p>
       {!keyholder ? <div className="note warn small">Only accounts with full access can change privacy.</div> : null}
@@ -673,10 +688,10 @@ function PrivacySection() {
         {FEATURES.map((f) => {
           const on = Boolean(p.consents[f.id]);
           return (
-            <div key={f.id} className="conn" style={{ opacity: p.mode === "none" ? 0.55 : 1 }}>
+            <div key={f.id} id={`privacy-${f.id}`} className={`conn${lit === f.id ? " lit" : ""}`} style={{ opacity: p.mode === "none" ? 0.55 : 1 }}>
               <div className="row">
                 <b>{f.label}</b>
-                <Sensitive />
+                <Sensitive plain />
                 <span className="grow" />
                 {on ? <span className="pill warn">On{p.mode === "conditional" ? ` · ${p.hours.from}–${p.hours.to}` : ""}</span> : <span className="pill">Off</span>}
                 <button
@@ -2041,7 +2056,7 @@ function ServerBackup() {
     <>
       <div className="divider" />
       <h4>
-        Backups to your own server <Sensitive />
+        Backups to your own server <Sensitive feature="backup" />
       </h4>
       <p className="small muted">
         Works with the backup server from Jade Vault (<span className="mono">jade-backup-server.py</span>): run it on a machine that's always on and paste its address and token here. It listens on port 8787 unless told otherwise, the same port as the Vector bridge, so on a computer that runs both, start it with <span className="mono">--port 8790</span>. Encrypted backups are locked here with your passphrase before they leave; there's no way back in if the passphrase is lost.

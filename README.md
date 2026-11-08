@@ -131,6 +131,56 @@ On Discord and Vector, only you (the id you set) get the tools; everyone else ju
 
 Everything is stored in your browser on your computer. **Settings → Backup and reset** saves or restores the whole desktop (without keys, passwords or the passcode), and can back up on a schedule to your own server (Jade Vault's `jade-backup-server.py`), encrypted on your computer first.
 
+## 🧰 Troubleshooting
+
+**The name changed.** This was *Pandora Dee Desktop*, and the repository was
+`Pandora-Dee.s-Atelier-Self-Evolving-AI-Sovereign-IDE`. It's now **PDA SEASIDE** (the Self-aware Evolving Adaptive
+Sovereign IDE) at `Pandora-Dee.s-Atelier-Self-Aware-Evolving-Adaptive-Sovereign-IDE`. Nothing breaks: GitHub sends the
+old address to the new one, your saved desktop keeps its storage under the old names, and an installed app takes the new
+name the next time the browser refreshes it. To point an existing copy at the new address:
+
+```bash
+git remote set-url origin https://github.com/AETHER-ENGINEERS/Pandora-Dee.s-Atelier-Self-Aware-Evolving-Adaptive-Sovereign-IDE.git
+```
+
+The starters are still called `Start Pandora Dee.bat` and `.command`, so your shortcuts keep working.
+
+**It won't start.**
+- *"Port 15693 is already in use":* another copy is already running (perhaps in a window you minimised). Use that one, or
+  close it first.
+- *Errors while installing:* check `node --version` says 20 or newer. After an update, delete `node_modules` and start
+  again, so it reinstalls.
+
+**The characters don't answer.**
+- *"Couldn't reach Ollama on this computer":* start the Ollama app (or `ollama serve`) and press **Check** in Settings → AI.
+- *A connection is skipped, or says Privacy blocks it:* anything off this computer needs its Privacy feature turned on.
+  Click the orange **SENSITIVE** tag next to it: it opens Settings → Privacy at that feature.
+- *Ollama on another computer (a Mac on your Wi-Fi):* on that computer, Ollama has to listen beyond itself:
+  `OLLAMA_HOST=0.0.0.0` in its environment, then restart Ollama. Use its address in Settings → AI, e.g.
+  `http://192.168.1.20:11434`.
+- *"no credits left (402)"* comes from the service (AICord, OpenRouter…), not from SEASIDE: top up there, or move another
+  connection first.
+- *"Prompt too long" / "exceeded max context length":* SEASIDE trims older lines and tries again by itself (up to three
+  times). If it keeps happening, lower **Settings → Conversations → Messages sent with each reply** or use a model with a bigger context.
+
+**A reply has an amber "!" row.** That's the desk telling the character something plainly: a tool it said it would use
+but never called, or an answer that stayed inside its thinking so nobody saw it. Each happens at most once a turn; open the
+row to see the note. Every tool call shows as a row too (✓, ✗ or … while it runs), opening to what was sent and what came
+back.
+
+**Web search finds nothing.** With no provider set, SEASIDE searches DuckDuckGo's plain results page. A SearXNG of your
+own (Connections → Web) or an Ollama key (Keys → `OLLAMA_API_KEY`) is steadier. Characters can also search in their own
+browser tab, like anyone browsing. Both need Privacy → **Web access for characters**.
+
+**Keys or passwords don't show on a phone.** They only open on the computer itself or over Tailscale's https, never over
+plain Wi-Fi http. See *On your phone* above.
+
+**Something looks stuck after an update.** Reload the page. If a window still shows old behaviour, close SEASIDE's
+terminal window and start it again: server changes need a restart.
+
+**Losing things.** Your desktop lives in this browser on this computer. Make a backup (Settings → Backup and reset)
+before clearing the browser's data, switching browsers or moving computers.
+
 ## 👩‍💻 For developers
 
 ```bash

@@ -88,6 +88,9 @@ p { line-height: 1.55; margin: 0 0 10px; }
 .pill.good { color: var(--good); border-color: color-mix(in srgb, var(--good) 50%, transparent); }
 .pill.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); background: color-mix(in srgb, var(--warn) 10%, transparent); }
 .pill.bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 55%, transparent); background: color-mix(in srgb, var(--bad) 12%, transparent); }
+button.tag-sensitive.link { background: none; font: inherit; font-size: .72em; cursor: pointer; }
+button.tag-sensitive.link:hover { background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.conn.lit { outline: 2px solid var(--warn); outline-offset: 2px; transition: outline-color .4s; }
 .tag-sensitive { color: var(--warn); font-size: .72em; border: 1px solid color-mix(in srgb, var(--warn) 50%, transparent); padding: 0 6px; border-radius: 99px; margin-left: 6px; text-transform: uppercase; letter-spacing: .06em; vertical-align: middle; }
 .card { background: var(--raise); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; }
 .note { padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, .03); line-height: 1.5; }

@@ -100,7 +100,7 @@ export function SentryApp() {
 
       <div className="divider" />
       <h2>
-        Device watch <Sensitive />
+        Device watch <Sensitive feature="sensors" />
       </h2>
       <p className="lead small">Jade can keep watch on this computer: battery, network, and whether someone is using the desktop. Off unless you turn it on. Nothing leaves the computer; notes go to Jade's journal/sentry.md.</p>
       {!sensorsOk ? (
