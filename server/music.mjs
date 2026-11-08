@@ -94,12 +94,13 @@ const run = (cmd, args) =>
   new Promise((ok) => execFile(cmd, args, { windowsHide: true, timeout: 8000 }, (_e, out) => ok(String(out || ""))));
 
 /** Windows' mapped network drives: { "M:": "\\host\share" }. */
-async function netUse() {
+export async function netUse() {
   if (process.platform !== "win32") return {};
   const out = {};
   for (const line of (await run("net", ["use"])).split(/\r?\n/)) {
-    const m = /^\S*\s+([A-Z]:)\s+(\\\\\S.*?)\s{2,}/.exec(line);
-    if (m) out[m[1]] = m[2].trim();
+    // (a drive Windows can't reach right now, "Unavailable" or "Disconnected", is left out)
+    const m = /^(\S*)\s+([A-Z]:)\s+(\\\\\S.*?)\s{2,}/.exec(line);
+    if (m && !/^(Unavailable|Disconnected)$/i.test(m[1])) out[m[2]] = m[3].trim();
   }
   return out;
 }
@@ -118,14 +119,14 @@ export function parseNetView(out) {
   return shares;
 }
 
-function readPlaces(file) {
+export function readPlaces(file) {
   try {
     return file ? JSON.parse(fs.readFileSync(file, "utf8")).filter((p) => typeof p === "string") : [];
   } catch {
     return [];
   }
 }
-function rememberPlace(file, place) {
+export function rememberPlace(file, place) {
   if (!file) return;
   const now = readPlaces(file);
   if (now.some((p) => p.toLowerCase() === place.toLowerCase())) return;

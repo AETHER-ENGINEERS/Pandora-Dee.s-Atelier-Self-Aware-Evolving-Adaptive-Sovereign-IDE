@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowLeft, Copy, Download, ExternalLink, File as FileIcon, FileText, Folder, FolderPlus, FolderUp, Gamepad2, HardDrive, Image as ImageIcon,
-  LayoutGrid, LayoutList, Monitor, Music2, RotateCcw, Share2, Smartphone, Trash2, Upload, Video,
+  LayoutGrid, LayoutList, Monitor, Music2, Network, PackageOpen, RotateCcw, Share2, Smartphone, Trash2, Upload, Video,
 } from "lucide-react";
 import { desk } from "../lib/store.ts";
 import { Markdown } from "../ui/common.tsx";
@@ -14,6 +14,7 @@ import {
   type Entry, type Listing, type Overview, type PickOptions, type Trashed,
 } from "../lib/explorer.ts";
 import { copyText } from "../lib/clipboard.ts";
+import { askText } from "../ui/Ask.tsx";
 
 const ICON: Record<string, (s: number) => React.ReactNode> = {
   folder: (s) => <Folder size={s} />,
@@ -217,6 +218,23 @@ function FileBrowser({ mode, go, pick }: { mode: Mode; go?: { path: string; at: 
       fail(err);
     }
   };
+  const unpack = async (e: Entry) => {
+    try {
+      desk().say(`Unpacking ${e.name}…`);
+      const r = await fileApi.unzip(e.path);
+      await open(cwd, baseName(r.path), false);
+      desk().say(`${e.name} unpacked: ${r.files} file${r.files === 1 ? "" : "s"} in ${baseName(r.path)}.`);
+    } catch (err) {
+      fail(err);
+    }
+  };
+  const openNetworkPlace = async () => {
+    const B = "\\\\"; // the two backslashes a network address starts with
+    const a = (await askText("Open a network place", B, { body: `A computer on your network (${B}computer) shows what it shares; a share (${B}computer\\share) opens it. If it needs a sign-in, open it once in Windows' File Explorer first.`, placeholder: `${B}computer\\share`, yes: "Open" }))?.trim();
+    if (!a || a === B) return;
+    await open(a.startsWith(B) || a.startsWith("//") ? a : `${B}${a}`);
+    void loadOverview();
+  };
   const newFolder = () => setEditing({ path: "", value: "New folder" });
   const upload = async (files: File[]) => {
     if (!files.length || !cwd) return;
@@ -237,6 +255,7 @@ function FileBrowser({ mode, go, pick }: { mode: Mode; go?: { path: string; at: 
     return [
       ...(!many ? [{ label: e.dir ? "Open" : k === "xdc" ? "Open in Games & Apps" : "Preview", run: () => (k === "xdc" || e.dir ? activate(e) : setSel([e.path])) }] : []),
       ...(!many && !e.dir ? [{ label: "Download to this device", icon: <Download size={14} />, run: () => downloadToDevice(e.path) }] : []),
+      ...(!many && e.ext === "zip" && !e.path.startsWith("device:") ? [{ label: "Unpack here", icon: <PackageOpen size={14} />, hint: "into a new folder", run: () => void unpack(e) }] : []),
       { sep: true },
       ...(!many
         ? [
@@ -280,7 +299,7 @@ function FileBrowser({ mode, go, pick }: { mode: Mode; go?: { path: string; at: 
 
   const crumbs = useMemo(() => {
     if (!cwd || !ov) return [];
-    const place = [...ov.places, ...ov.wholePc.drives, ...(ov.devices ?? [])].filter((p) => cwd.toLowerCase().startsWith(p.path.toLowerCase())).sort((a, b) => b.path.length - a.path.length)[0];
+    const place = [...ov.places, ...ov.wholePc.drives, ...(ov.devices ?? []), ...(ov.network ?? [])].filter((p) => cwd.toLowerCase().startsWith(p.path.toLowerCase())).sort((a, b) => b.path.length - a.path.length)[0];
     if (!place) return [{ name: cwd, path: cwd }];
     const rest = cwd.slice(place.path.length).split(/[\\/]/).filter(Boolean);
     const sep = cwd.includes("\\") ? "\\" : "/";
@@ -292,6 +311,7 @@ function FileBrowser({ mode, go, pick }: { mode: Mode; go?: { path: string; at: 
 
   const places = ov ? [...ov.places, ...ov.wholePc.drives] : [];
   const fromDevices = ov?.devices ?? [];
+  const network = ov?.network ?? [];
   const shared = ov?.sharing.folders ?? [];
   const isShared = (p: string) => shared.some((s) => s.path.toLowerCase() === p.toLowerCase());
   const sidebar = (
@@ -309,6 +329,17 @@ function FileBrowser({ mode, go, pick }: { mode: Mode; go?: { path: string; at: 
             <Share2 size={15} /> {p.name}
           </button>
         ))}
+        {ov?.wholePc.local ? <div className="folder">Network</div> : null}
+        {network.map((p) => (
+          <button key={p.id} className={`item${!trashView && cwd.toLowerCase().startsWith(p.path.toLowerCase()) ? " on" : ""}`} onClick={() => void open(p.path)} title={p.path}>
+            <Network size={15} /> {p.name}
+          </button>
+        ))}
+        {ov?.wholePc.local && !picking ? (
+          <button className="item faint" onClick={() => void openNetworkPlace()} title="A computer or share on your network: \\computer\share">
+            <Network size={15} /> Open a network place…
+          </button>
+        ) : null}
         {fromDevices.length ? <div className="folder">Shared by your devices</div> : null}
         {fromDevices.map((p) => (
           <button key={p.id} className={`item${!trashView && cwd.startsWith(p.path) ? " on" : ""}`} onClick={() => void open(p.path)} title="Open while that device's page stays open">
@@ -446,7 +477,7 @@ function FileBrowser({ mode, go, pick }: { mode: Mode; go?: { path: string; at: 
         {narrow ? (
           <select className="select explorer-places" value="" onChange={(e) => e.target.value && void open(e.target.value)} aria-label="Places">
             <option value="">Places…</option>
-            {[...places, ...shared, ...fromDevices].map((p) => (
+            {[...places, ...shared, ...network, ...fromDevices].map((p) => (
               <option key={p.id} value={p.path}>
                 {p.name}
               </option>

@@ -794,8 +794,8 @@ export function deskServer() {
         }
         if (m === "POST" && isDevicePath(asked)) return send(res, 403, { error: "Files shared from another device can be opened and downloaded here, not changed." });
         if (m === "GET") {
-          if (parts[1] === "places") return send(res, 200, { ...F.overview(local), devices: devices.places() });
-          if (parts[1] === "list") return send(res, 200, F.list(url.searchParams.get("path"), local));
+          if (parts[1] === "places") return send(res, 200, { ...F.overview(local), network: await F.network(local), devices: devices.places() });
+          if (parts[1] === "list") return send(res, 200, await F.listAny(url.searchParams.get("path"), local));
           if (parts[1] === "stat") return send(res, 200, F.stat(url.searchParams.get("path"), local));
           if (parts[1] === "trash") return send(res, 200, F.trashList());
           if (parts[1] === "raw") {
@@ -811,6 +811,7 @@ export function deskServer() {
           const b = JSON.parse((await readBody(req, 100_000)).toString("utf8") || "{}");
           if ([b.path, b.into].some(isDevicePath)) return send(res, 403, { error: "Files shared from another device can be opened and downloaded here, not changed." });
           if (parts[1] === "mkdir") return send(res, 200, { path: F.mkdir(b.path, b.name, local) });
+          if (parts[1] === "unzip") return send(res, 200, F.unzip(b.path, local));
           if (parts[1] === "move") return send(res, 200, { path: F.move(b.path, { name: b.name, into: b.into }, local) });
           if (parts[1] === "trash") return send(res, 200, F.trash(b.path, local));
           if (parts[1] === "restore") return send(res, 200, { path: F.restore(String(b.id), local) });

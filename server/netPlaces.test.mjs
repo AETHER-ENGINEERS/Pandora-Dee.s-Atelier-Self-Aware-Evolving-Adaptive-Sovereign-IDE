@@ -31,3 +31,22 @@ test("another device can't make the computer reach a new network address", async
   await assert.rejects(listFolders(String.raw`\\somewhere-new\share`, file, { newPlaces: false }), /desktop's own computer/);
   await assert.rejects(listFolders(String.raw`\\somewhere-new`, file, { newPlaces: false }), /desktop's own computer/);
 });
+
+test("a zip unpacks beside itself, and its names can't climb out", async () => {
+  const { createFiles, safeZipPath } = await import("./files.mjs");
+  const { zipSync, strToU8 } = await import("fflate");
+  assert.equal(safeZipPath("../../evil.txt"), "evil.txt");
+  assert.equal(safeZipPath("C:/Windows/x.dll"), null);
+  assert.equal(safeZipPath("texts/liber-al.json"), "texts/liber-al.json");
+  const data = fs.mkdtempSync(path.join(os.tmpdir(), "unzip-"));
+  const F = createFiles({ dataDir: () => data, musicFolders: () => [], getWholePc: () => false, setWholePc: () => {} });
+  F.overview(true); // makes the vault
+  const zip = path.join(data, "vault", "readings.zip");
+  fs.writeFileSync(zip, zipSync({ "texts/liber-al.json": strToU8('{"title":"x"}'), "../escape.txt": strToU8("no"), "notes/": new Uint8Array() }));
+  const r = F.unzip(zip, false);
+  assert.equal(r.files, 2);
+  assert.equal(fs.readFileSync(path.join(data, "vault", "readings", "texts", "liber-al.json"), "utf8"), '{"title":"x"}');
+  assert.ok(fs.existsSync(path.join(data, "vault", "readings", "escape.txt")), "a name that climbs is kept inside");
+  assert.ok(!fs.existsSync(path.join(data, "escape.txt")));
+  assert.equal(path.basename(F.unzip(zip, false).path), "readings (2)", "a second unpack doesn't overwrite the first");
+});

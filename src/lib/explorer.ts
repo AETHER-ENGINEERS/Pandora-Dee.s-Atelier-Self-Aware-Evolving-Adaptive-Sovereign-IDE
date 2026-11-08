@@ -16,6 +16,8 @@ export type Overview = {
   sharing: { wholePc: boolean; folders: Place[]; canChange: boolean };
   /** shared by other devices (phones, other computers) while their page is open: paths start with "device:" */
   devices?: Place[];
+  /** network places (\\computer\share) opened on this computer; only listed for the computer itself */
+  network?: Place[];
 };
 export type Listing = { path: string; parent: string | null; entries: Entry[] };
 export type Trashed = { id: string; from: string; name: string; at: number };
@@ -42,6 +44,7 @@ export const fileApi = {
   setWholePc: (on: boolean) => call<Overview>("/api/files/whole-pc", { on }),
   share: (p: string, on: boolean) => call<Overview>("/api/files/share", { path: p, on }),
   shareWholePc: (on: boolean) => call<Overview>("/api/files/share", { wholePc: on }),
+  unzip: (p: string) => call<{ path: string; files: number }>("/api/files/unzip", { path: p }),
   importXdc: (p: string) => call<{ id: string | null; added: number; errors: string[] }>("/api/files/import-xdc", { path: p }),
   async upload(dir: string, file: File): Promise<string> {
     const r = await fetch(`/api/files/upload?dir=${q(dir)}`, { method: "POST", headers: { "X-Filename": encodeURIComponent(file.name) }, body: file });

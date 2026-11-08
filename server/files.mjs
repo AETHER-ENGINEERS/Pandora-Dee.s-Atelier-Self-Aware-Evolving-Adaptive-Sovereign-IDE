@@ -9,11 +9,24 @@ import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
+import { unzipSync } from "fflate";
+import { netShare, netUse, netView, readPlaces, rememberPlace } from "./music.mjs";
 
 const win = process.platform === "win32";
 const mac = process.platform === "darwin";
+const ZIP_MAX = 1_000_000_000; // a zip read whole into memory to unpack: up to 1 GB
+const UNPACKED_MAX = 4_000_000_000;
+
+/** A zip's file names made safe to write under a folder: no going up, no drive letters, no absolute paths. */
+export function safeZipPath(name) {
+  const parts = String(name).replace(/\\/g, "/").split("/").filter((x) => x && x !== "." && x !== "..");
+  if (!parts.length || /^[a-z]:$/i.test(parts[0])) return null;
+  return parts.map((p) => p.replace(/[<>:"|?*\x00-\x1f]/g, "_")).join("/");
+}
 
 export function createFiles({ dataDir, musicFolders, getWholePc, setWholePc, getSharing = () => ({}), setSharing = () => {} }) {
+  // network places opened on this computer (\\computer\share), the same list Music's folder picker keeps
+  const placesFile = () => path.join(dataDir(), "network-places.json");
   // what this computer shares with the other devices on the network: chosen folders, or all of it (both off at first)
   const sharing = () => {
     const s = getSharing() || {};
@@ -60,10 +73,77 @@ export function createFiles({ dataDir, musicFolders, getWholePc, setWholePc, get
     if (!p) throw Object.assign(new Error("No path."), { status: 400 });
     const full = path.resolve(String(p));
     if (local && getWholePc()) return full;
+    // a network place, opened from this computer itself (typing its address is the choice to go there)
+    if (local && netShare(full)?.share) return full;
     if (places().some((pl) => inside(full, pl.path))) return full;
     const sh = sharing();
     if (sh.wholePc || sh.folders.some((f) => inside(full, f))) return full;
     throw Object.assign(new Error("That's outside the desktop's places."), { status: 403 });
+  }
+
+  /** Network places for this computer's own Explorer: the ones opened before, and the mapped drives' shares. */
+  async function network(local) {
+    if (!local) return [];
+    const mapped = Object.values(await netUse());
+    const seen = new Set();
+    return [...readPlaces(placesFile()), ...mapped]
+      .filter((p) => !seen.has(p.toLowerCase()) && seen.add(p.toLowerCase()))
+      .map((p, i) => ({ id: `net-${i}`, name: p.replace(/^\\\\/, ""), path: p, kind: "network" }));
+  }
+
+  /** A folder's contents, a network computer's shares, or a network share (remembered once it opens). */
+  async function listAny(p, local) {
+    const s = netShare(String(p || ""));
+    if (s && !s.share) {
+      if (!local) throw Object.assign(new Error("Network places are opened on the desktop's own computer."), { status: 403 });
+      const shares = await netView(s.host);
+      if (!shares.length) throw Object.assign(new Error(`Couldn't see what \\\\${s.host} shares. Type the share's address too, like \\\\${s.host}\\media.`), { status: 404 });
+      return { path: `\\\\${s.host}`, parent: null, entries: shares.map((n) => ({ name: n, path: `\\\\${s.host}\\${n}`, dir: true, size: 0, mtime: 0, ext: "" })) };
+    }
+    let out;
+    try {
+      out = list(p, local);
+    } catch (e) {
+      if (s && e.code && e.code !== "EACCES") throw Object.assign(new Error(`Couldn't open ${p}. If it asks for a sign-in, open it once in Windows' File Explorer (Windows remembers it), then try again.`), { status: 404 });
+      throw e;
+    }
+    if (s && local) {
+      rememberPlace(placesFile(), `\\\\${s.host}\\${s.share}`);
+      if (!out.parent) out.parent = `\\\\${s.host}`; // a share's top goes up to its computer's shares
+    }
+    return out;
+  }
+
+  /** A .zip unpacked into a new folder beside it, named after it. Nothing already there is overwritten. */
+  function unzip(p, local) {
+    const file = allowed(p, local);
+    const st = fs.statSync(file);
+    if (st.size > ZIP_MAX) throw Object.assign(new Error("That zip is over 1 GB; unpack it on the computer itself."), { status: 413 });
+    let items;
+    try {
+      items = unzipSync(new Uint8Array(fs.readFileSync(file)));
+    } catch {
+      throw Object.assign(new Error(`${path.basename(file)} couldn't be opened as a zip.`), { status: 400 });
+    }
+    const total = Object.values(items).reduce((n, b) => n + b.length, 0);
+    if (total > UNPACKED_MAX) throw Object.assign(new Error("That zip unpacks to more than 4 GB."), { status: 413 });
+    const dir = freeName(path.dirname(file), path.basename(file).replace(/\.zip$/i, "") || "unpacked");
+    fs.mkdirSync(dir, { recursive: true });
+    let count = 0;
+    for (const [name, bytes] of Object.entries(items)) {
+      const rel = safeZipPath(name);
+      if (!rel) continue;
+      const to = path.join(dir, ...rel.split("/"));
+      if (!inside(to, dir)) continue;
+      if (name.endsWith("/")) {
+        fs.mkdirSync(to, { recursive: true });
+        continue;
+      }
+      fs.mkdirSync(path.dirname(to), { recursive: true });
+      fs.writeFileSync(to, bytes, { flag: "wx" });
+      count++;
+    }
+    return { path: dir, files: count };
   }
 
   function overview(local) {
@@ -236,5 +316,5 @@ export function createFiles({ dataDir, musicFolders, getWholePc, setWholePc, get
     return overview(local);
   }
 
-  return { share, overview, list, stat, allowed, upload, mkdir, move, trash, trashList, restore, revealOnDevice, setWhole };
+  return { share, overview, network, list, listAny, unzip, stat, allowed, upload, mkdir, move, trash, trashList, restore, revealOnDevice, setWhole };
 }
