@@ -347,8 +347,11 @@ export async function streamOnce(
   if (!model) throw new Error(`No model chosen for ${c.label}. Pick one in Settings → AI.`);
 
   if (c.kind === "aicord") {
-    const id = aicordIds.get(`${c.id}:${model}`) ?? (/^[0-9a-f-]{36}$/i.test(model) ? model : "");
-    if (!id) throw new Error("AICord: load the character list in Settings → AI first, then pick one.");
+    // which AICord character a name means is learned from the list; after a reload (or in the keeper) it's looked up again
+    const find = () => aicordIds.get(`${c.id}:${model}`) ?? (/^[0-9a-f-]{36}$/i.test(model) ? model : "");
+    if (!find()) await listModels(c, key, signal).catch(() => undefined);
+    const id = find();
+    if (!id) throw new Error(`AICord: there's no character called ${model} on this account. Load the list in Settings → AI and pick one.`);
     const res = await outbound(`${base(c.baseUrl)}/chat`, {
       method: "POST",
       headers: authHeaders(c.kind, key),

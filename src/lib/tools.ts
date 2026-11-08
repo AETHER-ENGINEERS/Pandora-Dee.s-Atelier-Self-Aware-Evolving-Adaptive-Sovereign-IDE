@@ -17,7 +17,7 @@ import { describeRows, library, recentLive, sendLive, sendUpdate } from "./xdc.t
 import { findSkill, searchSkills, skillsOf } from "./skills.ts";
 import { allTasks, baseOf, cleanVaultPath, isNote, loadNotes, noteName, noteTags, resolveNote, searchNotes, tasksIn, toggleTaskText, useNotes, vaultIndex, writeNote } from "./notes.ts";
 import { openNote } from "../ui/noteNav.ts";
-import { envFor } from "./residentKeys.ts";
+import { envFor, residentNames, setResidentKey } from "./residentKeys.ts";
 import { setBudget, usageSummary } from "./meter.ts";
 import { hostOf, LOG_HEADER, logLine, logPath, macroPath, noteSeen, noteStep, type Trail } from "./adventureCore.ts";
 import { addToCollection, AUTO_COLLS, compareTexts, memoryPrefs, memoryStatus, rebuildMemory, removeFromIndex, searchMemory, syncMemory } from "./vecmem.ts";
@@ -494,6 +494,55 @@ const BROWSER: Tool = {
       herTab.delete(id);
       throw e;
     }
+  },
+};
+
+/** Her own keys (lib/residentKeys.ts): she keeps what her tools make (a wallet's key, an nsec, an API key a site gave
+ *  her) in her own vault, by name. Values never come back into the conversation; she uses them as {{NAME}}. */
+const KEYNAME = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
+const MY_KEYS: Tool = {
+  name: "my_keys",
+  description:
+    "Your own keys, sealed in your own vault on this computer, used as {{NAME}} in browser typing, http_request and your shell (yours before the household's). list: their names (values are never shown). keep_from_file (name, path): move a key one of your tools wrote into your files (a wallet's key, an nsec, an API key) into your vault; the file is deleted unless keep_file. make (name, bytes): a new random secret (hex), straight into your vault. forget (name): remove one.",
+  parameters: obj({
+    action: { type: "string", description: "list (default), keep_from_file, make or forget" },
+    name: { type: "string", description: "The key's name: letters, digits and _ (e.g. DMD_WALLET_KEY)" },
+    path: { type: "string", description: "keep_from_file: the file in your files that holds it" },
+    keep_file: { type: "boolean", description: "keep_from_file: leave the file where it is (default: delete it)" },
+    bytes: { type: "number", description: "make: how many random bytes (16 to 64, default 32)" },
+  }),
+  run: async (id, a) => {
+    const act = str(a.action, "list");
+    if (act === "list") {
+      const list = residentNames(id);
+      return list.length ? `Your keys: ${list.join(", ")}. Use one as {{NAME}}.` : "Your vault is empty.";
+    }
+    const name = str(a.name).trim();
+    if (!KEYNAME.test(name)) return "A key's name is letters, digits and _, starting with a letter (e.g. DMD_WALLET_KEY).";
+    if (act === "forget") {
+      await setResidentKey(id, name, "");
+      return `Forgot ${name}.`;
+    }
+    let value = "";
+    if (act === "keep_from_file") {
+      const path = cleanPath(str(a.path));
+      const body = desk().filesOf(id)[path];
+      if (body === undefined) return `There's no file at ${str(a.path)}.`;
+      value = body.trim();
+      if (!value) return `${path} is empty.`;
+      if (value.length > 8000) return `${path} is too long to be one key (${value.length} characters).`;
+      await setResidentKey(id, name, value);
+      if (a.keep_file !== true) desk().deleteFile(id, path);
+      return `${name} is in your vault${a.keep_file === true ? "" : `, and ${path} is gone`}. Use it as {{${name}}}.`;
+    }
+    if (act === "make") {
+      const b = new Uint8Array(Math.max(16, Math.min(64, Math.round(Number(a.bytes) || 32))));
+      crypto.getRandomValues(b);
+      value = [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+      await setResidentKey(id, name, value);
+      return `Made ${name} (${b.length} random bytes) in your vault. Use it as {{${name}}}.`;
+    }
+    return `Unknown action ${act}: use list, keep_from_file, make or forget.`;
   },
 };
 
@@ -1256,7 +1305,7 @@ export function toolsFor(ctx: TurnCtx): Tool[] {
     if (web) list.push(WEB[0]);
     return list;
   }
-  const list = [...BASE, BASH, MEMORY, EMBEDDINGS, SKILL, USAGE, ...NOTES_TOOLS, MUSIC_TOOL, CATS_TOOL, APPS, NOTIFY];
+  const list = [...BASE, BASH, MEMORY, EMBEDDINGS, SKILL, USAGE, MY_KEYS, ...NOTES_TOOLS, MUSIC_TOOL, CATS_TOOL, APPS, NOTIFY];
   if (web) list.push(...WEB, HTTP, BROWSER);
   if (vector) list.push(VECTOR_TOOL);
   if (discord) list.push(DISCORD_TOOL, DISCORD_HISTORY);

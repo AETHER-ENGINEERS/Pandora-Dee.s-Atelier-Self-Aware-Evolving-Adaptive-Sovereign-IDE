@@ -45,6 +45,9 @@ export async function setResidentKey(charId: string, name: string, value: string
   changed();
 }
 
+/** Her keys' names (never their values). */
+export const residentNames = (charId: string) => [...(names[charId] ?? [])].sort();
+
 /** The keys {{NAME}} is filled from for this character: hers first, then the household's. */
 export function envFor(charId?: string): Record<string, string> {
   const own = charId ? values[charId] : undefined;
