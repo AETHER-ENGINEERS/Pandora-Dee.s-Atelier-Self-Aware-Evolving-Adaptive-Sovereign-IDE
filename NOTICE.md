@@ -1,6 +1,6 @@
 # Notices and credits
 
-Pandora Dee's Atelier (Pandora Dee Desktop) builds on other people's work. Each part keeps its own license.
+Pandora Dee's Atelier (PDA SEASIDE) builds on other people's work. Each part keeps its own license.
 
 ## The apps it grows from
 

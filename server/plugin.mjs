@@ -1077,7 +1077,7 @@ export function deskServer() {
       const pkg = L.get(id);
       if (!pkg) return send(res, 404, "Not found", "text/plain");
       res.setHeader("Content-Security-Policy", XDC_CSP);
-      if (rel === "webxdc.js") return send(res, 200, "/* webxdc is provided by Pandora Dee Desktop */", MIME.js);
+      if (rel === "webxdc.js") return send(res, 200, "/* webxdc is provided by PDA SEASIDE */", MIME.js);
       const q = url.searchParams;
       const inject = rel.endsWith(".html") || rel.endsWith(".htm")
         ? webxdcScript({ scope: q.get("scope") || pkg.appKey, addr: q.get("addr") || "you", name: q.get("name") || "You", lan: lan() })
@@ -1154,7 +1154,7 @@ export function deskServer() {
       if (url.pathname === "/hello") {
         const ua = String(req.headers["user-agent"] || "").replace(/</g, "&lt;");
         const from = String(req.socket.remoteAddress || "").replace(/^::ffff:/, "");
-        return send(res, 200, `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><body style="font:17px system-ui;padding:24px;background:#0b0912;color:#eee"><h2>This device reaches Pandora Dee Desktop.</h2><p>If the desktop itself doesn't open here, it's the browser: update it, or try another.</p><p style="opacity:.7;font-size:14px">From ${from}<br>${ua}</p><p><a style="color:#b48cff" href="/">Open the desktop</a></p></body>`, "text/html; charset=utf-8");
+        return send(res, 200, `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><body style="font:17px system-ui;padding:24px;background:#0b0912;color:#eee"><h2>This device reaches PDA SEASIDE.</h2><p>If the desktop itself doesn't open here, it's the browser: update it, or try another.</p><p style="opacity:.7;font-size:14px">From ${from}<br>${ua}</p><p><a style="color:#b48cff" href="/">Open the desktop</a></p></body>`, "text/html; charset=utf-8");
       }
       // the hidden Vector host's bridge (this computer only, with its run's token; see vectorHost.mjs)
       if (url.pathname === "/vh-bridge/next" || url.pathname === "/vh-bridge/reply") return void (await vectorHost().bridge(req, res, url, readBody));

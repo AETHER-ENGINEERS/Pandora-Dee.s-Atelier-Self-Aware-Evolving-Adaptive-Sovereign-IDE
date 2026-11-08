@@ -13,7 +13,7 @@ const TEXT = /\.(html?|js|mjs|cjs|ts|css|json|toml|md|txt|svg|xml|csv|glsl|frag|
 const IMAGE = /\.(png|jpe?g|gif|webp|svg|ico)$/i;
 
 const TEMPLATE: Record<string, string> = {
-  "manifest.toml": 'name = "My App"\nversion = "0.1.0"\ndescription = "A webxdc app made in Pandora Dee Desktop"\n',
+  "manifest.toml": 'name = "My App"\nversion = "0.1.0"\ndescription = "A webxdc app made in PDA SEASIDE"\n',
   "index.html": `<!doctype html>
 <html>
 <head>
