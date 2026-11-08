@@ -576,26 +576,60 @@ const USAGE: Tool = {
   },
 };
 
+// Folders linked for the characters to read (server/library.mjs): library/<name>/… in their files, read-only, read
+// from where they are (a network share, another folder) without being copied in.
+const LIB = /^library(\/|$)/;
+async function linkedApi<T>(route: string, id: string, q: Record<string, string>): Promise<T> {
+  const r = await fetch(`/api/library/${route}?${new URLSearchParams({ who: id, ...q })}`);
+  const j = (await r.json().catch(() => ({}))) as T & { error?: string };
+  if (!r.ok) throw new Error(j.error || `The library answered ${r.status}.`);
+  return j;
+}
+const libList = async (id: string, rel: string) => (await linkedApi<{ entries: { name: string }[] }>("list", id, { path: rel })).entries.map((e) => e.name);
+const said = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
 const BASE: Tool[] = [
   {
     name: "files_list",
-    description: "List the files in your own file space, optionally inside one folder.",
-    parameters: obj({ folder: { type: "string", description: "Folder to list, e.g. journal. Empty for everything." } }),
+    description:
+      "List the files in your own file space, optionally inside one folder. Folders linked for you to read show as library/<name>/: references kept where they are (a shared network folder, say), read-only; list, read and search inside them like your own files.",
+    parameters: obj({ folder: { type: "string", description: "Folder to list, e.g. journal, or library/<name>/a folder. Empty for everything." } }),
     run: async (id, a) => {
       const folder = cleanPath(str(a.folder));
+      if (LIB.test(folder)) {
+        try {
+          const names = await libList(id, folder.replace(LIB, ""));
+          return names.length ? names.map((n) => `${folder.replace(/\/$/, "")}/${n}`).join("\n") : "Nothing there.";
+        } catch (e) {
+          return said(e);
+        }
+      }
       const paths = Object.keys(desk().filesOf(id))
         .filter((p) => !folder || p.startsWith(`${folder}/`))
         .sort();
-      return paths.length ? paths.join("\n") : "No files there.";
+      // the linked folders, by name, when everything is asked for
+      const linked = folder ? [] : await libList(id, "").then((n) => n.map((x) => `library/${x} (linked, read-only)`), () => [] as string[]);
+      return [...paths, ...linked].join("\n") || "No files there.";
     },
   },
   {
     name: "file_read",
-    description: "Read one of your own files.",
-    parameters: obj({ path: { type: "string", description: "Path such as SOUL.md or notes/plan.md" } }, ["path"]),
+    description: "Read one of your own files, or one in a linked folder (library/<name>/…). Long files come in parts: use offset to read on.",
+    parameters: obj({ path: { type: "string", description: "Path such as SOUL.md, notes/plan.md or library/texts/liber.json" }, offset: { type: "number", description: "Where to start, in characters (to read on)" } }, ["path"]),
     run: async (id, a) => {
-      const body = desk().filesOf(id)[cleanPath(str(a.path))];
-      return body === undefined ? `There's no file at ${str(a.path)}.` : body.slice(0, 12000);
+      const p = cleanPath(str(a.path));
+      let body: string | undefined;
+      if (LIB.test(p)) {
+        try {
+          body = (await linkedApi<{ text: string }>("read", id, { path: p.replace(LIB, "") })).text;
+        } catch (e) {
+          return said(e);
+        }
+      } else body = desk().filesOf(id)[p];
+      if (body === undefined) return `There's no file at ${str(a.path)}.`;
+      const from = Math.max(0, Math.floor(Number(a.offset) || 0));
+      const end = from + 12000;
+      return end < body.length ? `${body.slice(from, end)}\n\n[… ${body.length - end} more characters: read on with offset ${end}]` : body.slice(from, end);
     },
   },
   {
@@ -622,16 +656,26 @@ const BASE: Tool[] = [
   },
   {
     name: "files_search",
-    description: "Search your own files for words. Returns matching lines with their file.",
-    parameters: obj({ query: { type: "string", description: "Words to look for" } }, ["query"]),
+    description: "Search your own files and your linked folders (library/…) for words. Returns matching lines with their file.",
+    parameters: obj({ query: { type: "string", description: "Words to look for" }, folder: { type: "string", description: "Only inside this folder (library/<name>/… for a linked one)" } }, ["query"]),
     run: async (id, a) => {
       const q = str(a.query).toLowerCase().trim();
       if (!q) return "Nothing to search for.";
+      const folder = cleanPath(str(a.folder));
       const out: string[] = [];
-      for (const [path, body] of Object.entries(desk().filesOf(id))) {
-        body.split("\n").forEach((line, i) => {
-          if (line.toLowerCase().includes(q) && out.length < 40) out.push(`${path}:${i + 1}: ${line.trim().slice(0, 200)}`);
-        });
+      if (!LIB.test(folder))
+        for (const [path, body] of Object.entries(desk().filesOf(id))) {
+          if (folder && !path.startsWith(`${folder}/`)) continue;
+          body.split("\n").forEach((line, i) => {
+            if (line.toLowerCase().includes(q) && out.length < 40) out.push(`${path}:${i + 1}: ${line.trim().slice(0, 200)}`);
+          });
+        }
+      if (!folder || LIB.test(folder)) {
+        try {
+          out.push(...(await linkedApi<{ hits: string[] }>("search", id, { q, within: folder.replace(LIB, "") })).hits.map((h) => `library/${h}`));
+        } catch (e) {
+          if (LIB.test(folder)) return said(e);
+        }
       }
       return out.length ? out.join("\n") : "No matches.";
     },

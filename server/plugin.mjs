@@ -10,6 +10,7 @@ import { sshOp } from "./ssh.mjs";
 import { inbound } from "./inbound.mjs";
 import { relay } from "./relay.mjs";
 import { createMusic, knownPlace, listFolders } from "./music.mjs";
+import { createLibrary as createLinked } from "./library.mjs";
 import { createAvatars } from "./avatars.mjs";
 import { createCreative } from "./creative.mjs";
 import { createBrowser } from "./browse.mjs";
@@ -142,6 +143,8 @@ export function deskServer() {
     }));
   // other devices sharing their own files, while their page is open (see devshare.mjs)
   const devices = createDevShare();
+  // folders linked for the characters to read, without copying them in (see library.mjs)
+  const linked = createLinked({ dataDir: () => dataDir });
   // accounts that travel between devices (see travel.mjs)
   const travel = createTravel(() => dataDir);
   // the full browser: a real Chromium-family engine shown live in the Browser window (see engine.mjs)
@@ -773,6 +776,27 @@ export function deskServer() {
         }
       } catch (e) {
         return send(res, e?.status ?? 400, { error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+    // folders linked for the characters to read (library/<name>/… in their files); see library.mjs
+    if (parts[0] === "library") {
+      const who = String(url.searchParams.get("who") || "");
+      const local = onThisPc(req);
+      try {
+        if (m === "GET") {
+          if (parts[1] === "links") return send(res, 200, { links: linked.links().map((l) => ({ name: l.name, for: l.for, ...(local ? { path: l.path } : {}) })), canChange: local });
+          if (parts[1] === "list") return send(res, 200, { entries: linked.list(who, url.searchParams.get("path")) });
+          if (parts[1] === "read") return send(res, 200, { text: linked.readFile(who, url.searchParams.get("path")) });
+          if (parts[1] === "search") return send(res, 200, { hits: linked.search(who, url.searchParams.get("q"), url.searchParams.get("within") || "") });
+        }
+        if (m === "POST") {
+          if (!local) return send(res, 403, { error: "Folders are linked for the characters on the desktop's own computer." });
+          const b = JSON.parse((await readBody(req, 100_000)).toString("utf8") || "{}");
+          if (parts[1] === "link") return send(res, 200, linked.link({ path: files().allowed(b.path, local), name: b.name, for: b.for }));
+          if (parts[1] === "unlink") return send(res, 200, linked.unlink(b.path));
+        }
+      } catch (e) {
+        return send(res, e?.status || (e?.code === "ENOENT" ? 404 : 400), { error: e?.code === "ENOENT" ? "That isn't there (is the network place reachable?)." : e instanceof Error ? e.message : String(e) });
       }
     }
     if (parts[0] === "files") {

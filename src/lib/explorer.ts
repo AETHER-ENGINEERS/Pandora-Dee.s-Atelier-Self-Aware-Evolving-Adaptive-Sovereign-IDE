@@ -44,6 +44,9 @@ export const fileApi = {
   setWholePc: (on: boolean) => call<Overview>("/api/files/whole-pc", { on }),
   share: (p: string, on: boolean) => call<Overview>("/api/files/share", { path: p, on }),
   shareWholePc: (on: boolean) => call<Overview>("/api/files/share", { wholePc: on }),
+  links: () => call<{ links: { name: string; path?: string; for: string[] }[]; canChange: boolean }>("/api/library/links"),
+  link: (p: string, name: string, whom: string[]) => call<{ name: string; path: string }>("/api/library/link", { path: p, name, for: whom }),
+  unlink: (p: string) => call<{ ok: true }>("/api/library/unlink", { path: p }),
   unzip: (p: string) => call<{ path: string; files: number }>("/api/files/unzip", { path: p }),
   importXdc: (p: string) => call<{ id: string | null; added: number; errors: string[] }>("/api/files/import-xdc", { path: p }),
   async upload(dir: string, file: File): Promise<string> {

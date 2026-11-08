@@ -2,11 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowLeft, Copy, Download, ExternalLink, File as FileIcon, FileText, Folder, FolderPlus, FolderUp, Gamepad2, HardDrive, Image as ImageIcon,
-  LayoutGrid, LayoutList, Monitor, Music2, Network, PackageOpen, RotateCcw, Share2, Smartphone, Trash2, Upload, Video,
+  LayoutGrid, LayoutList, Link2, Link2Off, Monitor, Music2, Network, PackageOpen, RotateCcw, Share2, Smartphone, Trash2, Upload, Video,
 } from "lucide-react";
 import { desk } from "../lib/store.ts";
 import { Markdown } from "../ui/common.tsx";
-import { openMenu, type MenuItem } from "../ui/ContextMenu.tsx";
+import { openMenu, openMenuAt, type MenuItem } from "../ui/ContextMenu.tsx";
 import { useWidth } from "../ui/hooks.ts";
 import { canShareFolder, deviceName, shareFiles, shareFolder, stopSharing, useMyShares } from "../lib/devshare.ts";
 import {
@@ -82,6 +82,27 @@ function FileBrowser({ mode, go, pick }: { mode: Mode; go?: { path: string; at: 
   const picking = mode !== "browse";
 
   const loadOverview = useCallback(() => fileApi.overview().then(setOv, fail), []);
+  // folders linked for the characters to read (library/<name>/… in their files)
+  const [links, setLinks] = useState<{ name: string; path?: string; for: string[] }[]>([]);
+  const loadLinks = useCallback(() => fileApi.links().then((j) => setLinks(j.links), () => {}), []);
+  useEffect(() => void loadLinks(), [loadLinks]);
+  const linkOf = (p: string) => links.find((l) => l.path?.toLowerCase() === p.toLowerCase());
+  // (asked just after the folder's menu closes, beside the folder)
+  const linkFor = (e: Entry) => {
+    const chars = desk().allCharacters();
+    const go = async (whom: string[]) => {
+      const name = (await askText("Name it for the characters", e.name, { body: `They'll find it as library/<name>/ in their files, read-only, read from where it is (nothing is copied). ${whom.length ? `For ${chars.find((c) => c.id === whom[0])?.short ?? whom[0]} only.` : "For every character."}`, yes: "Link it" }))?.trim();
+      if (!name) return;
+      try {
+        const r = await fileApi.link(e.path, name, whom);
+        await loadLinks();
+        desk().say(`Linked: the characters find "${e.name}" as library/${r.name}/ in their files.`);
+      } catch (err) {
+        fail(err);
+      }
+    };
+    openMenuAt(document.querySelector(".explorer-row.on, .explorer-tile.on") ?? document.body, [{ heading: "Who can read it?" }, { label: "Every character", run: () => void go([]) }, { sep: true }, ...chars.map((c): MenuItem => ({ label: c.name, run: () => void go([c.id]) }))]);
+  };
   const myShares = useMyShares();
   const sharePicker = useRef<HTMLInputElement>(null);
   // other devices' shares come and go with their pages: look again now and then, and when this one's change
@@ -267,6 +288,13 @@ function FileBrowser({ mode, go, pick }: { mode: Mode; go?: { path: string; at: 
               run: () => void showOnDevice(e.path),
             },
             { label: "Copy path", icon: <Copy size={14} />, run: () => void copyText(e.path) },
+          ]
+        : []),
+      ...(!many && e.dir && ov?.wholePc.local && !e.path.startsWith("device:")
+        ? [
+            linkOf(e.path)
+              ? { label: "Stop linking for the characters", icon: <Link2Off size={14} />, hint: `library/${linkOf(e.path)!.name}`, run: () => void fileApi.unlink(e.path).then(() => (loadLinks(), desk().say(`${e.name} isn't linked for the characters any more.`)), fail) }
+              : { label: "Link for the characters to read…", icon: <Link2 size={14} />, hint: "read-only, not copied", run: () => window.setTimeout(() => linkFor(e), 0) },
           ]
         : []),
       ...(!many && e.dir && ov?.sharing.canChange
