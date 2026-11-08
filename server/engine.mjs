@@ -262,6 +262,43 @@ export async function actOnPage(page, b) {
 
 const settle = (page) => page.waitForLoadState("domcontentloaded", { timeout: 8000 }).catch(() => undefined);
 
+/** What she sees: the visible part of her tab, in the same pixels her hands use (CSS pixels, top-left 0,0). */
+export async function lookAt(page) {
+  await settle(page);
+  const size = await page.evaluate(() => ({ w: innerWidth, h: innerHeight })).catch(() => ({ w: 0, h: 0 }));
+  const jpeg = (await page.screenshot({ type: "jpeg", quality: 70, scale: "css" })).toString("base64");
+  return { jpeg, w: size.w, h: size.h };
+}
+
+/** Her hands: the mouse and keyboard anyone has, at points on what she sees. No special cases for any page. */
+export async function handOnPage(page, b) {
+  const n = (v, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
+  const button = ["left", "right", "middle"].includes(b.button) ? b.button : "left";
+  const what = String(b.do || "");
+  if (what === "move") await page.mouse.move(n(b.x), n(b.y), { steps: 4 });
+  else if (what === "click") await page.mouse.click(n(b.x), n(b.y), { button, clickCount: Math.max(1, Math.min(3, n(b.count, 1))), delay: 40 });
+  else if (what === "down") await page.mouse.move(n(b.x), n(b.y)), await page.mouse.down({ button });
+  else if (what === "up") await page.mouse.move(n(b.x), n(b.y)), await page.mouse.up({ button });
+  else if (what === "drag") {
+    // a drag as a hand makes one: press, travel in small steps (or through the points given), let go
+    const path = Array.isArray(b.path) && b.path.length ? b.path.map((p) => [n(p?.[0]), n(p?.[1])]) : [[n(b.toX), n(b.toY)]];
+    await page.mouse.move(n(b.x), n(b.y));
+    await page.mouse.down({ button });
+    const steps = Math.max(1, Math.min(60, n(b.steps, 12)));
+    for (const [x, y] of path) await page.mouse.move(x, y, { steps: path.length > 1 ? Math.max(1, Math.round(steps / path.length)) : steps });
+    await page.mouse.up({ button });
+  } else if (what === "wheel") await page.mouse.move(n(b.x), n(b.y)), await page.mouse.wheel(n(b.dx), n(b.dy, 500));
+  else if (what === "type") {
+    // a password field takes only her own keys ({{NAME}}, filled on the desktop), as with numbered typing
+    const pw = await page.evaluate(() => document.activeElement?.getAttribute?.("type") === "password").catch(() => false);
+    if (pw && !b.fromKey) throw Object.assign(new Error("Passwords go in only as {{NAME}} from your keys."), { status: 400 });
+    await page.keyboard.type(String(b.text ?? ""), { delay: 25 });
+  } else if (what === "key") await page.keyboard.press(String(b.key || "Enter"));
+  else throw Object.assign(new Error(`Unknown hand action: ${what}`), { status: 400 });
+  await settle(page);
+  return { ok: true };
+}
+
 export function createEngine({ dataDir, getChoice, deskPorts }) {
   let ctx = null; // the running engine (a persistent context: its own profile)
   let starting = null;
@@ -813,7 +850,8 @@ export function createEngine({ dataDir, getChoice, deskPorts }) {
     // she can use; acting on those numbers; a picture of it for a model that can see
     if (op === "read") return await readPage(t.page, Math.max(500, Math.min(20_000, Number(b.max) || 6000)));
     if (op === "act") return await actOnPage(t.page, b);
-    if (op === "shot") return { jpeg: (await t.page.screenshot({ type: "jpeg", quality: 60 })).toString("base64") };
+    if (op === "shot") return await lookAt(t.page);
+    if (op === "hand") return await handOnPage(t.page, b);
     throw Object.assign(new Error(`Unknown request: ${op}`), { status: 400 });
   }
 

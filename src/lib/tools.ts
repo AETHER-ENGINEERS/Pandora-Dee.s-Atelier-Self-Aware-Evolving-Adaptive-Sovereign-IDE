@@ -19,6 +19,7 @@ import { allTasks, baseOf, cleanVaultPath, isNote, loadNotes, noteName, noteTags
 import { openNote } from "../ui/noteNav.ts";
 import { envFor } from "./residentKeys.ts";
 import { setBudget, usageSummary } from "./meter.ts";
+import { hostOf, LOG_HEADER, logLine, logPath, macroPath, noteSeen, noteStep, type Trail } from "./adventureCore.ts";
 import { addToCollection, AUTO_COLLS, compareTexts, memoryPrefs, memoryStatus, rebuildMemory, removeFromIndex, searchMemory, syncMemory } from "./vecmem.ts";
 
 /** Who is asking: the locksmith (the person who holds the keys: everything), an admin (messenger powers) or the public (their own chat). */
@@ -35,6 +36,10 @@ export type TurnCtx = {
   senderName?: string;
   /** Deferred MCP tools loaded with tool_search during this turn. */
   loaded: Set<string>;
+  /** The connection and model she's thinking with this turn (for her adventure log). */
+  model?: string;
+  /** Pictures a tool took for her to see (her browser tab): shown to the model after the tool's result. */
+  seen?: { data: string; mime: string }[];
 };
 
 type Tool = ToolSpec & { run: (charId: string, args: Record<string, unknown>, ctx: TurnCtx) => Promise<string> };
@@ -311,48 +316,180 @@ const pageText = (r: PageRead) =>
     `${r.title}\n${r.url}\n\nThings you can use:\n${r.items.join("\n") || "(none)"}\n\nThe page:\n${r.text}`,
   );
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Her adventure log (lib/adventureCore.ts): where she went, what she met, what she did, how it went. */
+const trails = new Map<string, Trail>();
+function logIt(id: string, model: string | undefined, lines: string[]) {
+  if (!lines.length) return;
+  const now = Date.now();
+  const path = logPath(now);
+  const had = desk().filesOf(id)[path];
+  desk().writeFile(id, path, (had ?? LOG_HEADER) + lines.map((l) => logLine(now, model, l)).join("\n") + "\n");
+}
+function seenNow(id: string, model: string | undefined, r: PageRead) {
+  const { trail, lines } = noteSeen(trails.get(id) ?? {}, { host: hostOf(r.url), humanCheck: r.humanCheck }, Date.now());
+  trails.set(id, trail);
+  logIt(id, model, lines);
+}
+
+/** Her recordings: steps saved while recording, kept in her files as macros/<name>.json, to run again. */
+type Step = Record<string, unknown> & { action: string };
+const recording = new Map<string, { name: string; steps: Step[] }>();
+const HANDS = ["move", "click_at", "double_click_at", "right_click_at", "mouse_down", "mouse_up", "drag", "wheel", "type_keys", "key"];
+const BY_REF = ["click", "type", "select", "press", "scroll"];
+const n = (v: unknown) => Math.round(Number(v) || 0);
+function stepWords(a: Step): string {
+  const at = `${n(a.x)},${n(a.y)}`;
+  switch (a.action) {
+    case "open": return `opened ${hostOf(str(a.url)) || str(a.url)}`;
+    case "look": return "looked";
+    case "move": return `moved the mouse to ${at}`;
+    case "click_at": return `clicked at ${at}`;
+    case "double_click_at": return `double-clicked at ${at}`;
+    case "right_click_at": return `right-clicked at ${at}`;
+    case "mouse_down": return `pressed the mouse at ${at}`;
+    case "mouse_up": return `let go of the mouse at ${at}`;
+    case "drag": return `dragged from ${at} to ${n(a.to_x)},${n(a.to_y)}`;
+    case "wheel": return "scrolled with the wheel";
+    case "type_keys": return "typed";
+    case "key": return `pressed ${str(a.key)}`;
+    case "click": return `clicked [${n(a.ref)}]`;
+    case "type": return `typed into [${n(a.ref)}]`;
+    case "select": return `chose in [${n(a.ref)}]`;
+    case "press": return `pressed ${str(a.key, "Enter")}`;
+    case "scroll": return "scrolled";
+    case "back": return "went back";
+    default: return a.action;
+  }
+}
+
+const pathOf = (v: unknown) => {
+  if (Array.isArray(v)) return v;
+  try {
+    const p = JSON.parse(str(v)) as unknown;
+    return Array.isArray(p) ? p : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+/** One step in her tab (not reading it afterwards). */
+async function browserStep(id: string, a: Step): Promise<string | undefined> {
+  const act = a.action;
+  if (act === "open") {
+    const url = str(a.url).trim();
+    if (!url) return "open needs an address.";
+    const known = herTab.get(id);
+    try {
+      if (!known) throw new Error("none");
+      await engineCall({ op: "go", id: known, url });
+    } catch {
+      herTab.set(id, (await engineCall<{ id: string }>({ op: "open", url })).id);
+    }
+    await pause(1500);
+    return;
+  }
+  const t = herTab.get(id);
+  if (!t) return "You have no tab open yet: use open with an address.";
+  let text = str(a.text);
+  const fromKey = /\{\{\s*[A-Za-z0-9_]+\s*\}\}/.test(text);
+  if (fromKey) text = fillSecrets(text, envFor(id));
+  if (act === "back") {
+    await engineCall({ op: "back", id: t });
+    await pause(1200);
+  } else if (BY_REF.includes(act)) {
+    await engineCall({ op: "act", id: t, action: act, ref: a.ref, text, submit: a.submit === true, value: str(a.value), key: str(a.key, "Enter"), down: a.down !== false, fromKey });
+    await pause(800);
+  } else if (HANDS.includes(act)) {
+    const button = act === "right_click_at" ? "right" : str(a.button, "left");
+    const hand: Record<string, unknown> = { move: { do: "move" }, click_at: { do: "click", count: 1 }, double_click_at: { do: "click", count: 2 }, right_click_at: { do: "click", count: 1 }, mouse_down: { do: "down" }, mouse_up: { do: "up" }, drag: { do: "drag" }, wheel: { do: "wheel" }, type_keys: { do: "type" }, key: { do: "key" } }[act] as Record<string, unknown>;
+    await engineCall({ op: "hand", id: t, ...hand, button, x: a.x, y: a.y, toX: a.to_x, toY: a.to_y, path: pathOf(a.path), steps: a.steps, dx: a.dx, dy: a.dy ?? (a.down === false ? -500 : 500), text, key: str(a.key, "Enter"), fromKey });
+    await pause(500);
+  } else if (act !== "read" && act !== "look") return `Unknown action ${act}.`;
+}
+
 const BROWSER: Tool = {
   name: "browser",
   description:
-    "The desktop's own browser, a real Chromium: your own tab, which shows in the Browser window so people can watch and take over. open (url): go to a page in your tab. read: the page as text, with a number for each thing you can use. click (ref), type (ref, text, submit), select (ref, value), press (key), scroll (down), back. After each step you get the page again; numbers change when the page does. Keys go in as {{NAME}} (yours first); passwords only that way.",
+    "The desktop's own browser, a real Chromium: your own tab, which shows in the Browser window so people can watch and take over. open (url): go to a page in your tab. read: the page as text, with a number for each thing you can use. look: see the tab as a picture (for a model that sees images); points are in that picture's pixels, 0,0 top left. By number: click (ref), type (ref, text, submit), select (ref, value), press (key), scroll (down), back. By hand, at points: move, click_at, double_click_at, right_click_at, mouse_down, mouse_up (x, y), drag (x, y to to_x, to_y, or through path), wheel (x, y, dy), type_keys (text, into whatever has focus), key (a key or chord such as Control+A). record (name) starts saving your steps, stop_recording keeps them as macros/<name>.json in your files, replay (name) runs them again, macros lists them. After each step you get the page again; numbers change when the page does. Keys go in as {{NAME}} (yours first); passwords only that way. Your adventure log (adventures/ in your files) notes where you went and what you met.",
   parameters: obj({
-    action: { type: "string", description: "open, read, click, type, select, press, scroll or back" },
+    action: { type: "string", description: "open, read, look, click, type, select, press, scroll, back, move, click_at, double_click_at, right_click_at, mouse_down, mouse_up, drag, wheel, type_keys, key, record, stop_recording, replay or macros" },
     url: { type: "string", description: "open: the address" },
     ref: { type: "number", description: "click, type, select: the thing's number from the page" },
-    text: { type: "string", description: "type: what to type ({{NAME}} for a key)" },
+    text: { type: "string", description: "type, type_keys: what to type ({{NAME}} for a key)" },
     submit: { type: "boolean", description: "type: press Enter after" },
     value: { type: "string", description: "select: the option" },
-    key: { type: "string", description: "press: a key such as Enter, Tab, Escape, ArrowDown" },
-    down: { type: "boolean", description: "scroll: down (true, the default) or up (false)" },
+    key: { type: "string", description: "press, key: a key such as Enter, Tab, Escape, ArrowDown, or a chord such as Control+A" },
+    down: { type: "boolean", description: "scroll, wheel: down (true, the default) or up (false)" },
+    x: { type: "number", description: "by hand: the point across, in the picture's pixels" },
+    y: { type: "number", description: "by hand: the point down, in the picture's pixels" },
+    to_x: { type: "number", description: "drag: where to let go, across" },
+    to_y: { type: "number", description: "drag: where to let go, down" },
+    path: { type: "string", description: "drag: points to pass through after x, y, as JSON [[x, y], …] (for drawing)" },
+    button: { type: "string", description: "by hand: left (default), right or middle" },
+    dy: { type: "number", description: "wheel: how far, in pixels (negative is up)" },
+    name: { type: "string", description: "record, replay: the recording's name" },
   }),
-  run: async (id, a) => {
-    const act = str(a.action, "read");
-    if (act === "open") {
-      const url = str(a.url).trim();
-      if (!url) return "open needs an address.";
-      const known = herTab.get(id);
+  run: async (id, a0, ctx) => {
+    const a = { ...a0, action: str(a0.action, "read") } as Step;
+    const act = a.action;
+    if (act === "macros") {
+      const list = Object.keys(desk().filesOf(id)).filter((p) => p.startsWith("macros/") && p.endsWith(".json"));
+      return list.length ? list.map((p) => p.slice(7, -5)).join("\n") : "No recordings yet: record (name) starts one.";
+    }
+    if (act === "record") {
+      const name = str(a.name).trim();
+      if (!name) return "record needs a name.";
+      recording.set(id, { name, steps: [] });
+      return `Recording "${name}": your steps are saved until stop_recording.`;
+    }
+    if (act === "stop_recording") {
+      const r = recording.get(id);
+      if (!r) return "You aren't recording.";
+      recording.delete(id);
+      const path = macroPath(r.name);
+      desk().writeFile(id, path, JSON.stringify({ name: r.name, steps: r.steps }, null, 2));
+      logIt(id, ctx.model, [`Recorded "${r.name}" (${r.steps.length} steps).`]);
+      return `Saved ${r.steps.length} steps as ${path}. replay with name "${r.name}" runs them again.`;
+    }
+    let lastLook = act === "look";
+    if (act === "replay") {
+      const path = macroPath(str(a.name));
+      const body = desk().filesOf(id)[path];
+      if (body === undefined) return `There's no recording at ${path}.`;
+      let steps: Step[];
       try {
-        if (!known) throw new Error("none");
-        await engineCall({ op: "go", id: known, url });
+        steps = (JSON.parse(body) as { steps?: Step[] }).steps ?? [];
       } catch {
-        herTab.set(id, (await engineCall<{ id: string }>({ op: "open", url })).id);
+        return `${path} isn't a recording I can read.`;
       }
-      await pause(1500);
+      logIt(id, ctx.model, [`Replayed "${str(a.name)}" (${steps.length} steps).`]);
+      for (const s of steps.slice(0, 200)) {
+        if (["record", "stop_recording", "replay", "macros"].includes(str(s.action))) continue;
+        const said = await browserStep(id, { ...s, action: str(s.action) });
+        if (said) return `Step "${stepWords(s)}" stopped the replay: ${said}`;
+        trails.set(id, noteStep(trails.get(id) ?? {}, stepWords(s)));
+        lastLook = s.action === "look";
+      }
+    } else {
+      const said = await browserStep(id, a);
+      if (said) return said;
+      if (act !== "read") trails.set(id, noteStep(trails.get(id) ?? {}, stepWords(a)));
+      const r = recording.get(id);
+      // what's saved is what she asked for: {{NAME}} stays a name, never the key's value
+      if (r && act !== "read") r.steps.push({ ...a0, action: act } as Step);
     }
     const t = herTab.get(id);
     if (!t) return "You have no tab open yet: use open with an address.";
-    if (act === "back") {
-      await engineCall({ op: "back", id: t });
-      await pause(1200);
-    } else if (["click", "type", "select", "press", "scroll"].includes(act)) {
-      let text = str(a.text);
-      const fromKey = /\{\{\s*[A-Za-z0-9_]+\s*\}\}/.test(text);
-      if (fromKey) text = fillSecrets(text, envFor(id));
-      await engineCall({ op: "act", id: t, action: act, ref: a.ref, text, submit: a.submit === true, value: str(a.value), key: str(a.key, "Enter"), down: a.down !== false, fromKey });
-      await pause(800);
-    } else if (act !== "read" && act !== "open") return `Unknown action ${act}: use open, read, click, type, select, press, scroll or back.`;
     try {
-      return pageText(await engineCall<PageRead>({ op: "read", id: t }));
+      const page = await engineCall<PageRead>({ op: "read", id: t });
+      seenNow(id, ctx.model, page);
+      if (lastLook) {
+        const shot = await engineCall<{ jpeg: string; w: number; h: number }>({ op: "shot", id: t });
+        ctx.seen = [{ data: shot.jpeg, mime: "image/jpeg" }];
+        return `${page.title}\n${page.url}\nThe picture of your tab comes next: ${shot.w}×${shot.h}, points in those pixels.`;
+      }
+      return pageText(page);
     } catch (e) {
       herTab.delete(id);
       throw e;

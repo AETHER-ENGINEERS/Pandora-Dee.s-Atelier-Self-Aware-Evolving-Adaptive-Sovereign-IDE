@@ -75,6 +75,8 @@ const PARALLEL = new Set(["web_search", "web_fetch", "notes_search", "note_read"
  * Connections that just failed rest for a few minutes: turns go straight to the next one instead of
  * waiting on them every time, and they're tried first again once the rest is over.
  */
+const SEEN = "[Your browser tab, as it looks now]";
+const SEEN_BEFORE = "[An earlier picture of your browser tab]";
 const REST_MS = 3 * 60_000;
 const resting = new Map<string, number>();
 const isResting = (id: string) => (resting.get(id) ?? 0) > Date.now();
@@ -258,6 +260,7 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
     const used: NonNullable<Message["tools"]> = [];
     try {
       const model = await ensureModel(conn, wanted, signal, me.id);
+      ctx.model = `${conn.label} · ${model}`;
       const ai = aiFor(me.id);
       let tools = ai.tools ? (opts.game ? gameToolsFor() : toolsFor(ctx)) : [];
       const turns = [...base];
@@ -329,6 +332,13 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
           });
           patch({ tools: [...used] });
           i = j;
+        }
+        // what a tool showed her (her browser tab) comes as a picture after the results; only the newest stays a
+        // picture, so the conversation doesn't fill up with old ones
+        if (ctx.seen?.length) {
+          for (const t of turns) if (t.role === "user" && t.images?.length && t.content === SEEN) (t.content = SEEN_BEFORE), delete t.images;
+          turns.push({ role: "user", content: SEEN, images: ctx.seen });
+          ctx.seen = undefined;
         }
         // tool_search may have loaded more tools for the next step.
         if (ai.tools && result.toolCalls.some((c) => c.name === "tool_search")) tools = toolsFor(ctx);
