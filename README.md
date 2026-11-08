@@ -1,5 +1,7 @@
 # 🌊 PDA SEASIDE · Pandora Dee's Atelier — 3.16.0
 
+*SEASIDE: the **S**elf-aware **E**volving **A**daptive **S**overeign **IDE**. Working, in daily use, and open.*
+
 **A desktop you share with Pandora Dee, Jade and their friends.** ✨ Chat with them, hang out in a little scene together,
 play games, make music and pictures, keep your notes, and reach it all from your phone. It brings together the original
 Pandora Dee page, Jade Vault, and the atelier "desk" builds into one app, and it runs on **your own computer**: nothing
