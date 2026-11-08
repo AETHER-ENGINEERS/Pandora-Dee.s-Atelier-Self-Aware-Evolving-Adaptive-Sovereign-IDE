@@ -128,7 +128,7 @@ async function ensureModel(conn: Connection, model: string, signal: AbortSignal,
   return found;
 }
 
-type TurnResult = { text: string; ok: boolean };
+type TurnResult = { text: string; ok: boolean; used?: { name: string; ok: boolean; note: string }[] };
 
 /**
  * One character takes one turn: builds its prompt, streams the reply into a new room
@@ -363,7 +363,7 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
         const v = voiceFor(me.id);
         speak(me.id, text, v.prefs, v.shift);
       }
-      return { text: pass ? "" : text, ok: true };
+      return { text: pass ? "" : text, ok: true, used };
     } catch (e) {
       lastErr = explainError(e, conn);
       if (isLimitError(lastErr)) recordLimit(me.id, conn.label, lastErr);
@@ -646,16 +646,21 @@ export async function gameTurn() {
  * With `history` (a chat that has ended) it runs alongside the room instead of taking it over.
  */
 export async function privately(charId: string, instruction: string, history?: Message[], kind: UsageKind = "helper"): Promise<string> {
+  return (await privatelyWithRecord(charId, instruction, history, kind)).text;
+}
+
+/** The same, with the record of which tools actually ran (for her Storybook, beside her own account). */
+export async function privatelyWithRecord(charId: string, instruction: string, history?: Message[], kind: UsageKind = "helper"): Promise<{ text: string; used: { name: string; ok: boolean; note: string }[] }> {
   const c = desk().character(charId);
-  if (!c) return "";
+  if (!c) return { text: "", used: [] };
   if (history) {
     const r = await takeTurn(c, { scope: "locksmith", instruction, silent: true, history, signal: new AbortController().signal, helper: true, kind });
-    return r.text;
+    return { text: r.text, used: r.used ?? [] };
   }
-  let out = "";
+  let out: { text: string; used: { name: string; ok: boolean; note: string }[] } = { text: "", used: [] };
   await withRun(async () => {
     const r = await takeTurn(c, { scope: "locksmith", instruction, silent: true, helper: true, kind });
-    out = r.text;
+    out = { text: r.text, used: r.used ?? [] };
   });
   return out;
 }

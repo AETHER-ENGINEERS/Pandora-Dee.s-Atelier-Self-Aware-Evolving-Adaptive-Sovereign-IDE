@@ -21,7 +21,12 @@ export const bookHeader = (title: string, room: string, mark: string) => `# ${ti
 
 /** Her reply as a scene: null for "nothing new" or a reply in another shape. */
 export function parseScene(reply: string): { room: string; inside: string } | null {
-  const out = reply.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+  // the labels are found however they're dressed (**IN THE ROOM:**, ## Inside:, *REMEMBER*:), but only with their
+  // colon, so a line that merely starts "Inside the…" stays a sentence
+  const out = reply
+    .replace(/<think>[\s\S]*?<\/think>/g, "")
+    .replace(/^[ \t>#*_]*(IN THE ROOM|INSIDE|REMEMBER)[ \t*_]*:[ \t*_]*/gim, (_m, label: string) => `${label.toUpperCase()}: `)
+    .trim();
   if (/^NOTHING NEW\b/i.test(out)) return null;
   const m = /IN THE ROOM:\s*([\s\S]*?)\n\s*INSIDE:\s*([\s\S]*?)(?:\n\s*REMEMBER:[\s\S]*)?$/i.exec(out);
   return m && m[1].trim() ? { room: m[1].trim(), inside: m[2].trim() } : null;
@@ -29,6 +34,13 @@ export function parseScene(reply: string): { room: string; inside: string } | nu
 
 export const sceneText = (at: Date, scene: { room: string; inside: string }) =>
   `\n## ${at.toISOString().replace(/\.\d+Z$/, "Z")}\n\n### In the room\n${scene.room}\n\n### Inside\n${scene.inside}\n`;
+
+/** The desktop's own note under a scene: which tools actually ran in that time (her account stays hers, beside it). */
+export function ranNote(used: { note: string; ok: boolean }[]) {
+  if (!used.length) return "\n*The desktop's record: no tools ran in this time.*\n";
+  const list = used.slice(0, 20).map((u) => `${u.note}${u.ok ? "" : " (it failed)"}`).join("; ");
+  return `\n*The desktop's record of what ran: ${list}${used.length > 20 ? `; and ${used.length - 20} more` : ""}.*\n`;
+}
 
 /** Saved keys never go in a book: each value becomes its {{NAME}}. */
 export function redactKeys(text: string, keys: Record<string, string>) {

@@ -7,8 +7,8 @@ import { desk } from "./store.ts";
 import { holdsHeart } from "./heart.ts";
 import { canStartOwnWork, usageLine } from "./meter.ts";
 import { afterSession, itsHerTime, LOG_EMPTY, ownTimePrompt } from "./ownTimeCore.ts";
-import { isRunning, privately } from "./agent.ts";
-import { bookFor, bookHeader, parseScene, redactKeys, sceneText } from "./storybook.ts";
+import { isRunning, privatelyWithRecord } from "./agent.ts";
+import { bookFor, bookHeader, parseScene, ranNote, redactKeys, sceneText } from "./storybook.ts";
 import { allKeyValues } from "./residentKeys.ts";
 
 const OWN_BOOK = { id: "own-time", title: "My own time" };
@@ -50,11 +50,11 @@ export async function runOwnTime() {
     busy = true;
     busySince = Date.now();
     try {
-      const reply = await privately(c.id, ownTimePrompt(usageLine(c.id), s.filesOf(c.id)["CURIOSITY.md"] ?? ""), undefined, "own");
+      const { text: reply, used } = await privatelyWithRecord(c.id, ownTimePrompt(usageLine(c.id), s.filesOf(c.id)["CURIOSITY.md"] ?? ""), undefined, "own");
       const scene = parseScene(reply);
       const { log: next, looped } = afterSession(log, Date.now(), scene ? `${scene.room}\n${scene.inside}` : reply);
       desk().set({ ownLog: { ...desk().ownLog, [c.id]: next } });
-      if (scene) addToBook(c.id, redactKeys(sceneText(new Date(), scene), allKeyValues()));
+      if (scene) addToBook(c.id, redactKeys(sceneText(new Date(), scene) + ranNote(used), allKeyValues()));
       if (looped) addToBook(c.id, "\n*Paused for six hours: three sessions in a row went round the same thought.*\n");
       if (scene) desk().log(`${c.short} spent some time of their own (Storybook: My own time).`);
     } catch (e) {

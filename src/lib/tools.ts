@@ -373,6 +373,14 @@ const pathOf = (v: unknown) => {
   }
 };
 
+/** When she uses her browser, the Browser window comes forward on her tab, so whoever is here sees what she sees. */
+async function showHerTab(t: string) {
+  const s = desk();
+  if (s.browser.mode !== "full") s.set({ browser: { ...s.browser, mode: "full" } });
+  s.openApp("browser");
+  await engineCall({ op: "focus", id: t }).catch(() => undefined);
+}
+
 /** One step in her tab (not reading it afterwards). */
 async function browserStep(id: string, a: Step): Promise<string | undefined> {
   const act = a.action;
@@ -481,6 +489,7 @@ const BROWSER: Tool = {
     }
     const t = herTab.get(id);
     if (!t) return "You have no tab open yet: use open with an address.";
+    await showHerTab(t);
     try {
       const page = await engineCall<PageRead>({ op: "read", id: t });
       seenNow(id, ctx.model, page);
