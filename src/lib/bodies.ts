@@ -7,20 +7,40 @@ import { desk, useDesk } from "./store.ts";
 import { holdsHeart } from "./heart.ts";
 import { deskNameOf, toClassic } from "./backup.ts";
 
-const sent = new Map<string, string>();
 let timer = 0;
 const rootOf = (charId: string) => desk().character(charId)?.classic?.root ?? (/jade/i.test(charId) ? "Jade" : "Pandora");
 
+/**
+ * Two ways (server/bodies.mjs sync): her files go to her folder, and what changed in the folder (another body, a
+ * resident working there) comes back into her files here. A file both sides changed keeps the desktop's version, and the
+ * folder's comes back beside it as a dated copy, so nothing is lost; the person is told.
+ */
+let busy = false;
 async function mirror() {
-  if (!holdsHeart()) return;
-  const s = desk();
-  for (const c of s.allCharacters()) {
-    if (!s.charPrefs[c.id]?.body) continue;
-    const files = toClassic(c, s.filesOf(c.id)).vault.files;
-    const json = JSON.stringify(files);
-    if (sent.get(c.id) === json) continue;
-    const r = await fetch(`/api/bodies/${encodeURIComponent(c.id)}`, { method: "PUT", body: JSON.stringify({ files }) }).catch(() => null);
-    if (r?.ok) sent.set(c.id, json);
+  if (!holdsHeart() || busy) return;
+  busy = true;
+  try {
+    for (const c of desk().allCharacters()) {
+      if (!desk().charPrefs[c.id]?.body) continue;
+      const files = toClassic(c, desk().filesOf(c.id)).vault.files;
+      const r = await fetch(`/api/bodies/${encodeURIComponent(c.id)}`, { method: "PUT", body: JSON.stringify({ files, sync: true }) }).catch(() => null);
+      if (!r?.ok) continue;
+      const j = (await r.json()) as { incoming?: Record<string, string>; clashes?: string[] };
+      const came = Object.entries(j.incoming ?? {});
+      if (came.length) {
+        const mine = { ...desk().filesOf(c.id) };
+        for (const [p, text] of came) {
+          const name = deskNameOf(p, rootOf(c.id), mine);
+          if (name) mine[name] = text;
+        }
+        desk().set({ files: { ...desk().files, [c.id]: mine } });
+        desk().log(`${c.short}'s folder: ${came.length} file${came.length > 1 ? "s" : ""} came back from it.`);
+      }
+      if (j.clashes?.length)
+        desk().notice(`${c.short}'s folder and the desktop both changed ${j.clashes.join(", ")}. The desktop's version stays; the folder's is kept beside it as a dated copy.`);
+    }
+  } finally {
+    busy = false;
   }
 }
 
@@ -35,6 +55,8 @@ export function startBodies() {
     timer = window.setTimeout(() => void mirror(), 5000);
   });
   void mirror();
+  // what a resident or another body changes in a folder comes in without waiting for the desktop to change something
+  window.setInterval(() => void mirror(), 10_000);
 }
 
 async function readBody(charId: string) {
@@ -64,7 +86,6 @@ export async function takeFromBody(charId: string): Promise<number> {
     }
   }
   if (n) s.set({ files: { ...s.files, [charId]: mine } });
-  sent.delete(charId); // mirror the result again, so the folder and the desktop agree
   void mirror();
   return n;
 }

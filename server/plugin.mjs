@@ -410,7 +410,11 @@ export function deskServer() {
         if (!onThisPc(req) && !viaTailnet(req)) return send(res, 403, { error: "A character's folder is kept from the desktop's own computer." });
         const id = decodeURIComponent(parts[1] || "");
         if (m === "GET") return send(res, 200, bodies.read(id));
-        if (m === "PUT") return send(res, 200, bodies.write(id, JSON.parse((await readBody(req, 200_000_000)).toString("utf8") || "{}").files ?? {}));
+        if (m === "PUT") {
+          const b = JSON.parse((await readBody(req, 200_000_000)).toString("utf8") || "{}");
+          // two ways (sync), or the old one-way mirror for anything that still asks for it
+          return send(res, 200, b.sync ? bodies.sync(id, b.files ?? {}) : bodies.write(id, b.files ?? {}));
+        }
         return send(res, 404, { error: "Not found" });
       } catch (e) {
         return send(res, e.status || 500, { error: e.message });

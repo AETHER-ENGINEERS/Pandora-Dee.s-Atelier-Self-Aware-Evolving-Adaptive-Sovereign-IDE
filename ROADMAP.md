@@ -113,6 +113,8 @@ SEASIDE as one house across your devices and your network, with the characters l
 - ✅ **A real terminal** (3.16): real shells in workspace folders of their own, from this computer or the tailnet,
   off until Privacy allows it. Next: **Claude Code as a resident** at a desk in SEASIDE (signed in with your own
   subscription), joined to the room through SEASIDE's tool server.
+- **A Linux of her own for each resident** (the next big step, with Mrrowr-murrr): root inside, her own packages and processes, her body folder as its home, her keys with her. Docker or Podman on a Mac and Linux; on Windows, a WSL distribution per resident on a drive with room (no Docker Desktop on a full C:), with **automount and interop off** in its `/etc/wsl.conf`, so no Windows drive appears inside and no Windows program can be run from it: nothing spills into the core system.
+- ✅ **Two-way body folders**: each character's folder on disk and her files in SEASIDE agree both ways within seconds; a file both sides changed keeps both versions.
 - ✅ **Vector 0.5.1 in host mode**: Vector's own app inside the desktop, its title bar working the desktop's window.
 - **PADS** (Pandora's Atelier's Distributed Systems), in stages:
   - ✅ The PADS Manager: your devices arranged like monitors, live miniatures, linked servers, Send to.

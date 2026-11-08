@@ -744,7 +744,7 @@ function CharBody({ c }: { c: Character }) {
       <label className="check">
         <input type="checkbox" checked={on} onChange={(e) => desk().setCharPrefs(c.id, { body: e.target.checked })} />
         <span>
-          Keep {c.short}'s files on disk too, in Classic's layout, so their other bodies (Pandora Dee, Jade Vault, jade-py) can open the same folder as a vault. Kept current a few seconds after anything changes.
+          Keep {c.short}'s files on disk too, in Classic's layout, so their other bodies (Pandora Dee, Jade Vault, jade-py) and anything working in that folder can use the same files. Two ways: what changes here goes there, and what changes there comes back here, within seconds. If both change the same file, nothing is lost: the desktop's version stays and the folder's is kept beside it as a dated copy.
         </span>
       </label>
       {on && st ? (
@@ -752,7 +752,7 @@ function CharBody({ c }: { c: Character }) {
           <p className="small muted mono" style={{ wordBreak: "break-all" }}>{st.dir}</p>
           <div className="row" style={{ gap: 8, alignItems: "center" }}>
             <button className="btn small" disabled={!st.changed.length} onClick={() => void take()}>
-              Take changes from the folder{st.changed.length ? ` (${st.changed.length})` : ""}
+              Bring changes in now{st.changed.length ? ` (${st.changed.length})` : ""}
             </button>
             <button className="btn small" onClick={() => void look()}>
               Check again
