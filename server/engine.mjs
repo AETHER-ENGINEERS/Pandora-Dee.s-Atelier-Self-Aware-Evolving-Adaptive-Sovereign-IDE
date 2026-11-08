@@ -191,7 +191,8 @@ function startFresh(profile, keepHistory = true) {
     }
 }
 
-// CAPTCHAs and other are-you-human checks, by where they come from: these are for a person to answer.
+// CAPTCHAs and other are-you-human checks, by where they come from. Only noted (humanCheck), never shown to her as
+// an instruction: the check speaks for itself, and whoever meets it decides what it means to them.
 const CHECKS = /recaptcha|hcaptcha|challenges\.cloudflare\.com|turnstile|arkoselabs|funcaptcha|geetest/i;
 
 /** The page as a character reads it: title, address, its text, and a numbered list of the things on it she can use. */

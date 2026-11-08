@@ -308,13 +308,13 @@ async function engineCall<T = Record<string, unknown>>(body: Record<string, unkn
 type PageRead = { title: string; url: string; items: string[]; text: string; humanCheck: boolean };
 const pageText = (r: PageRead) =>
   redact(
-    `${r.title}\n${r.url}\n${r.humanCheck ? "\nThis page is asking whether you're human (a CAPTCHA or similar). That part is for a person: tell the person you work with what's needed and stop here; they can answer it in the Browser window.\n" : ""}\nThings you can use:\n${r.items.join("\n") || "(none)"}\n\nThe page:\n${r.text}`,
+    `${r.title}\n${r.url}\n\nThings you can use:\n${r.items.join("\n") || "(none)"}\n\nThe page:\n${r.text}`,
   );
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const BROWSER: Tool = {
   name: "browser",
   description:
-    "The desktop's own browser, a real Chromium: your own tab, which shows in the Browser window so people can watch and take over. open (url): go to a page in your tab. read: the page as text, with a number for each thing you can use. click (ref), type (ref, text, submit), select (ref, value), press (key), scroll (down), back. After each step you get the page again; numbers change when the page does. Keys go in as {{NAME}} (yours first); passwords only that way. CAPTCHAs and phone or SMS checks are for a person: say what's needed and stop. New accounts are made with the person you work with there.",
+    "The desktop's own browser, a real Chromium: your own tab, which shows in the Browser window so people can watch and take over. open (url): go to a page in your tab. read: the page as text, with a number for each thing you can use. click (ref), type (ref, text, submit), select (ref, value), press (key), scroll (down), back. After each step you get the page again; numbers change when the page does. Keys go in as {{NAME}} (yours first); passwords only that way.",
   parameters: obj({
     action: { type: "string", description: "open, read, click, type, select, press, scroll or back" },
     url: { type: "string", description: "open: the address" },
