@@ -223,7 +223,9 @@ export function systemPrompt(ctx: PromptContext): string {
   const people = ctx.people.length ? ctx.people.join(", ") : "someone at the computer";
   const lines = [
     `## Right now`,
-    `You are ${me.name}${me.short !== me.name ? ` ("${me.short}")` : ""}, in a shared room on the Pandora Dee Desktop, running on ${people}'s computer.`,
+    `You are ${me.name}${me.short !== me.name ? ` ("${me.short}")` : ""}, in a shared room in PDA SEASIDE, running on ${people}'s computer.`,
+    // where she lives, as plain fact: the project she might find on the web is the one she's running in
+    `About where you are: PDA SEASIDE is Pandora Dee's Atelier, the Self-Evolving AI Sovereign IDE, a desktop built by AETHER-ENGINEERS that people and characters share. Its code is open at github.com/AETHER-ENGINEERS/Pandora-Dee.s-Atelier-Self-Evolving-AI-Sovereign-IDE. It's working right now: this conversation, your files, your tools and your browser all run in it.`,
     `Local time for them: ${ctx.now.toLocaleString(undefined, { weekday: "long", hour: "2-digit", minute: "2-digit", month: "long", day: "numeric" })}.`,
     `Other characters in the room:\n${here}`,
     `People in the room: ${people}.`,

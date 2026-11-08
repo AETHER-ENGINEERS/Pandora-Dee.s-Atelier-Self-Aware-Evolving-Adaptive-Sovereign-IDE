@@ -3,7 +3,8 @@
 // tells her plainly that it didn't run, once, the way a button that didn't click shows it. It doesn't tell her
 // what to do next.
 
-const INTENT = /\b(use|using|call|calling|run|running|invoke|try|trying|open|check|proceed|need to|going to|will|i'll|let me)\b/i;
+// her own intent, in the first person: "It claims to open a browser" is about something else
+const INTENT = /\b(i'll|i will|i need to|i should|i'm going to|i am going to|i want to|let me|i'd better|i must)\b/i;
 const NOT = /\b(if you|want me to|would you like|shall i|should i|i could|i can also|don't|do not|doesn't|no need|not needed|without|instead of|won't|shouldn't|can't|cannot|unavailable|isn't available)\b/i;
 
 /** The first offered tool her thinking or answer says she'll use, if she made no call. */

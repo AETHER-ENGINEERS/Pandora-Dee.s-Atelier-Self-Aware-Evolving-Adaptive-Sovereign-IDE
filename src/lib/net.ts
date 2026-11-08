@@ -38,6 +38,29 @@ export async function searx(address: string, query: string): Promise<Hit[]> {
   return hits;
 }
 
+/** DuckDuckGo's plain HTML results (html.duckduckgo.com): title, the real address (from its /l/?uddg= link) and snippet. */
+export async function ddgResults(query: string): Promise<Hit[]> {
+  const r = await send(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, { headers: { Accept: "text/html" } });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return parseDdg(await r.text());
+}
+
+export function parseDdg(html: string): Hit[] {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const hits: Hit[] = [];
+  for (const res of doc.querySelectorAll(".result")) {
+    if (res.classList.contains("result--ad")) continue;
+    const a = res.querySelector("a.result__a");
+    let href = a?.getAttribute("href") ?? "";
+    const real = /[?&]uddg=([^&]+)/.exec(href);
+    if (real) href = decodeURIComponent(real[1]);
+    if (href.startsWith("//")) href = `https:${href}`;
+    if (!a || !/^https?:\/\//.test(href) || /duckduckgo\.com\/y\.js/.test(href)) continue;
+    hits.push({ title: (a.textContent ?? "").trim() || href, url: href, snippet: (res.querySelector(".result__snippet")?.textContent ?? "").trim() });
+  }
+  return hits;
+}
+
 /** Search providers in order: Ollama web search (with a key), SearXNG, DuckDuckGo, Wikipedia. */
 export async function webSearch(query: string, max = 5): Promise<string> {
   const s = desk();
@@ -61,6 +84,12 @@ export async function webSearch(query: string, max = 5): Promise<string> {
         if (!s.web.searx) throw new Error("no SearXNG address set");
         res = (await searx(s.web.searx, query)).slice(0, n);
       } else if (p === "ddg") {
+        // DuckDuckGo's plain results page: real web results, no key (its instant answers below are only a fallback)
+        res = await ddgResults(query).catch(() => []);
+        if (res.length) {
+          res = res.slice(0, n);
+          return `Results from DuckDuckGo:\n\n${res.map((x, i) => `${i + 1}. ${x.title}\n   ${x.url}\n   ${x.snippet.replace(/\s+/g, " ").trim()}`).join("\n\n")}`;
+        }
         const r = await send(`https://api.duckduckgo.com/?format=json&no_html=1&skip_disambig=1&q=${encodeURIComponent(query)}`);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const j = (await r.json()) as { Heading?: string; AbstractText?: string; AbstractURL?: string; RelatedTopics?: { Text?: string; FirstURL?: string; Topics?: { Text?: string; FirstURL?: string }[] }[] };

@@ -84,6 +84,7 @@ const shownOut = (text: string) => {
 … (${t.length - 1600} more characters)` : t;
 };
 
+const UNSAID_NOTE = "[Desk note] Your answer stayed in your thinking, so nobody saw it. Say it here if you meant to.";
 const SEEN = "[Your browser tab, as it looks now]";
 const SEEN_BEFORE = "[An earlier picture of your browser tab]";
 const REST_MS = 3 * 60_000;
@@ -279,6 +280,7 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
       if (known) fitTurns(turns, known, toolsJson());
       let ctxTries = 0;
       let noteGiven = false;
+      let heardGiven = false;
       let final = "";
       let thought = "";
       for (let step = 0; step <= ai.maxSteps; step++) {
@@ -324,9 +326,21 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
           // she meant to call a tool and didn't: the desk says so plainly, once a turn, and she goes on from there
           const parts = splitThink(result.text);
           const missed = !noteGiven && step < ai.maxSteps ? missedTool(`${result.thinking}\n${parts.thinking}`, parts.text, tools.map((t) => t.name)) : null;
+          // her whole answer stayed inside her thinking (a model that never closed it): nobody saw it, so the desk says so
+          const unsaid = !missed && !heardGiven && !opts.nudge && !parts.text.trim() && `${result.thinking}${parts.thinking}`.trim().length > 40;
+          if (unsaid) {
+            heardGiven = true;
+            used.push({ name: "reply", ok: false, note: "her answer stayed in her thinking", out: UNSAID_NOTE, desk: true });
+            patch({ tools: [...used] });
+            turns.push({ role: "assistant", content: result.text });
+            turns.push({ role: "user", content: UNSAID_NOTE });
+            continue;
+          }
           if (missed) {
             noteGiven = true;
             used.push({ name: missed, ok: false, note: `meant to use ${missed}, didn't call it`, out: missedNote(missed), desk: true });
+            // what she already said stays said: the note adds to the reply, it doesn't take her words away
+            if (parts.text.trim()) shown += `${parts.text.trim()}\n\n`;
             patch({ tools: [...used] });
             turns.push({ role: "assistant", content: result.text });
             turns.push({ role: "user", content: missedNote(missed) });

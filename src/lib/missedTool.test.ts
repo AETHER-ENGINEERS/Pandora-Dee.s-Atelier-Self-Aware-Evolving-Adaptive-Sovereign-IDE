@@ -19,6 +19,8 @@ test("mentions without intent, or with a no, aren't", () => {
   assert.equal(missedTool("", "Want me to use the browser to check?", TOOLS), null);
   assert.equal(missedTool("", "If you like, I could run web_search next.", TOOLS), null);
   assert.equal(missedTool("Let me think about browsers in general.", "", TOOLS), null);
+  // from the Qwen3-32B run: a sentence about the project, not her plan
+  assert.equal(missedTool("", "It claims to open a browser at localhost:15693, but there's no main.js.", TOOLS), null);
   assert.equal(missedTool("I'll use web_search.", "", []), null);
   assert.equal(missedTool("", "", TOOLS), null);
 });

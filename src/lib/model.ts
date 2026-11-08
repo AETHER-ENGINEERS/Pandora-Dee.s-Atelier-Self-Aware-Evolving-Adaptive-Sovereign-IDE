@@ -242,7 +242,7 @@ function toAICord(turns: Turn[]) {
   }
   if (sys) {
     const first = out.find((x) => x.role === "user");
-    const note = `[Context from Pandora Dee Desktop]\n${sys}\n\n[Message]\n`;
+    const note = `[Context from PDA SEASIDE]\n${sys}\n\n[Message]\n`;
     if (first) first.content[0] = { type: "text", text: note + first.content[0].text };
     else out.unshift({ role: "user", content: [{ type: "text", text: note }] });
   }
