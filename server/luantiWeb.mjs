@@ -8,7 +8,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { unzipSync } from "fflate";
 
-export const REPO = "AETHER-ENGINEERS/Pandora-Dee.s-Atelier-Self-Evolving-AI-Sovereign-IDE";
+export const REPO = "AETHER-ENGINEERS/Pandora-Dee.s-Atelier-Self-Aware-Evolving-Adaptive-Sovereign-IDE";
 const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".wasm": "application/wasm", ".css": "text/css", ".json": "application/json", ".pack": "application/octet-stream", ".map": "application/json", ".txt": "text/plain; charset=utf-8", ".png": "image/png", ".svg": "image/svg+xml", ".ttf": "font/ttf", ".woff2": "font/woff2" };
 const err = (message, status = 400) => Object.assign(new Error(message), { status });
 
