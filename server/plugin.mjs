@@ -9,7 +9,7 @@ import { classicRelayScript, helperScript, webxdcScript } from "./inject.mjs";
 import { sshOp } from "./ssh.mjs";
 import { inbound } from "./inbound.mjs";
 import { relay } from "./relay.mjs";
-import { createMusic, listFolders } from "./music.mjs";
+import { createMusic, knownPlace, listFolders } from "./music.mjs";
 import { createAvatars } from "./avatars.mjs";
 import { createCreative } from "./creative.mjs";
 import { createBrowser } from "./browse.mjs";
@@ -840,7 +840,7 @@ export function deskServer() {
     if (parts[0] === "browse" && parts[1] === "key" && m === "GET") return send(res, 200, { key: browser.key });
     if (parts[0] === "folders" && m === "GET") {
       try {
-        return send(res, 200, await listFolders(url.searchParams.get("path") || ""));
+        return send(res, 200, await listFolders(url.searchParams.get("path") || "", path.join(dataDir, "network-places.json"), { newPlaces: onThisPc(req) }));
       } catch (e) {
         return send(res, 400, { error: e instanceof Error ? e.message.replace(/^\w+: /, "") : String(e) });
       }
@@ -852,7 +852,10 @@ export function deskServer() {
       if (parts[1] === "shared" && m === "GET") return send(res, 200, { libraries: devices.libraries() });
       if (parts[1] === "scan" && m === "POST") {
         const b = JSON.parse((await readBody(req, 100_000)).toString("utf8") || "{}");
-        return send(res, 200, await M.scan(Array.isArray(b.folders) ? b.folders.map(String) : M.folders()));
+        const folders = Array.isArray(b.folders) ? b.folders.map(String) : M.folders();
+        // a network place new to this computer is reached from the computer itself first (see listFolders)
+        if (!onThisPc(req)) for (const f of folders) if (!(await knownPlace(f, path.join(dataDir, "network-places.json")))) return send(res, 403, { error: `${f} is a network place this computer hasn't opened yet: open it on the desktop's own computer first.` });
+        return send(res, 200, await M.scan(folders));
       }
       if (parts[1] === "file") return M.serve(req, res, String(url.searchParams.get("id") || ""));
       if (parts[1] === "cover") return void (await M.cover(res, String(url.searchParams.get("id") || "")));

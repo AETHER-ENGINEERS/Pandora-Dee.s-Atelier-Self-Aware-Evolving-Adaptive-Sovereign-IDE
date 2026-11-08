@@ -591,7 +591,7 @@ function Folders({ onFiles, onShared }: { onFiles: () => void; onShared: () => v
           void rescan(folders);
         }}
       >
-        <input className="input mono grow" value={path} placeholder="D:\Music  or  /home/you/Music" onChange={(e) => setPath(e.target.value)} aria-label="Folder to add" />
+        <input className="input mono grow" value={path} placeholder="D:\Music,  \\computer\share  or  /home/you/Music" onChange={(e) => setPath(e.target.value)} aria-label="Folder to add" />
         <button className="btn" type="button" onClick={() => setBrowse(true)}>
           <FolderOpen size={14} /> Browse…
         </button>
@@ -619,6 +619,7 @@ function FolderPicker({ onPick, onClose }: { onPick: (path: string) => void; onC
   const [at, setAt] = useState<{ path: string; parent: string | null; folders: Place[]; audio: number } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(true);
+  const [addr, setAddr] = useState("");
   const go = (p: string) => {
     setError("");
     setBusy(true);
@@ -642,6 +643,20 @@ function FolderPicker({ onPick, onClose }: { onPick: (path: string) => void; onC
           </button>
           <span className="mono small grow ellipsis" title={at?.path}>{at?.path || "This computer"}</span>
         </div>
+        <form
+          className="row"
+          style={{ gap: 6 }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            const v = addr.trim();
+            if (v) go(v.startsWith("\\\\") || v.startsWith("//") || /^[a-z]:/i.test(v) ? v : `\\\\${v}`);
+          }}
+        >
+          <input className="input mono grow" value={addr} onChange={(e) => setAddr(e.target.value)} placeholder="A network place: \\computer\share" aria-label="A folder or network place to open" />
+          <button className="btn small" disabled={!addr.trim()}>
+            Open
+          </button>
+        </form>
         {error ? <div className="small danger-text">{error}</div> : null}
         <div className="folder-list">
           {at?.folders.map((f) => (
