@@ -39,4 +39,5 @@ test("her prompt: her standing, her curiosity, the shape to answer in", () => {
   assert.match(p, /Your last 24 hours: 2k tokens\./);
   assert.match(p, /tidal music/);
   assert.match(p, /IN THE ROOM:\n[\s\S]*INSIDE:/);
+  assert.match(p, /say it was earlier and who it was with/);
 });

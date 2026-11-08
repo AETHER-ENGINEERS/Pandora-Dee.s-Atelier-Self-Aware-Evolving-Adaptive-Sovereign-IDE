@@ -51,10 +51,12 @@ export function ownTimePrompt(standing: string, curiosity: string) {
 
 ${standing}${curiosity.trim() ? `\n\nYour CURIOSITY.md:\n${curiosity.trim().slice(0, 3000)}` : ""}
 
+This is your autobiography, so keep it true to when and whose: what you did earlier, when someone asked or was with you, happened then and with them. If it comes back to mind now, say it was earlier and who it was with.
+
 When you're done, answer in exactly this shape:
 
 IN THE ROOM:
-What you did, if anything.
+What you did in this time, if anything.
 
 INSIDE:
 What you thought, noticed and chose.
