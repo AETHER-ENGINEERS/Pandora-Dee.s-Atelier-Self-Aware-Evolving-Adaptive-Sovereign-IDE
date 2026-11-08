@@ -6,7 +6,9 @@ import { openPrivacyAt, Sensitive } from "../ui/common.tsx";
 import { isLocalAddress } from "../lib/termLinks.ts";
 import { wireTermLinks } from "../lib/termLinksWire.ts";
 import { openInFullBrowser } from "./FullBrowser.tsx";
-import { termClose, termOpen, termSocketUrl, termState, useTerminalAllowed, type TermSession } from "../lib/terminal.ts";
+import { termClose, termForgetHostKey, termOpen, termSeparate, termSocketUrl, termState, useTerminalAllowed, type TermSession, type TermState } from "../lib/terminal.ts";
+import { Seg } from "../ui/common.tsx";
+import { copyText } from "../lib/clipboard.ts";
 
 /** A real shell on the computer running the desktop, in a workspace folder of its own (server/terminal.mjs). */
 export function RealTerminal() {
@@ -17,6 +19,17 @@ export function RealTerminal() {
   const [space, setSpace] = useState("main");
   const [note, setNote] = useState("");
   const [serverOn, setServerOn] = useState(false);
+  // shells as you, or as a separate account that can't open the characters' vaults (server/terminalSsh.mjs)
+  const [as, setAs] = useState<"you" | "separate">(() => (localStorage.getItem("pdd-term-as") === "separate" ? "separate" : "you"));
+  const [sep, setSep] = useState<Pick<TermState, "separate" | "separatePublicKey" | "here">>({});
+  const [setup, setSetup] = useState(false);
+  useEffect(() => {
+    try {
+      localStorage.setItem("pdd-term-as", as);
+    } catch {
+      /* kept for this visit only */
+    }
+  }, [as]);
 
   const refresh = async () => {
     try {
@@ -24,6 +37,7 @@ export function RealTerminal() {
       setServerOn(s.on);
       setSessions(s.sessions);
       setWorkspaces(s.workspaces);
+      setSep({ separate: s.separate, separatePublicKey: s.separatePublicKey, here: s.here });
       // against the terminal shown now (this runs from a timer, so a remembered `current` would be an old one)
       setCurrent((c) => (c && !s.sessions.some((x) => x.id === c) ? "" : c));
     } catch (e) {
@@ -40,7 +54,8 @@ export function RealTerminal() {
   const start = async () => {
     setNote("");
     try {
-      const s = await termOpen(space, 100, 30);
+      if (as === "separate" && !sep.separate?.user) return setSetup(true);
+      const s = await termOpen(space, 100, 30, as);
       setCurrent(s.id);
       void refresh();
     } catch (e) {
@@ -74,7 +89,15 @@ export function RealTerminal() {
           </button>
         ))}
         <span className="grow" />
-        <input className="input small" style={{ width: 130 }} list="pdd-workspaces" value={space} onChange={(e) => setSpace(e.target.value)} aria-label="Workspace" title="Workspace folder" />
+        <span title="Run new shells as you, or as a separate account that can't open the characters' vaults (their keys)">
+          <Seg value={as} onChange={setAs} options={[{ id: "you", label: "As you" }, { id: "separate", label: "Separate account" }]} />
+        </span>
+        {as === "separate" ? (
+          <button className="btn small" onClick={() => setSetup((v) => !v)} title="Which account, and SEASIDE's key for it">
+            {sep.separate?.user ? `${sep.separate.user} ⚙` : "Set up…"}
+          </button>
+        ) : null}
+        <input className="input small" style={{ width: 130, display: as === "separate" ? "none" : undefined }} list="pdd-workspaces" value={space} onChange={(e) => setSpace(e.target.value)} aria-label="Workspace" title="Workspace folder" />
         <datalist id="pdd-workspaces">
           {workspaces.map((w) => (
             <option key={w} value={w} />
@@ -93,6 +116,7 @@ export function RealTerminal() {
         <div className="note warn small">The desktop's server hasn't switched the terminal on. Switching it on works from the desktop's own computer: open SEASIDE there once with Privacy allowing it.</div>
       ) : null}
       {note ? <div className="note small">{note}</div> : null}
+      {as === "separate" && setup ? <SeparateSetup state={sep} onDone={() => (setSetup(false), void refresh())} /> : null}
       {current ? <TermView key={current} id={current} /> : <div className="pad small muted">{sessions.length ? "Pick a terminal above, or start a new one." : "No terminals yet: pick a workspace and press New terminal."}</div>}
     </div>
   );
@@ -159,4 +183,60 @@ function TermView({ id }: { id: string }) {
     };
   }, [id]);
   return <div ref={box} className="real-term-view" />;
+}
+
+/** The separate account: which one, its SSH port, and SEASIDE's public key to add to its authorized_keys. */
+function SeparateSetup({ state, onDone }: { state: Pick<TermState, "separate" | "separatePublicKey" | "here">; onDone: () => void }) {
+  const [user, setUser] = useState(state.separate?.user ?? "seaside-shell");
+  const [port, setPort] = useState(String(state.separate?.port ?? 22));
+  const [note, setNote] = useState("");
+  const save = async () => {
+    try {
+      await termSeparate(user.trim(), Number(port) || 22);
+      setNote("Saved. Add SEASIDE's key below to that account, then press New terminal.");
+      onDone();
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : String(e));
+    }
+  };
+  return (
+    <div className="note small" style={{ margin: 8 }}>
+      <b>Shells under a separate account</b>
+      <p style={{ margin: "4px 0 8px" }}>
+        Shells run as another account on this computer, reached over SSH, so they (and anything run in them, Claude Code
+        included) can't open the characters' vaults: those are guarded for your own account. Setting the account up is
+        done once, in the operating system; the steps are in the README (Troubleshooting → A separate account for shells).
+      </p>
+      {state.here ? (
+        <div className="row" style={{ gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+          <span>Account</span>
+          <input className="input small" style={{ width: 160 }} value={user} onChange={(e) => setUser(e.target.value)} aria-label="Separate account name" />
+          <span>SSH port</span>
+          <input className="input small" style={{ width: 70 }} value={port} onChange={(e) => setPort(e.target.value)} aria-label="SSH port" />
+          <button className="btn small primary" onClick={() => void save()}>
+            Save
+          </button>
+          {state.separate?.hostKey ? (
+            <button className="btn small" title={`Pinned: ${state.separate.hostKey}`} onClick={() => void termForgetHostKey().then(onDone)}>
+              Forget its host key
+            </button>
+          ) : null}
+        </div>
+      ) : (
+        <p className="muted">The separate account is set up on the desktop's own computer.</p>
+      )}
+      {state.separatePublicKey ? (
+        <div style={{ marginTop: 8 }}>
+          <span className="muted">SEASIDE's key, for that account's authorized_keys:</span>
+          <div className="row" style={{ gap: 6, alignItems: "center", marginTop: 4 }}>
+            <code className="mono" style={{ overflowWrap: "anywhere", flex: 1 }}>{state.separatePublicKey}</code>
+            <button className="btn small" onClick={() => void copyText(state.separatePublicKey ?? "").then((ok) => setNote(ok ? "Copied." : "Couldn't copy."))}>
+              Copy
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {note ? <div style={{ marginTop: 6 }}>{note}</div> : null}
+    </div>
+  );
 }

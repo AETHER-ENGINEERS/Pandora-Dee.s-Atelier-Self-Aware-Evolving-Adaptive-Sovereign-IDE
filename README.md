@@ -172,6 +172,32 @@ back.
 own (Connections → Web) or an Ollama key (Keys → `OLLAMA_API_KEY`) is steadier. Characters can also search in their own
 browser tab, like anyone browsing. Both need Privacy → **Web access for characters**.
 
+**A separate account for shells.** Shells in the real terminal normally run as you, so they could reach the
+characters' vaults (each vault's master key is guarded for your own account). Terminal → Real terminal → **Separate
+account** runs them as another account instead, over SSH to this computer: they, and anything run in them (Claude Code
+included), can't open any character's keys. It still reads whatever your drives let every account read, so keep private
+folders private. Set it up once (as an administrator):
+
+- **Windows** (PowerShell as administrator), one line each:
+
+  ```powershell
+  Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+  net user seaside-shell (New-Guid).Guid /add
+  ```
+
+  Then in `C:\ProgramData\ssh\sshd_config`, so it's reachable from this computer only and by key only:
+  `ListenAddress 127.0.0.1`, `PasswordAuthentication no` and `AllowUsers seaside-shell`. Start it:
+  `Set-Service sshd -StartupType Automatic; Start-Service sshd`. Put SEASIDE's key (Terminal → Separate account → Copy)
+  in `C:\Users\seaside-shell\.ssh\authorized_keys`, readable only by that account, SYSTEM and Administrators:
+  `icacls C:\Users\seaside-shell\.ssh\authorized_keys /inheritance:r /grant "seaside-shell:R" /grant "SYSTEM:F" /grant "Administrators:F"`.
+- **Mac**: System Settings → Users & Groups → add a Standard user `seaside-shell`; General → Sharing → Remote Login on,
+  for that user only; put SEASIDE's key in `/Users/seaside-shell/.ssh/authorized_keys` (owned by that user, mode 600).
+- **Linux**: `sudo adduser --disabled-password seaside-shell`, install `openssh-server`, set `ListenAddress 127.0.0.1`
+  and `PasswordAuthentication no`, and put the key in `~seaside-shell/.ssh/authorized_keys` (mode 600).
+
+The first shell pins this computer's SSH host key; if it ever changes, SEASIDE refuses until you forget the old one
+there.
+
 **Keys or passwords don't show on a phone.** They only open on the computer itself or over Tailscale's https, never over
 plain Wi-Fi http. See *On your phone* above.
 

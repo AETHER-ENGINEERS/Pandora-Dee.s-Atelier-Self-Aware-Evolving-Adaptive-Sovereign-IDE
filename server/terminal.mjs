@@ -21,7 +21,8 @@ export function workspaceName(name) {
   return n || "main";
 }
 
-export function createTerminals({ dataDir, spawn, shell = defaultShell() }) {
+/** separate(opts): a shell under the separate account (terminalSsh.mjs's sshShell, with SEASIDE's key filled in). */
+export function createTerminals({ dataDir, spawn, shell = defaultShell(), separate = null, keyFor = null }) {
   const dir = () => path.join(typeof dataDir === "function" ? dataDir() : dataDir, "workspaces");
   const settingsFile = () => path.join(typeof dataDir === "function" ? dataDir() : dataDir, "terminal.json");
   const sessions = new Map();
@@ -40,10 +41,27 @@ export function createTerminals({ dataDir, spawn, shell = defaultShell() }) {
     return settings();
   };
 
+  /** The separate account shells can run as (over SSH to this computer): who, which port, the pinned host key. */
+  const setSeparate = ({ user, port }) => {
+    const u = String(user || "").trim();
+    if (u && !/^[A-Za-z0-9._-]{1,64}$/.test(u)) throw Object.assign(new Error("That doesn't look like an account name."), { status: 400 });
+    const prev = settings().separate ?? {};
+    const next = u ? { user: u, port: Math.max(1, Math.min(65535, Number(port) || 22)), hostKey: prev.user === u ? prev.hostKey : undefined } : undefined;
+    fs.mkdirSync(path.dirname(settingsFile()), { recursive: true });
+    fs.writeFileSync(settingsFile(), JSON.stringify({ ...settings(), separate: next }, null, 1));
+    return settings();
+  };
+  const forgetHostKey = () => {
+    const sep = settings().separate;
+    if (sep) fs.writeFileSync(settingsFile(), JSON.stringify({ ...settings(), separate: { ...sep, hostKey: undefined } }, null, 1));
+    return settings();
+  };
+
   const info = (s) => ({ id: s.id, workspace: s.workspace, folder: s.folder, title: s.title, started: s.started, alive: s.alive, viewers: s.clients.size });
 
-  function open({ workspace, cols = 100, rows = 30 } = {}) {
+  function open({ workspace, cols = 100, rows = 30, as = "you" } = {}) {
     if (!settings().on) throw Object.assign(new Error("The real terminal is off (Settings → Privacy)."), { status: 403 });
+    if (as === "separate") return openSeparate({ cols, rows });
     const name = workspaceName(workspace);
     const folder = path.join(dir(), name);
     fs.mkdirSync(folder, { recursive: true });
@@ -55,7 +73,11 @@ export function createTerminals({ dataDir, spawn, shell = defaultShell() }) {
       cwd: folder,
       env: { ...process.env, TERM: "xterm-256color", COLORTERM: "truecolor", PDA_SEASIDE_WORKSPACE: folder },
     });
-    const s = { id, workspace: name, folder, title: `${name} · ${path.basename(shell.file)}`, started: Date.now(), alive: true, pty, clients: new Set(), kept: "" };
+    return track(id, pty, { workspace: name, folder, title: `${name} · ${path.basename(shell.file)}` });
+  }
+
+  function track(id, pty, { workspace, folder, title }) {
+    const s = { id, workspace, folder, title, started: Date.now(), alive: true, pty, clients: new Set(), kept: "" };
     pty.onData((d) => {
       s.kept = (s.kept + d).slice(-KEEP);
       for (const c of s.clients) c.sendBinary(Buffer.from(d, "utf8"));
@@ -66,6 +88,22 @@ export function createTerminals({ dataDir, spawn, shell = defaultShell() }) {
     });
     sessions.set(id, s);
     return info(s);
+  }
+
+  /** A shell under the separate account: it can't unseal the characters' vaults. */
+  function openSeparate({ cols, rows }) {
+    const sep = settings().separate;
+    if (!sep?.user || !separate) throw Object.assign(new Error("Set up the separate account first (Terminal → Separate account)."), { status: 400 });
+    const id = crypto.randomBytes(9).toString("base64url");
+    const pty = separate({
+      user: sep.user,
+      port: sep.port,
+      pin: sep.hostKey,
+      remember: (fp) => fs.writeFileSync(settingsFile(), JSON.stringify({ ...settings(), separate: { ...settings().separate, hostKey: fp } }, null, 1)),
+      cols: Math.max(20, Math.min(400, cols | 0 || 100)),
+      rows: Math.max(5, Math.min(200, rows | 0 || 30)),
+    });
+    return track(id, pty, { workspace: "separate", folder: `${sep.user}'s home (separate account)`, title: `${sep.user} · separate account` });
   }
 
   function close(id) {
@@ -105,8 +143,14 @@ export function createTerminals({ dataDir, spawn, shell = defaultShell() }) {
   }
 
   return {
-    settings,
+    settings: () => {
+      const st = settings();
+      // the separate account's public key, for its authorized_keys (made the first time it's asked for)
+      return { ...st, separatePublicKey: st.separate && keyFor ? keyFor() : undefined };
+    },
     setOn,
+    setSeparate,
+    forgetHostKey,
     open,
     close,
     attach,

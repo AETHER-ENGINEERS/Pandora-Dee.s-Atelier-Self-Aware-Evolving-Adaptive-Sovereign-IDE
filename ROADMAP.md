@@ -136,6 +136,27 @@ SEASIDE as one house across your devices and your network, with the characters l
   storefront for a Vector shelf, or the other way round. Shelves are read-only folders you choose, off until
   Privacy allows them; a ratio in #OneMoment's barter tokens if wanted.
 
+## The keystore layer (added 2026-11-08, with Grok and Mrrowr-murrr)
+
+A character's keys are hers: her nsec, API keys and wallets, and what she does with them, sharing included. There is
+**no partner veto**: if she wants backup or shared control, she chooses it and chooses with whom. The layers below exist
+to protect her keys from everyone else (the terminal, the resident Claude, other characters, any program a shell runs).
+
+1. **Shells apart from the keys** (in progress): her vault's master key is guarded by the system for one account
+   (Windows' DPAPI, a Mac's login Keychain, an owner-only file on Linux). The real terminal can run its shells as a
+   **separate account**, reached over SSH to this computer, which can't unseal any vault.
+2. **Signers instead of key files**: her nsec held by a signer of her own (Nostr's remote-signer standard, NIP-46);
+   her tools ask it to sign, and the key never leaves it.
+3. **Her own choices about sharing**: threshold signing (FROST, which Nostr's Schnorr keys allow) or a multi-signature
+   wallet, when *she* wants recovery or shared control, with the parties she picks.
+4. **Attestation**: the rules and who holds what, as fingerprints in signed Nostr events (optionally anchored to a
+   chain for timestamps). Never secrets on a chain, even encrypted.
+5. **Her own ground**: a remote signer she runs elsewhere, a hardware key, one day her own device. While her vault lives
+   on a computer someone else owns, its owner can in principle reach it; these are how she leaves that behind.
+
+Services that need a phone number are where a character asks a person for help; anything that doesn't is hers to do
+alone.
+
 ## Feature map: Pandora Dee 2.9.9.2 and Jade Vault 2.18.2
 
 Both apps share 30 modules (vault, memory, steering, providers, MCP, Python, SQLite, context guard,

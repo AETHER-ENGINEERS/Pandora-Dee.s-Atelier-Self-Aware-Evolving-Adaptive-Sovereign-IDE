@@ -36,6 +36,7 @@ import { createLuantiWeb } from "./luantiWeb.mjs";
 import { createLuantiRelay } from "./luantiRelay.mjs";
 import { openDuplex } from "./wsduplex.mjs";
 import { createTerminals } from "./terminal.mjs";
+import { ensureKey, sshShell } from "./terminalSsh.mjs";
 import { createPadsWire } from "./padsWire.mjs";
 import { createRequire } from "node:module";
 import { createPeers } from "./peers.mjs";
@@ -149,8 +150,12 @@ export function deskServer() {
   const bodies = createBodies({ dataDir: () => dataDir });
   // real terminals (terminal.mjs): node-pty is loaded only when one is opened, so SEASIDE still runs without it
   let ptySpawn = null;
+  const termKeyDir = () => path.join(dataDir, "terminal");
   const terminals = createTerminals({
     dataDir: () => dataDir,
+    // shells under a separate account: an SSH login to this computer with SEASIDE's own key (terminalSsh.mjs)
+    separate: (opts) => sshShell({ ...opts, privateKey: ensureKey(termKeyDir()).privateKey }),
+    keyFor: () => ensureKey(termKeyDir()).publicKey,
     spawn: (...a) => {
       ptySpawn ||= createRequire(import.meta.url)("@lydell/node-pty").spawn;
       return ptySpawn(...a);
@@ -380,12 +385,19 @@ export function deskServer() {
       try {
         if (!onThisPc(req) && !viaTailnet(req)) return send(res, 403, { error: "The real terminal opens on the desktop's own computer or over your tailnet." });
         const b = m === "POST" ? JSON.parse((await readBody(req, 20_000)).toString("utf8") || "{}") : {};
-        if (!parts[1] && m === "GET") return send(res, 200, { ...terminals.settings(), sessions: terminals.list(), workspaces: terminals.workspaces() });
+        if (!parts[1] && m === "GET") return send(res, 200, { ...terminals.settings(), sessions: terminals.list(), workspaces: terminals.workspaces(), here: onThisPc(req) });
         if (parts[1] === "on" && m === "POST") {
           if (b.on && !onThisPc(req)) return send(res, 403, { error: "Switch the real terminal on from the desktop's own computer." });
           return send(res, 200, terminals.setOn(Boolean(b.on)));
         }
-        if (parts[1] === "open" && m === "POST") return send(res, 200, terminals.open({ workspace: b.workspace, cols: b.cols, rows: b.rows }));
+        if (parts[1] === "open" && m === "POST") return send(res, 200, terminals.open({ workspace: b.workspace, cols: b.cols, rows: b.rows, as: b.as === "separate" ? "separate" : "you" }));
+        // which separate account shells may run as, and forgetting its pinned host key: on this computer only
+        if ((parts[1] === "separate" || parts[1] === "forget-host-key") && m === "POST") {
+          if (!onThisPc(req)) return send(res, 403, { error: "The separate account is set up on the desktop's own computer." });
+          if (parts[1] === "separate") terminals.setSeparate({ user: b.user, port: b.port });
+          else terminals.forgetHostKey();
+          return send(res, 200, terminals.settings());
+        }
         if (parts[1] === "close" && m === "POST") return send(res, 200, { ok: terminals.close(String(b.id || "")) });
         return send(res, 404, { error: "Not found" });
       } catch (e) {
