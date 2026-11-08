@@ -367,11 +367,29 @@ export function RoomApp() {
                 </div>
                 {m.tools?.length ? (
                   <div className="tools">
-                    {m.tools.map((t, i) => (
-                      <span key={i} className={t.ok ? "" : "fail"}>
-                        {t.note}
-                      </span>
-                    ))}
+                    {m.tools.map((t, i) =>
+                      t.args === undefined && t.out === undefined ? (
+                        <span key={i} className={t.ok ? "" : "fail"}>
+                          {t.note}
+                        </span>
+                      ) : (
+                        <details key={i} className={`tool-row${t.running ? " running" : t.ok ? " ok" : " fail"}${t.desk ? " desk" : ""}`}>
+                          <summary>
+                            <span className="mark">{t.running ? "…" : t.desk ? "!" : t.ok ? "✓" : "✗"}</span>
+                            {t.note}
+                            {t.ms !== undefined ? <span className="faint"> · {t.ms < 1000 ? `${t.ms} ms` : `${(t.ms / 1000).toFixed(1)} s`}</span> : null}
+                          </summary>
+                          {t.args && t.args !== "{}" ? (
+                            <>
+                              <div className="tool-label">Sent</div>
+                              <pre>{t.args}</pre>
+                            </>
+                          ) : null}
+                          <div className="tool-label">{t.desk ? "The desk's note" : "Came back"}</div>
+                          {t.out !== undefined ? <pre>{t.out || "(nothing)"}</pre> : <div className="faint small">Running…</div>}
+                        </details>
+                      ),
+                    )}
                   </div>
                 ) : null}
                 {c && m.thinking && s.chat.thinking !== "hidden" ? (

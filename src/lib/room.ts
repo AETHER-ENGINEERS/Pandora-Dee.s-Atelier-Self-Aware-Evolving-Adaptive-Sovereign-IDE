@@ -5,6 +5,9 @@ import { skillsNote } from "./skills.ts";
 
 export type Source = "desk" | "discord" | "vector";
 
+/** One tool call in a reply. args and out are trimmed and have key values blanked; desk marks the desk's own note. */
+export type ToolUse = { name: string; ok: boolean; note: string; args?: string; out?: string; ms?: number; running?: boolean; desk?: boolean };
+
 export type Message = {
   id: string;
   kind: "human" | "character" | "notice";
@@ -19,8 +22,8 @@ export type Message = {
   source: Source;
   /** True for a character turn that chose not to speak. */
   pass?: boolean;
-  /** Tools the character used while answering. */
-  tools?: { name: string; ok: boolean; note: string }[];
+  /** Tools the character used while answering: each call as it runs, then what it sent and what came back. */
+  tools?: ToolUse[];
   error?: boolean;
   /** Where a bridge message came from, so the reply can go back. */
   bridge?: { chatId: string; msgId?: string; author?: string; isGroup?: boolean };

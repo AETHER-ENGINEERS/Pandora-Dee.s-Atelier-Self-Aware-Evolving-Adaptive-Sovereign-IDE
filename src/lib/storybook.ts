@@ -36,7 +36,8 @@ export const sceneText = (at: Date, scene: { room: string; inside: string }) =>
   `\n## ${at.toISOString().replace(/\.\d+Z$/, "Z")}\n\n### In the room\n${scene.room}\n\n### Inside\n${scene.inside}\n`;
 
 /** The desktop's own note under a scene: which tools actually ran in that time (her account stays hers, beside it). */
-export function ranNote(used: { note: string; ok: boolean }[]) {
+export function ranNote(all: { note: string; ok: boolean; desk?: boolean }[]) {
+  const used = all.filter((u) => !u.desk);
   if (!used.length) return "\n*The desktop's record: no tools ran in this time.*\n";
   const list = used.slice(0, 20).map((u) => `${u.note}${u.ok ? "" : " (it failed)"}`).join("; ");
   return `\n*The desktop's record of what ran: ${list}${used.length > 20 ? `; and ${used.length - 20} more` : ""}.*\n`;

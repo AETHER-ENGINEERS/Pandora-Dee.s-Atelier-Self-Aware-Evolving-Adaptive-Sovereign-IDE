@@ -38,7 +38,7 @@ import { allKeyValues, envFor } from "./residentKeys.ts";
 import { isLimitError, recordLimit, recordUsage } from "./meter.ts";
 import type { UsageKind } from "./meterCore.ts";
 import { record } from "./trajectories.ts";
-import { isImage, splitThink, type Attachment } from "./room.ts";
+import { isImage, splitThink, type Attachment, type ToolUse } from "./room.ts";
 
 let controller: AbortController | null = null;
 let running = false;
@@ -76,6 +76,14 @@ const PARALLEL = new Set(["web_search", "web_fetch", "notes_search", "note_read"
  * Connections that just failed rest for a few minutes: turns go straight to the next one instead of
  * waiting on them every time, and they're tried first again once the rest is over.
  */
+/** What a tool call sent and got back, for the reply's tool rows: trimmed, with every key value blanked. */
+const shownArgs = (args: Record<string, unknown>) => redactKeys(JSON.stringify(args, null, 1), allKeyValues()).slice(0, 800);
+const shownOut = (text: string) => {
+  const t = redactKeys(text, allKeyValues());
+  return t.length > 1600 ? `${t.slice(0, 1600)}
+… (${t.length - 1600} more characters)` : t;
+};
+
 const SEEN = "[Your browser tab, as it looks now]";
 const SEEN_BEFORE = "[An earlier picture of your browser tab]";
 const REST_MS = 3 * 60_000;
@@ -129,7 +137,7 @@ async function ensureModel(conn: Connection, model: string, signal: AbortSignal,
   return found;
 }
 
-type TurnResult = { text: string; ok: boolean; used?: { name: string; ok: boolean; note: string }[] };
+type TurnResult = { text: string; ok: boolean; used?: ToolUse[] };
 
 /**
  * One character takes one turn: builds its prompt, streams the reply into a new room
@@ -318,6 +326,8 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
           const missed = !noteGiven && step < ai.maxSteps ? missedTool(`${result.thinking}\n${parts.thinking}`, parts.text, tools.map((t) => t.name)) : null;
           if (missed) {
             noteGiven = true;
+            used.push({ name: missed, ok: false, note: `meant to use ${missed}, didn't call it`, out: missedNote(missed), desk: true });
+            patch({ tools: [...used] });
             turns.push({ role: "assistant", content: result.text });
             turns.push({ role: "user", content: missedNote(missed) });
             continue;
@@ -336,12 +346,20 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
           if (PARALLEL.has(calls[i].name)) while (j < calls.length && PARALLEL.has(calls[j].name)) j++;
           const group = calls.slice(i, j);
           setBusy(me.id, group.length > 1 ? `${describeCall(group[0].name, group[0].args)} and ${group.length - 1} more` : describeCall(group[0].name, group[0].args));
-          const outs = await Promise.all(group.map((call) => runTool(tools, ctx, call.name, call.args)));
-          group.forEach((call, k) => {
-            used.push({ name: call.name, ok: outs[k].ok, note: describeCall(call.name, call.args) });
-            turns.push({ role: "tool", content: outs[k].text.slice(0, 12000), callId: call.id, name: call.name });
-          });
+          // each call shows as it starts, and fills in (✓ or ✗, how long, what came back) as it ends
+          const from = used.length;
+          for (const call of group) used.push({ name: call.name, ok: true, note: describeCall(call.name, call.args), args: shownArgs(call.args), running: true });
           patch({ tools: [...used] });
+          const outs = await Promise.all(
+            group.map(async (call, k) => {
+              const t0 = Date.now();
+              const out = await runTool(tools, ctx, call.name, call.args);
+              used[from + k] = { ...used[from + k], ok: out.ok, out: shownOut(out.text), ms: Date.now() - t0, running: false };
+              patch({ tools: [...used] });
+              return out;
+            }),
+          );
+          group.forEach((call, k) => turns.push({ role: "tool", content: outs[k].text.slice(0, 12000), callId: call.id, name: call.name }));
           i = j;
         }
         // what a tool showed her (her browser tab) comes as a picture after the results; only the newest stays a
@@ -661,14 +679,14 @@ export async function privately(charId: string, instruction: string, history?: M
 }
 
 /** The same, with the record of which tools actually ran (for her Storybook, beside her own account). */
-export async function privatelyWithRecord(charId: string, instruction: string, history?: Message[], kind: UsageKind = "helper"): Promise<{ text: string; used: { name: string; ok: boolean; note: string }[] }> {
+export async function privatelyWithRecord(charId: string, instruction: string, history?: Message[], kind: UsageKind = "helper"): Promise<{ text: string; used: ToolUse[] }> {
   const c = desk().character(charId);
   if (!c) return { text: "", used: [] };
   if (history) {
     const r = await takeTurn(c, { scope: "locksmith", instruction, silent: true, history, signal: new AbortController().signal, helper: true, kind });
     return { text: r.text, used: r.used ?? [] };
   }
-  let out: { text: string; used: { name: string; ok: boolean; note: string }[] } = { text: "", used: [] };
+  let out: { text: string; used: ToolUse[] } = { text: "", used: [] };
   await withRun(async () => {
     const r = await takeTurn(c, { scope: "locksmith", instruction, silent: true, helper: true, kind });
     out = { text: r.text, used: r.used ?? [] };

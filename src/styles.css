@@ -252,6 +252,19 @@ body.dragging-window iframe, body.dragging-window webview { pointer-events: none
 .msg .tools { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
 .msg .tools span { font-size: .78em; padding: 1px 8px; border-radius: 99px; background: rgba(255, 255, 255, .05); color: var(--muted); border: 1px solid var(--line); }
 .msg .tools span.fail { color: var(--bad); }
+/* each tool call in a reply: a row that opens to what was sent and what came back */
+.msg .tools:has(.tool-row) { flex-direction: column; flex-wrap: nowrap; gap: 3px; }
+.tool-row { font-size: .8em; border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, .03); color: var(--muted); }
+.tool-row > summary { cursor: pointer; padding: 2px 8px; list-style: none; display: flex; gap: 6px; align-items: baseline; overflow-wrap: anywhere; }
+.tool-row > summary::-webkit-details-marker { display: none; }
+.tool-row .mark { flex: none; width: 1em; text-align: center; font-weight: 600; }
+.tool-row.ok .mark { color: var(--good); }
+.tool-row.fail .mark, .tool-row.fail > summary { color: var(--bad); }
+.tool-row.desk .mark, .tool-row.desk > summary { color: var(--warn, #d9a441); }
+.tool-row.running .mark { animation: tool-pulse 1s ease-in-out infinite; }
+@keyframes tool-pulse { 50% { opacity: .3; } }
+.tool-row .tool-label { padding: 4px 8px 0; font-size: .85em; color: var(--faint); }
+.tool-row pre { margin: 2px 8px 6px; padding: 6px 8px; max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: rgba(0, 0, 0, .25); border-radius: 6px; font-size: .95em; }
 .msg .msg-actions { opacity: 0; display: flex; gap: 2px; margin-top: 2px; transition: opacity .1s; }
 .msg:hover .msg-actions { opacity: 1; }
 .msg-actions button { border: 0; background: transparent; color: var(--faint); font-size: .8em; padding: 2px 6px; border-radius: 5px; }
