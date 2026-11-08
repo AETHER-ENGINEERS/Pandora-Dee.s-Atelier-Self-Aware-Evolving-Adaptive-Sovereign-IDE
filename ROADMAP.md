@@ -156,7 +156,10 @@ SEASIDE as one house across your devices and your network, with the characters l
 - **A local cloud**: linked servers as data sources for each other. Browse and play across all of them, copy to
   storage in either direction (phone → computer for keeping, computer → phone for the road), keep chosen folders in
   step. ✅ Started in the browser: Music's shared libraries (each device's songs played from it, or copied to the
-  server).
+  server), and network places in Music's folder picker (\\computer\share; mapped drives named).
+- **The same for Explorer, Theater (video) and pictures**: other devices' shared folders and the network places show
+  up in each, played or opened from where they are, with copying either way. One sharing layer under all of them
+  (what Music's shared libraries use today), so a device shares a folder once and every app sees it as its kind.
 - **Android's own music catalogue (MediaStore)**: the native app asks for music access the way players do, so the
   phone's whole library is shared without picking, in the background, with no page open.
 - **Links between servers that can't see each other**: PIPE NERD (bonded, encrypted priority lanes between trusted
