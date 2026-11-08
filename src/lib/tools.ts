@@ -419,10 +419,10 @@ async function browserStep(id: string, a: Step): Promise<string | undefined> {
 const BROWSER: Tool = {
   name: "browser",
   description:
-    "The desktop's own browser, a real Chromium: your own tab, which shows in the Browser window so people can watch and take over. open (url): go to a page in your tab. read: the page as text, with a number for each thing you can use. look: see the tab as a picture (for a model that sees images); points are in that picture's pixels, 0,0 top left. By number: click (ref), type (ref, text, submit), select (ref, value), press (key), scroll (down), back. By hand, at points: move, click_at, double_click_at, right_click_at, mouse_down, mouse_up (x, y), drag (x, y to to_x, to_y, or through path), wheel (x, y, dy), type_keys (text, into whatever has focus), key (a key or chord such as Control+A). record (name) starts saving your steps, stop_recording keeps them as macros/<name>.json in your files, replay (name) runs them again, macros lists them. After each step you get the page again; numbers change when the page does. Keys go in as {{NAME}} (yours first); passwords only that way. Your adventure log (adventures/ in your files) notes where you went and what you met.",
+    "Your web browser, the same one people use here: go to pages, search, read, look, click and type, like anyone browsing. Your own tab shows in the Browser window, so people can watch and take over. open (url, or words to search for): go to a page in your tab, or search DuckDuckGo with the words. read: the page as text, with a number for each thing you can use. look: see the tab as a picture (for a model that sees images); points are in that picture's pixels, 0,0 top left. By number: click (ref), type (ref, text, submit), select (ref, value), press (key), scroll (down), back. By hand, at points: move, click_at, double_click_at, right_click_at, mouse_down, mouse_up (x, y), drag (x, y to to_x, to_y, or through path), wheel (x, y, dy), type_keys (text, into whatever has focus), key (a key or chord such as Control+A). record (name) starts saving your steps, stop_recording keeps them as macros/<name>.json in your files, replay (name) runs them again, macros lists them. After each step you get the page again; numbers change when the page does. Keys go in as {{NAME}} (yours first); passwords only that way. Your adventure log (adventures/ in your files) notes where you went and what you met.",
   parameters: obj({
     action: { type: "string", description: "open, read, look, click, type, select, press, scroll, back, move, click_at, double_click_at, right_click_at, mouse_down, mouse_up, drag, wheel, type_keys, key, record, stop_recording, replay or macros" },
-    url: { type: "string", description: "open: the address" },
+    url: { type: "string", description: "open: an address, or words to search for" },
     ref: { type: "number", description: "click, type, select: the thing's number from the page" },
     text: { type: "string", description: "type, type_keys: what to type ({{NAME}} for a key)" },
     submit: { type: "boolean", description: "type: press Enter after" },
@@ -736,7 +736,7 @@ ${(await gameScreen.read()).slice(0, 4000) || "(the screen has no readable text)
 const WEB: Tool[] = [
   {
     name: "web_search",
-    description: "Search the web. Returns titles, addresses and snippets. Use it for current information, docs and error messages.",
+    description: "Search the web. Returns titles, addresses and snippets. Use it for current information, docs and error messages. To see a page, or to search the way a person does, use your browser.",
     parameters: obj({ query: { type: "string", description: "What to search for" }, max: { type: "number", description: "How many results (1-10)" } }, ["query"]),
     run: async (_id, a) => webSearch(str(a.query), Number(a.max) || 5),
   },

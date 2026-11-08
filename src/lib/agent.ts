@@ -32,6 +32,7 @@ import type { Role } from "./flood.ts";
 import { currentChat } from "./chats.ts";
 import { compact, shouldCompact } from "./context.ts";
 import { fitTurns, isCtxError, learnLimit, learnedLimit, sizeOf } from "./ctxfit.ts";
+import { missedNote, missedTool } from "./missedTool.ts";
 import { bookFor, bookHeader, parseScene, redactKeys, sceneText } from "./storybook.ts";
 import { allKeyValues, envFor } from "./residentKeys.ts";
 import { isLimitError, recordLimit, recordUsage } from "./meter.ts";
@@ -269,6 +270,7 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
       const known = learnedLimit(ctxKey);
       if (known) fitTurns(turns, known, toolsJson());
       let ctxTries = 0;
+      let noteGiven = false;
       let final = "";
       let thought = "";
       for (let step = 0; step <= ai.maxSteps; step++) {
@@ -311,6 +313,15 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
         recordUsage(me.id, kindOf(opts), conn.label, result.usage);
         thought = [thought, result.thinking.trim()].filter(Boolean).join("\n\n");
         if (!result.toolCalls.length) {
+          // she meant to call a tool and didn't: the desk says so plainly, once a turn, and she goes on from there
+          const parts = splitThink(result.text);
+          const missed = !noteGiven && step < ai.maxSteps ? missedTool(`${result.thinking}\n${parts.thinking}`, parts.text, tools.map((t) => t.name)) : null;
+          if (missed) {
+            noteGiven = true;
+            turns.push({ role: "assistant", content: result.text });
+            turns.push({ role: "user", content: missedNote(missed) });
+            continue;
+          }
           final = shown + result.text;
           turns.push({ role: "assistant", content: result.text });
           break;

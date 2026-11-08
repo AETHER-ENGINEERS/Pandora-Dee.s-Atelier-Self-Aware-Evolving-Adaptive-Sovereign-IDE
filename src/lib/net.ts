@@ -83,7 +83,7 @@ export async function webSearch(query: string, max = 5): Promise<string> {
       errors.push(`${p}: ${(msg === "Failed to fetch" ? "blocked (network or CORS)" : msg).replace(/\.+$/, "")}`);
     }
   }
-  throw new Error(`Web search failed: ${errors.join("; ")}. Set a search provider in Connections → Web.`);
+  throw new Error(`Web search failed: ${errors.join("; ")}. Set a search provider in Connections → Web. Your browser can search too: browser open with the words.`);
 }
 
 /** A web page as readable text: Ollama's reader with a key, otherwise r.jina.ai. */
