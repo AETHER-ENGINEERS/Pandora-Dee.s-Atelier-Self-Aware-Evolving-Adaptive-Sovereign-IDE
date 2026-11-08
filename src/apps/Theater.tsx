@@ -118,8 +118,19 @@ export function TheaterApp() {
   const [loc, setLoc] = useState({ shelf: "", where: "" });
   const where = loc.shelf === shelf ? loc.where : "";
   const [via, setVia] = useState<Collection | null>(null);
+  const [viaRoot, setViaRoot] = useState("");
+  // toddler mode: only the collections marked for it, and only inside their shows
+  const kidsCols = collections.filter((c) => c.kids);
+  const hideAll = toddler && !kidsCols.length;
+  const kidsOk = !toddler || (collection ? Boolean(collection.kids) : Boolean(via?.kids) && shelf === loc.shelf && (!viaRoot || where === viaRoot || where.startsWith(`${viaRoot}/`)));
+  useEffect(() => {
+    if (toddler && !kidsOk) {
+      setVia(null);
+      setShelf(kidsCols[0] ? COL + kidsCols[0].id : ALL);
+    }
+  }, [toddler, kidsOk, kidsCols[0]?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const browsing = !q && !playlist && !onDevice && !collection && shelf !== ALL && shelf !== FAVS;
-  const open = (s: string, rel: string, from: Collection | null = via) => (setVia(from), setShelf(s), setLoc({ shelf: s, where: rel }), setOrder(null));
+  const open = (s: string, rel: string, from: Collection | null = via) => (from !== via && setViaRoot(rel), setVia(from), setShelf(s), setLoc({ shelf: s, where: rel }), setOrder(null));
   const videosOf = (s: string) => (lib?.videos ?? []).filter((v) => v.shelf === s);
   /** Play a show from an episode on: through its seasons, in order. */
   const playOn = (list: Video[], from?: Video) => {
@@ -259,6 +270,7 @@ export function TheaterApp() {
         void take([...e.dataTransfer.files]);
       }}
     >
+      {toddler ? null : (
       <div className="theater-top">
         <div className="theater-search">
           <Search size={15} />
@@ -301,16 +313,19 @@ export function TheaterApp() {
           }}
         />
       </div>
+      )}
 
       <div className="theater-shelves" role="tablist" aria-label="Shelves">
-        {[
+        {(toddler
+          ? kidsCols.map((c) => [COL + c.id, `▦ ${c.name}`])
+          : [
           [ALL, "All"],
           [FAVS, "★ Favourites"],
           ...collections.map((c) => [COL + c.id, `▦ ${c.name}`]),
           ...playlists.map((p) => [LIST + p.id, `≡ ${p.name}`]),
           ...(lib?.shelves ?? []).map((s) => [s, watchedNames.has(s) ? `⇄ ${s}` : s]),
           ...devices.map((d) => [DEV + d.path, `📱 ${d.name}`]),
-        ].map(([id, label]) => (
+        ]).map(([id, label]) => (
           <button key={id} role="tab" aria-selected={shelf === id} className={`chip${shelf === id ? " focus" : ""}`} onClick={() => (setShelf(id), setOrder(null), setVia(null), setLoc({ shelf: id, where: "" }))}>
             {label}
           </button>
@@ -376,6 +391,14 @@ export function TheaterApp() {
       {collection && !toddler ? (
         <div className="theater-playlist-bar">
           <span className="small muted grow">Shows gathered from any shelf, in your order. Add one from a show's menu (right-click, or hold).</span>
+          <button
+            className={`btn small${collection.kids ? " on" : " ghost"}`}
+            aria-pressed={Boolean(collection.kids)}
+            onClick={() => void changeCollection({ id: collection.id, kids: !collection.kids }).then((c) => desk().say(c.kids ? `Toddler mode's Theater shows ${c.name}.` : `${c.name} isn't in toddler mode's Theater any more.`))}
+            title="In toddler mode, the Theater shows only the collections marked for it"
+          >
+            🧸 {collection.kids ? "In toddler mode" : "Show in toddler mode"}
+          </button>
           {(() => {
             const i = collections.findIndex((c) => c.id === collection.id);
             return (
@@ -414,15 +437,19 @@ export function TheaterApp() {
               <span className="faint"> · </span>
             </>
           ) : null}
-          <button className="link-btn" onClick={() => open(shelf, "")}>
-            {shelf}
-          </button>
+          {toddler ? null : (
+            <button className="link-btn" onClick={() => open(shelf, "")}>
+              {shelf}
+            </button>
+          )}
           {where
             .split("/")
             .filter(Boolean)
-            .map((seg, i, all) => (
+            .map((seg, i, all) =>
+              // (in toddler mode, nothing above the show the collection holds)
+              toddler && all.slice(0, i + 1).join("/").length < viaRoot.length ? null : (
               <span key={i}>
-                <span className="faint"> › </span>
+                {toddler && all.slice(0, i + 1).join("/") === viaRoot ? null : <span className="faint"> › </span>}
                 <button className="link-btn" onClick={() => open(shelf, all.slice(0, i + 1).join("/"))}>
                   {seg}
                 </button>
@@ -460,6 +487,12 @@ export function TheaterApp() {
       {jobs.length ? <Uploads /> : null}
 
       <div className="theater-list">
+        {toddler && !kidsCols.length ? (
+          <div className="theater-empty">
+            <Film size={42} />
+            <p className="small muted">Nothing is chosen for toddler mode yet. A grown-up can choose a collection in the Theater: open it, then press 🧸 Show in toddler mode.</p>
+          </div>
+        ) : null}
         {error ? <p className="small bad-text">{error}</p> : null}
         {lib && !lib.videos.length ? (
           <div className="theater-empty">
@@ -478,7 +511,7 @@ export function TheaterApp() {
             {playlist ? (q ? "Nothing in this playlist matches." : "This playlist is empty. Add videos from their menus: right-click one (or hold it), then Add to playlist.") : `Nothing on this shelf${q ? " matches" : " yet"}.`}
           </p>
         ) : null}
-        {collection ? (
+        {hideAll ? null : collection ? (
           collection.items.length ? (
             <div className="theater-grid">
               {collection.items.map((key, i) => {
@@ -501,7 +534,7 @@ export function TheaterApp() {
             <p className="small muted">Nothing in {collection.name} yet. Open a shelf, then add shows from their menus (right-click a show, or hold it).</p>
           )
         ) : null}
-        {here ? (
+        {!hideAll && here ? (
           <>
             {here.folders.length ? (
               <div className="theater-grid">
@@ -525,7 +558,7 @@ export function TheaterApp() {
             ) : null}
           </>
         ) : null}
-        {here || collection ? null : groups.map((g) => (
+        {hideAll || here || collection ? null : groups.map((g) => (
           <section key={g.label}>
             <h3 className="theater-month">{g.label}</h3>
             <div className="theater-grid">

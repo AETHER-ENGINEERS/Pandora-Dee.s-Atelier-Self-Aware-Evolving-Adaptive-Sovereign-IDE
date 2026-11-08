@@ -307,7 +307,7 @@ export function createTheater({ vaultDir }) {
   }
   // Collections: shows (folders, from any shelf) gathered under a name, "Kids", in an order of one's own. An item is
   // "<shelf>/<folder inside it>"; collections themselves are kept in order too.
-  function saveCollection({ id, name, items, at }) {
+  function saveCollection({ id, name, items, at, kids }) {
     const m = readMeta();
     const clean = String(name ?? "").replace(/\s+/g, " ").trim().slice(0, 60);
     const list = (Array.isArray(items) ? items : []).map((x) => String(x).slice(0, 600)).filter(Boolean).slice(0, 2000);
@@ -321,6 +321,8 @@ export function createTheater({ vaultDir }) {
       if (Array.isArray(items)) m.collections[i].items = [...new Set(list)];
     }
     const c = m.collections[i];
+    // what toddler mode shows in the Theater (only collections marked for it)
+    if (typeof kids === "boolean") c.kids = kids;
     // moved among the collections
     if (Number.isInteger(at)) {
       m.collections.splice(i, 1);

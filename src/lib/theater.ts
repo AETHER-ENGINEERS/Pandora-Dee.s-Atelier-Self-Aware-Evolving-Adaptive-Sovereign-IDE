@@ -8,7 +8,7 @@ import { rawUrl } from "./explorer.ts";
 export type Video = { id: string; path: string; name: string; ext: string; shelf: string; size: number; mtime: number; seconds: number; thumb: 1 | 0 | -1; fav: boolean; watched?: boolean; device?: boolean; folder?: string };
 export type Playlist = { id: string; name: string; items: string[]; made: number };
 /** Shows gathered under a name ("Kids"), in an order of one's own: each item is "<shelf>/<folder inside it>". */
-export type Collection = { id: string; name: string; items: string[] };
+export type Collection = { id: string; name: string; items: string[]; kids?: boolean };
 export type Library = { root: string; shelves: string[]; videos: Video[]; playlists?: Playlist[]; folders?: { path: string; name: string }[]; canAddFolders?: boolean; scanning?: string[]; collections?: Collection[] };
 
 async function call<T>(url: string, body?: unknown): Promise<T> {
@@ -63,7 +63,7 @@ export const theaterApi = {
   playlist: (p: { id?: string; name?: string; items?: string[] }) => call<Playlist>("/api/theater/playlist", p),
   dropPlaylist: (id: string) => call<{ ok: true }>("/api/theater/playlist", { id, drop: true }),
   /** Make a collection (no id), or change its name, its shows, or where it sits among the others (at). */
-  collection: (c: { id?: string; name?: string; items?: string[]; at?: number }) => call<Collection>("/api/theater/collection", c),
+  collection: (c: { id?: string; name?: string; items?: string[]; at?: number; kids?: boolean }) => call<Collection>("/api/theater/collection", c),
   dropCollection: (id: string) => call<{ ok: true }>("/api/theater/collection", { id, drop: true }),
   /** A folder watched where it is (a network share, a folder on this computer): a shelf of its own. */
   addFolder: (path: string, name?: string) => call<{ path: string; name: string }>("/api/theater/folder", { path, name }),
@@ -324,7 +324,7 @@ export const lengthText = (s: number) => {
 };
 
 /** Change a collection on the desktop, then the library (its order among the others may have changed). */
-export async function changeCollection(c: { id?: string; name?: string; items?: string[]; at?: number }) {
+export async function changeCollection(c: { id?: string; name?: string; items?: string[]; at?: number; kids?: boolean }) {
   const saved = await theaterApi.collection(c);
   await refreshLibrary();
   return saved;
