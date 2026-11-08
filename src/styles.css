@@ -980,6 +980,17 @@ body.dragging-window iframe, body.dragging-window webview { pointer-events: none
 .explorer-tile-icon { height: 80px; display: grid; place-items: center; color: var(--faint); }
 .explorer-tile-name { font-size: .85em; width: 100%; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .explorer-preview { width: 300px; flex: none; border-left: 1px solid var(--line); padding: 8px; display: flex; flex-direction: column; gap: 6px; overflow: auto; }
+/* pictures one at a time, over the whole Explorer window */
+.explorer { position: relative; }
+.picture-viewer { position: absolute; inset: 0; z-index: 20; background: #000d; display: flex; align-items: center; justify-content: center; touch-action: pan-y; user-select: none; }
+.picture-viewer img { max-width: 100%; max-height: calc(100% - 44px); object-fit: contain; margin-top: 40px; }
+.picture-viewer-bar { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 6px; padding: 6px 10px; color: #fff; background: linear-gradient(#000a, transparent); }
+.picture-viewer-bar > span { flex: 1; min-width: 0; }
+.picture-viewer-bar .icon-btn { color: #fff; }
+.picture-viewer-step { position: absolute; top: 50%; transform: translateY(-50%); border: 0; border-radius: 50%; width: 44px; height: 44px; display: grid; place-items: center; color: #fff; background: #0006; cursor: pointer; }
+.picture-viewer-step:hover { background: #000a; }
+.picture-viewer-step.prev { left: 8px; }
+.picture-viewer-step.next { right: 8px; }
 .explorer.narrow .explorer-preview { position: absolute; inset: 44px 0 0 0; width: auto; background: var(--panel-solid); z-index: 5; border: 0; }
 .explorer { position: relative; }
 .explorer-preview-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

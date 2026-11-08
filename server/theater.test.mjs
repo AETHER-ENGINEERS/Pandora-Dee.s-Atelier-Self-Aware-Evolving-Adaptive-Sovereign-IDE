@@ -88,3 +88,25 @@ test("playlists: made, named, ordered, and shared through the library list", () 
   T.dropPlaylist(p.id);
   assert.equal(T.list().playlists.length, 0);
 });
+
+test("a watched folder is a shelf of its own, read in the background, and left as it is", async () => {
+  const away = fs.mkdtempSync(path.join(os.tmpdir(), "watched-"));
+  fs.mkdirSync(path.join(away, "Films", "1999"), { recursive: true });
+  fs.writeFileSync(path.join(away, "Films", "1999", "matrix.mkv"), "x".repeat(10));
+  fs.writeFileSync(path.join(away, "readme.txt"), "not a video");
+  const wv = fs.mkdtempSync(path.join(os.tmpdir(), "theater-w-"));
+  const W = createTheater({ vaultDir: () => wv });
+  const f = W.addFolder(away, "Movies");
+  assert.equal(f.name, "Movies");
+  assert.equal(W.addFolder(away, "Movies").name, "Movies", "the same folder again: still one shelf");
+  await new Promise((r) => setTimeout(r, 200));
+  const l = W.list();
+  assert.ok(l.shelves.includes("Movies"));
+  assert.deepEqual(l.scanning, []);
+  const v = l.videos.find((x) => x.name === "matrix");
+  assert.ok(v && v.watched && v.shelf === "Movies", JSON.stringify(l.videos));
+  assert.equal(W.owns(v.path), null, "a watched folder's video isn't the Theater's to move or delete");
+  W.dropFolder(away);
+  assert.ok(!W.list().shelves.includes("Movies"));
+  assert.ok(fs.existsSync(path.join(away, "Films", "1999", "matrix.mkv")), "the folder stays where it was");
+});

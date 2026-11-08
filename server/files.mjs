@@ -24,7 +24,7 @@ export function safeZipPath(name) {
   return parts.map((p) => p.replace(/[<>:"|?*\x00-\x1f]/g, "_")).join("/");
 }
 
-export function createFiles({ dataDir, musicFolders, getWholePc, setWholePc, getSharing = () => ({}), setSharing = () => {} }) {
+export function createFiles({ dataDir, musicFolders, videoFolders = () => [], getWholePc, setWholePc, getSharing = () => ({}), setSharing = () => {} }) {
   // network places opened on this computer (\\computer\share), the same list Music's folder picker keeps
   const placesFile = () => path.join(dataDir(), "network-places.json");
   // what this computer shares with the other devices on the network: chosen folders, or all of it (both off at first)
@@ -43,8 +43,10 @@ export function createFiles({ dataDir, musicFolders, getWholePc, setWholePc, get
       { id: "vector", name: "Vector files", path: path.join(d, "vector-host", "downloads"), kind: "vector" },
       { id: "music", name: "Music added here", path: path.join(d, "music"), kind: "music" },
       ...musicFolders().map((f, i) => ({ id: `music-${i}`, name: path.basename(f) || f, path: f, kind: "music" })),
+      // Theater's watched folders (videos played where they are)
+      ...videoFolders().map((f, i) => ({ id: `video-${i}`, name: f.name, path: f.path, kind: "video" })),
     ];
-    for (const p of list) if (p.kind !== "music" || p.id === "music") fs.mkdirSync(p.path, { recursive: true });
+    for (const p of list) if ((p.kind !== "music" && p.kind !== "video") || p.id === "music") fs.mkdirSync(p.path, { recursive: true });
     return list.filter((p) => fs.existsSync(p.path));
   }
 

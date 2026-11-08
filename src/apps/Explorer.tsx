@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  ArrowLeft, Copy, Download, ExternalLink, File as FileIcon, FileText, Folder, FolderPlus, FolderUp, Gamepad2, HardDrive, Image as ImageIcon,
+  ArrowLeft, ChevronLeft, ChevronRight, Copy, Download, ExternalLink, File as FileIcon, FileText, Folder, FolderPlus, FolderUp, Gamepad2, HardDrive, Image as ImageIcon,
   LayoutGrid, LayoutList, Link2, Link2Off, Monitor, Music2, Network, PackageOpen, RotateCcw, Share2, Smartphone, Trash2, Upload, Video,
 } from "lucide-react";
 import { desk } from "../lib/store.ts";
@@ -75,6 +75,9 @@ function FileBrowser({ mode, go, pick }: { mode: Mode; go?: { path: string; at: 
   const [view, setView] = useState<"list" | "grid">(() => (localStorage.getItem("pdd-explorer-view") === "grid" ? "grid" : "list"));
   const [saveName, setSaveName] = useState(pick?.defaultName ?? "");
   const [dropping, setDropping] = useState(false);
+  // pictures: only them (and folders) in the list, and one at a time across the whole window
+  const [picsOnly, setPicsOnly] = useState(() => localStorage.getItem("pdd-explorer-pics") === "1");
+  const [viewing, setViewing] = useState<string | null>(null);
   const history = useRef<string[]>([]);
   const uploader = useRef<HTMLInputElement>(null);
   const [ref, width] = useWidth<HTMLDivElement>();
@@ -159,8 +162,8 @@ function FileBrowser({ mode, go, pick }: { mode: Mode; go?: { path: string; at: 
     return exts.length && !exts.includes("*") ? new Set(exts) : null;
   }, [pick]);
   const entries = useMemo(
-    () => (listing?.entries ?? []).filter((e) => (mode === "folder" ? e.dir : e.dir || !filterExts || filterExts.has(e.ext))),
-    [listing, mode, filterExts],
+    () => (listing?.entries ?? []).filter((e) => (mode === "folder" ? e.dir : e.dir || ((!filterExts || filterExts.has(e.ext)) && (!picsOnly || picking || kindOf(e) === "image")))),
+    [listing, mode, filterExts, picsOnly, picking],
   );
   const selected = entries.filter((e) => sel.includes(e.path));
   const one = selected.length === 1 ? selected[0] : null;
@@ -169,6 +172,7 @@ function FileBrowser({ mode, go, pick }: { mode: Mode; go?: { path: string; at: 
     if (e.dir) return void open(e.path);
     if (mode === "open") return answerPick([e.path]);
     if (mode === "save") return setSaveName(e.name);
+    if (kindOf(e) === "image") return setViewing(e.path);
     if (kindOf(e) === "xdc") return void openXdcInGames(e.path).then((r) => desk().say(r.added ? `${r.name} is in Games & Apps now.` : `Opened ${r.name}.`), fail);
     setSel([e.path]);
   };
@@ -363,7 +367,7 @@ function FileBrowser({ mode, go, pick }: { mode: Mode; go?: { path: string; at: 
             <Network size={15} /> {p.name}
           </button>
         ))}
-        {ov?.wholePc.local && !picking ? (
+        {ov?.wholePc.local ? (
           <button className="item faint" onClick={() => void openNetworkPlace()} title="A computer or share on your network: \\computer\share">
             <Network size={15} /> Open a network place…
           </button>
@@ -539,6 +543,22 @@ function FileBrowser({ mode, go, pick }: { mode: Mode; go?: { path: string; at: 
                 <Smartphone size={15} />
               </button>
             ) : null}
+            {!picking ? (
+              <button
+                className={`icon-btn${picsOnly ? " on" : ""}`}
+                aria-pressed={picsOnly}
+                aria-label="Pictures only"
+                data-tip={picsOnly ? "Showing pictures only" : "Pictures only"}
+                onClick={() => {
+                  const on = !picsOnly;
+                  setPicsOnly(on);
+                  localStorage.setItem("pdd-explorer-pics", on ? "1" : "0");
+                  if (on && view !== "grid") (setView("grid"), localStorage.setItem("pdd-explorer-view", "grid"));
+                }}
+              >
+                <ImageIcon size={15} />
+              </button>
+            ) : null}
             <button
               className="icon-btn"
               aria-label={view === "grid" ? "List view" : "Tile view"}
@@ -558,6 +578,7 @@ function FileBrowser({ mode, go, pick }: { mode: Mode; go?: { path: string; at: 
         {body}
         {preview}
       </div>
+      {viewing ? <PictureViewer pictures={entries.filter((x) => kindOf(x) === "image")} at={viewing} onAt={setViewing} onClose={() => setViewing(null)} /> : null}
       {picking ? (
         <div className="explorer-pick">
           {mode === "save" ? <input className="input" value={saveName} onChange={(e) => setSaveName(e.target.value)} placeholder="File name" aria-label="File name" autoFocus /> : null}
@@ -594,6 +615,65 @@ function FileBrowser({ mode, go, pick }: { mode: Mode; go?: { path: string; at: 
           void shareFiles(list).then((s) => s && desk().say(`"${s.name}" is shared with your other devices while this page stays open.`), fail);
         }}
       />
+    </div>
+  );
+}
+
+/** Pictures one at a time, filling the window: arrows or a swipe for the next and the one before, Esc to go back. */
+function PictureViewer({ pictures, at, onAt, onClose }: { pictures: Entry[]; at: string; onAt: (p: string) => void; onClose: () => void }) {
+  const i = Math.max(0, pictures.findIndex((p) => p.path === at));
+  const pic = pictures[i];
+  const go = (d: number) => pictures.length && onAt(pictures[(i + d + pictures.length) % pictures.length].path);
+  const startX = useRef<number | null>(null);
+  useEffect(() => {
+    const key = (ev: KeyboardEvent) => {
+      if (ev.key === "Escape") (ev.stopPropagation(), onClose());
+      else if (ev.key === "ArrowRight" || ev.key === " ") (ev.preventDefault(), go(1));
+      else if (ev.key === "ArrowLeft") (ev.preventDefault(), go(-1));
+    };
+    window.addEventListener("keydown", key, true);
+    return () => window.removeEventListener("keydown", key, true);
+  });
+  // the next one is fetched ahead, so stepping through is quick even from a network share or a phone
+  useEffect(() => {
+    const next = pictures[(i + 1) % pictures.length];
+    if (next) new Image().src = rawUrl(next.path);
+  }, [i, pictures]);
+  if (!pic) return null;
+  return (
+    <div
+      className="picture-viewer"
+      role="dialog"
+      aria-label={pic.name}
+      onPointerDown={(ev) => (startX.current = ev.clientX)}
+      onPointerUp={(ev) => {
+        const dx = startX.current === null ? 0 : ev.clientX - startX.current;
+        startX.current = null;
+        if (Math.abs(dx) > 50) go(dx < 0 ? 1 : -1);
+      }}
+    >
+      <div className="picture-viewer-bar">
+        <span className="ellipsis" title={pic.path}>
+          {pic.name} <span className="faint small">· {i + 1} of {pictures.length}</span>
+        </span>
+        <button className="icon-btn" aria-label="Download to this device" data-tip="Download to this device" onClick={() => downloadToDevice(pic.path)}>
+          <Download size={16} />
+        </button>
+        <button className="icon-btn" aria-label="Back to the folder" onClick={onClose}>
+          ✕
+        </button>
+      </div>
+      <img key={pic.path} src={rawUrl(pic.path)} alt={pic.name} draggable={false} />
+      {pictures.length > 1 ? (
+        <>
+          <button className="picture-viewer-step prev" aria-label="The one before" onClick={() => go(-1)}>
+            <ChevronLeft size={28} />
+          </button>
+          <button className="picture-viewer-step next" aria-label="The next one" onClick={() => go(1)}>
+            <ChevronRight size={28} />
+          </button>
+        </>
+      ) : null}
     </div>
   );
 }

@@ -28,7 +28,7 @@ import { createHeart } from "./heart.mjs";
 import { createDeskState } from "./deskState.mjs";
 import { createBodies } from "./bodies.mjs";
 import { createModules } from "./modules.mjs";
-import { createTheater, PIECE_MAX } from "./theater.mjs";
+import { createTheater, PIECE_MAX, VIDEO_EXT } from "./theater.mjs";
 import { createPairs, pairedCors } from "./pairs.mjs";
 import { acceptSocket } from "./wsframes.mjs";
 import { createPads } from "./pads.mjs";
@@ -136,6 +136,7 @@ export function deskServer() {
     (fl ??= createFiles({
       dataDir: () => dataDir,
       musicFolders: () => music().folders(),
+      videoFolders: () => theater.folders(),
       getWholePc: () => readConfig().filesWholeComputer === true,
       setWholePc: (on) => writeConfig({ filesWholeComputer: on }),
       getSharing: () => readConfig().filesSharing,
@@ -752,7 +753,28 @@ export function deskServer() {
     if (parts[0] === "theater") {
       const p = Object.fromEntries(url.searchParams.entries());
       try {
-        if (parts[1] === "list" && m === "GET") return send(res, 200, theater.list());
+        if (parts[1] === "list" && m === "GET") return send(res, 200, { ...theater.list(Boolean(p.fresh)), canAddFolders: onThisPc(req) });
+        // a device's shared folder, as videos (its page lists each folder; up to three folders down)
+        if (parts[1] === "device" && m === "GET") {
+          const out = [];
+          const walk = async (dir, depth) => {
+            for (const e of (await devices.list(dir)).entries) {
+              if (out.length >= 2000) return;
+              if (e.dir) {
+                if (depth < 3) await walk(e.path, depth + 1);
+              } else if (VIDEO_EXT.has(e.ext))
+                out.push({ id: `d${e.size.toString(36)}-${Math.round(e.mtime / 1000).toString(36)}`, path: e.path, name: e.name.replace(/\.[^.]+$/, ""), ext: e.ext, shelf: "", size: e.size, mtime: e.mtime, seconds: 0, thumb: 0, fav: false, device: true });
+            }
+          };
+          await walk(String(p.path || ""), 0);
+          return send(res, 200, { videos: out.sort((a, b) => b.mtime - a.mtime) });
+        }
+        // a folder watched where it is (a network share, a folder on this computer): added on the computer itself
+        if (parts[1] === "folder" && m === "POST") {
+          if (!onThisPc(req)) return send(res, 403, { error: "Folders are added to the Theater on the desktop's own computer." });
+          const b = JSON.parse((await readBody(req, 100_000)).toString("utf8") || "{}");
+          return send(res, 200, b.drop ? theater.dropFolder(b.path) : theater.addFolder(files().allowed(b.path, true), b.name));
+        }
         if (parts[1] === "thumb" && m === "GET") {
           const f = theater.thumbFile(p.id);
           if (!fs.existsSync(f)) return send(res, 404, "No thumbnail yet", "text/plain");

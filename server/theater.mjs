@@ -28,10 +28,33 @@ export function createTheater({ vaultDir }) {
   function readMeta() {
     try {
       const j = JSON.parse(fs.readFileSync(metaFile(), "utf8"));
-      return { favs: j.favs ?? {}, seconds: j.seconds ?? {}, playlists: Array.isArray(j.playlists) ? j.playlists : [] };
+      return { favs: j.favs ?? {}, seconds: j.seconds ?? {}, playlists: Array.isArray(j.playlists) ? j.playlists : [], folders: Array.isArray(j.folders) ? j.folders.filter((f) => f && typeof f.path === "string") : [] };
     } catch {
-      return { favs: {}, seconds: {}, playlists: [] };
+      return { favs: {}, seconds: {}, playlists: [], folders: [] };
     }
+  }
+
+  // Folders watched where they are (a network share like \\ALICEMOVIES\movies, or a folder on this computer): each is
+  // a shelf of its own, played from there; nothing is copied into the vault, and nothing in them is moved or changed.
+  const folders = () => readMeta().folders;
+  function addFolder(p, name) {
+    const full = path.resolve(String(p || ""));
+    if (!fs.existsSync(full) || !fs.statSync(full).isDirectory()) throw fail(400, "Only a folder can be added.");
+    const m = readMeta();
+    const others = m.folders.filter((f) => path.resolve(f.path).toLowerCase() !== full.toLowerCase());
+    const base = safe(name || path.basename(full) || full.replace(/^\\\\/, ""), "Videos");
+    const taken = new Set([...others.map((f) => f.name.toLowerCase()), "from devices"]);
+    let n = base;
+    for (let i = 2; taken.has(n.toLowerCase()); i++) n = `${base} ${i}`;
+    writeMeta({ ...m, folders: [...others, { path: full, name: n }] });
+    void scanWatched(full);
+    return { path: full, name: n };
+  }
+  function dropFolder(p) {
+    const m = readMeta();
+    const full = path.resolve(String(p || "")).toLowerCase();
+    writeMeta({ ...m, folders: m.folders.filter((f) => path.resolve(f.path).toLowerCase() !== full) });
+    return { ok: true };
   }
   function writeMeta(m) {
     fs.mkdirSync(meta(), { recursive: true });
@@ -46,7 +69,7 @@ export function createTheater({ vaultDir }) {
   };
 
   /** Every video, newest first, with its shelf (the folder under Videos, or "From devices"). */
-  function list() {
+  function list(fresh = false) {
     fs.mkdirSync(root(), { recursive: true });
     const m = readMeta();
     const out = [];
@@ -90,6 +113,25 @@ export function createTheater({ vaultDir }) {
       }
     };
     walk(root(), null, 0);
+    // watched folders: a shelf each, after the vault's own, from what was last read there (read again in the
+    // background when it's ten minutes old, or when asked to look again)
+    const watchedShelves = [];
+    const scanning = [];
+    for (const f of m.folders) {
+      watchedShelves.push(f.name);
+      const c = watchedCache.get(f.path);
+      if (!c || fresh || Date.now() - c.at > STALE) void scanWatched(f.path);
+      if (!c?.at) scanning.push(f.name);
+      for (const v of c?.items ?? [])
+        out.push({
+          ...v,
+          shelf: f.name,
+          seconds: m.seconds[v.id] ?? 0,
+          thumb: fs.existsSync(path.join(thumbs(), `${v.id}.jpg`)) ? 1 : fs.existsSync(path.join(thumbs(), `${v.id}.none`)) ? -1 : 0,
+          fav: Boolean(m.favs[v.id]),
+          watched: true,
+        });
+    }
     if (fs.existsSync(fromDevices())) {
       const before = out.length;
       walk(fromDevices(), "From devices", 1);
@@ -97,7 +139,47 @@ export function createTheater({ vaultDir }) {
     }
     out.sort((a, b) => b.mtime - a.mtime);
     shelves.sort((a, b) => (a === "From devices") - (b === "From devices") || a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
-    return { root: root(), shelves, videos: out, playlists: m.playlists };
+    return { root: root(), shelves: [...shelves, ...watchedShelves.filter((s) => !shelves.includes(s))], videos: out, playlists: m.playlists, folders: m.folders, scanning };
+  }
+
+  // What's in each watched folder, read without holding the server up (a network share can take seconds).
+  const STALE = 10 * 60_000;
+  const watchedCache = new Map(); // folder path → { at, items }
+  const scans = new Map(); // folder path → the read in progress
+  function scanWatched(dir) {
+    if (scans.has(dir)) return scans.get(dir);
+    const items = [];
+    let budget = 20_000; // entries looked at (a very big share is read a part at a time)
+    const walk = async (d, depth) => {
+      let entries;
+      try {
+        entries = await fs.promises.readdir(d, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const e of entries) {
+        if (e.name.startsWith(".") || e.name === "$RECYCLE.BIN" || e.name === "System Volume Information") continue;
+        if (--budget <= 0) return;
+        const full = path.join(d, e.name);
+        if (e.isDirectory()) {
+          if (depth < 5) await walk(full, depth + 1);
+          continue;
+        }
+        const ext = path.extname(e.name).slice(1).toLowerCase();
+        if (!VIDEO_EXT.has(ext)) continue;
+        try {
+          const st = await fs.promises.stat(full);
+          items.push({ id: idOf(st), path: full, name: e.name.slice(0, e.name.length - ext.length - 1), ext, size: st.size, mtime: st.mtimeMs });
+        } catch {
+          /* gone, or not ours to read */
+        }
+      }
+    };
+    const run = walk(dir, 1)
+      .then(() => watchedCache.set(dir, { at: Date.now(), items }))
+      .finally(() => scans.delete(dir));
+    scans.set(dir, run);
+    return run;
   }
 
   /** Which of these (name and size, from a phone) are already kept here, anywhere in the Theater. */
@@ -257,5 +339,5 @@ export function createTheater({ vaultDir }) {
     return target;
   }
 
-  return { root, list, have, mkShelf, uploadState, uploadPiece, dropUpload, sweep, thumbFile, setThumb, setFav, owns, moveTo, savePlaylist, dropPlaylist };
+  return { root, list, folders, addFolder, dropFolder, have, mkShelf, uploadState, uploadPiece, dropUpload, sweep, thumbFile, setThumb, setFav, owns, moveTo, savePlaylist, dropPlaylist };
 }

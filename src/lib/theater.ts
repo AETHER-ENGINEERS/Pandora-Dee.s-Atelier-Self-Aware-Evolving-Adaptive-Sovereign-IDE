@@ -5,9 +5,9 @@
 import { useSyncExternalStore } from "react";
 import { rawUrl } from "./explorer.ts";
 
-export type Video = { id: string; path: string; name: string; ext: string; shelf: string; size: number; mtime: number; seconds: number; thumb: 1 | 0 | -1; fav: boolean };
+export type Video = { id: string; path: string; name: string; ext: string; shelf: string; size: number; mtime: number; seconds: number; thumb: 1 | 0 | -1; fav: boolean; watched?: boolean; device?: boolean };
 export type Playlist = { id: string; name: string; items: string[]; made: number };
-export type Library = { root: string; shelves: string[]; videos: Video[]; playlists?: Playlist[] };
+export type Library = { root: string; shelves: string[]; videos: Video[]; playlists?: Playlist[]; folders?: { path: string; name: string }[]; canAddFolders?: boolean; scanning?: string[] };
 
 async function call<T>(url: string, body?: unknown): Promise<T> {
   const r = await fetch(url, body === undefined ? undefined : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -24,11 +24,16 @@ let libError = "";
 const libListeners = new Set<() => void>();
 const libChanged = () => libListeners.forEach((fn) => fn());
 
-export function refreshLibrary(): Promise<void> {
-  return (loading ??= call<Library>("/api/theater/list")
+let again = 0;
+/** The library again (fresh: watched folders read again too). While a watched folder is still being read, it looks
+ *  again every few seconds until it's in. */
+export function refreshLibrary(fresh = false): Promise<void> {
+  return (loading ??= call<Library>(`/api/theater/list${fresh ? "?fresh=1" : ""}`)
     .then((l) => {
       lib = l;
       libError = "";
+      window.clearTimeout(again);
+      if (l.scanning?.length) again = window.setTimeout(() => void refreshLibrary(), 3000);
     })
     .catch((e) => {
       libError = e instanceof Error ? e.message : String(e);
@@ -55,6 +60,11 @@ export const theaterApi = {
   /** Make a playlist (no id), or change one's name or videos. */
   playlist: (p: { id?: string; name?: string; items?: string[] }) => call<Playlist>("/api/theater/playlist", p),
   dropPlaylist: (id: string) => call<{ ok: true }>("/api/theater/playlist", { id, drop: true }),
+  /** A folder watched where it is (a network share, a folder on this computer): a shelf of its own. */
+  addFolder: (path: string, name?: string) => call<{ path: string; name: string }>("/api/theater/folder", { path, name }),
+  dropFolder: (path: string) => call<{ ok: true }>("/api/theater/folder", { path, drop: true }),
+  /** The videos in a device's shared folder (played from that device while its page is open). */
+  deviceVideos: (path: string) => call<{ videos: Video[] }>(`/api/theater/device?path=${encodeURIComponent(path)}`),
 };
 
 /** Change a playlist on the desktop, and in the list here straight away. */

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Download, Film, FolderInput, ListMusic, ListPlus, MoreHorizontal, Pencil, Play, Plus, RefreshCw, Repeat, Search, Shuffle, Star, Trash2, Upload, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Download, Film, FolderInput, FolderPlus, ListMusic, ListPlus, MoreHorizontal, Pencil, Play, Plus, RefreshCw, Repeat, Search, Shuffle, Star, Trash2, Upload, X } from "lucide-react";
 import { desk, useDesk } from "../lib/store.ts";
-import { downloadToDevice, fileApi } from "../lib/explorer.ts";
+import { downloadToDevice, fileApi, pickInExplorer } from "../lib/explorer.ts";
 import {
   backUp,
   cancelJob,
@@ -28,7 +28,7 @@ import { openMenu, openMenuAt, type MenuItem } from "../ui/ContextMenu.tsx";
 import { askText, askUser } from "../ui/Ask.tsx";
 import { useWidth } from "../ui/hooks.ts";
 
-const ALL = "\u0000all", FAVS = "\u0000favs", LIST = "\u0000list:";
+const ALL = "\u0000all", FAVS = "\u0000favs", LIST = "\u0000list:", DEV = "\u0000device:";
 
 /** "Add to playlist" lines for a video's menus: each playlist (ticked where it already is), and a new one. */
 function addToPlaylistItems(v: Video, playlists: Playlist[]): MenuItem[] {
@@ -89,16 +89,49 @@ export function TheaterApp() {
     void refreshLibrary();
   }, []);
 
+  // other devices' shared folders (Explorer's "Share from this device"), each a shelf while its page is open
+  const [devices, setDevices] = useState<{ id: string; name: string; path: string }[]>([]);
+  useEffect(() => {
+    const look = () => void fileApi.overview().then((o) => setDevices(o.devices ?? []), () => {});
+    look();
+    const t = window.setInterval(look, 15_000);
+    return () => window.clearInterval(t);
+  }, []);
+  const [devVideos, setDevVideos] = useState<{ path: string; videos: Video[]; busy: boolean; error: string } | null>(null);
+  const onDevice = shelf.startsWith(DEV) ? shelf.slice(DEV.length) : "";
+  useEffect(() => {
+    if (!onDevice) return setDevVideos(null);
+    setDevVideos({ path: onDevice, videos: [], busy: true, error: "" });
+    theaterApi.deviceVideos(onDevice).then(
+      (j) => setDevVideos({ path: onDevice, videos: j.videos, busy: false, error: "" }),
+      (e) => setDevVideos({ path: onDevice, videos: [], busy: false, error: e instanceof Error ? e.message : String(e) }),
+    );
+  }, [onDevice]);
+  const watched = (lib?.folders ?? []).find((f) => f.name === shelf);
+  const addFolder = async () => {
+    const dir = (await pickInExplorer({ mode: "folder", title: "Which folder of videos? (Network places are in the sidebar)" }))?.[0];
+    if (!dir) return;
+    try {
+      const f = await theaterApi.addFolder(dir);
+      await refreshLibrary();
+      setShelf(f.name);
+      desk().say(`${f.name} is a shelf now, played from where it is (nothing is copied).`);
+    } catch (e) {
+      desk().say(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const shown = useMemo(() => {
     const words = q.toLowerCase().split(/\s+/).filter(Boolean);
     const match = (v: Video) => words.every((w) => `${v.name} ${v.shelf}`.toLowerCase().includes(w));
+    if (onDevice) return (devVideos?.videos ?? []).filter(match);
     // a playlist shows its videos in its own order (those still here)
     if (playlist) {
       const byId = new Map((lib?.videos ?? []).map((v) => [v.id, v]));
       return playlist.items.map((id) => byId.get(id)).filter((v): v is Video => Boolean(v) && match(v!));
     }
     return (lib?.videos ?? []).filter((v) => (shelf === ALL || (shelf === FAVS ? v.fav : v.shelf === shelf)) && match(v));
-  }, [lib, shelf, q, playlist]);
+  }, [lib, shelf, q, playlist, onDevice, devVideos]);
   // what the player steps through: the shuffled order while one is playing shuffled, otherwise what's shown
   const queue = useMemo(() => {
     if (!order) return shown;
@@ -108,7 +141,8 @@ export function TheaterApp() {
 
   // thumbnails for the ones still without, a few at a time as the list changes
   useEffect(() => {
-    if (shown.some((v) => v.thumb === 0)) void makeThumbs(shown.slice(0, 200));
+    // (not a device's: those come over that device's connection, and are watched there)
+    if (shown.some((v) => v.thumb === 0 && !v.device)) void makeThumbs(shown.filter((v) => !v.device).slice(0, 200));
   }, [shown]);
 
   const groups = useMemo(() => {
@@ -147,8 +181,10 @@ export function TheaterApp() {
     if (!n) desk().say("Those aren't videos the Theater keeps (mp4, mov, webm, mkv…).");
   };
 
-  const shelves = (lib?.shelves ?? []).filter((s) => s !== "From devices");
-  const current = playing ? (lib?.videos.find((v) => v.id === playing) ?? null) : null;
+  // shelves a backup can go to: the vault's own (not watched folders, not From devices)
+  const watchedNames = new Set((lib?.folders ?? []).map((f) => f.name));
+  const shelves = (lib?.shelves ?? []).filter((s) => s !== "From devices" && !watchedNames.has(s));
+  const current = playing ? (lib?.videos.find((v) => v.id === playing) ?? devVideos?.videos.find((v) => v.id === playing) ?? null) : null;
 
   return (
     <div
@@ -182,7 +218,12 @@ export function TheaterApp() {
             <option value={"\u0000new"}>New shelf…</option>
           </select>
         </label>
-        <button className="btn small ghost" onClick={() => void refreshLibrary()} title="Look again" aria-label="Look again">
+        {lib?.canAddFolders && !toddler ? (
+          <button className="btn small" onClick={() => void addFolder()} title="A folder of videos watched where it is: a network share, or a folder on this computer">
+            <FolderPlus size={14} /> {narrow ? "Folder" : "Add a folder"}
+          </button>
+        ) : null}
+        <button className="btn small ghost" onClick={() => void refreshLibrary(true)} title="Look again" aria-label="Look again">
           <RefreshCw size={14} />
         </button>
         <input
@@ -204,7 +245,8 @@ export function TheaterApp() {
           [ALL, "All"],
           [FAVS, "★ Favourites"],
           ...playlists.map((p) => [LIST + p.id, `≡ ${p.name}`]),
-          ...(lib?.shelves ?? []).map((s) => [s, s]),
+          ...(lib?.shelves ?? []).map((s) => [s, watchedNames.has(s) ? `⇄ ${s}` : s]),
+          ...devices.map((d) => [DEV + d.path, `📱 ${d.name}`]),
         ].map(([id, label]) => (
           <button key={id} role="tab" aria-selected={shelf === id} className={`chip${shelf === id ? " focus" : ""}`} onClick={() => (setShelf(id), setOrder(null))}>
             {label}
@@ -266,6 +308,33 @@ export function TheaterApp() {
             </>
           )}
         </div>
+      ) : null}
+
+      {watched ? (
+        <div className="theater-playlist-bar small">
+          <span className="muted grow" title={watched.path}>
+            {lib?.scanning?.includes(watched.name) ? "Looking through " : "Played from "}
+            <span className="mono">{watched.path}</span>
+            {lib?.scanning?.includes(watched.name) ? "…" : ", where it stays."}
+          </span>
+          {lib?.canAddFolders && !toddler ? (
+            <button
+              className="btn small ghost"
+              onClick={() =>
+                void askUser(`Stop showing ${watched.name}?`, "The folder and its videos stay where they are; it just isn't a shelf here any more.", "Stop showing it", "Keep it").then(
+                  (yes) => yes && void theaterApi.dropFolder(watched.path).then(() => (setShelf(ALL), refreshLibrary())),
+                )
+              }
+            >
+              <X size={13} /> Stop showing it
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {onDevice ? (
+        <p className="small muted" style={{ margin: "4px 12px" }}>
+          {devVideos?.busy ? "Asking that device what it shares…" : devVideos?.error ? devVideos.error : `Played from that device while its page stays open${devVideos?.videos.length ? "" : ": no videos in what it shares"}.`}
+        </p>
       ) : null}
 
       {jobs.length ? <Uploads /> : null}
@@ -425,7 +494,9 @@ function Player({
 
   const menu = (): MenuItem[] => {
     const items: MenuItem[] = [{ label: "Save a copy to this device", icon: <Download size={14} />, run: () => downloadToDevice(v.path) }];
-    if (toddler) return items;
+    if (toddler || v.device) return items;
+    // a watched folder's video stays as it is there: no renaming, moving or deleting from here
+    if (v.watched) return [...items, ...addToPlaylistItems(v, playlists)];
     const act = (fn: () => Promise<unknown>, said: string) => async () => {
       try {
         await fn();
@@ -474,7 +545,7 @@ function Player({
           {v.name}
           {v.shelf ? <span className="faint small"> · {v.shelf}</span> : null}
         </span>
-        <button className={`btn ghost${v.fav ? " on" : ""}`} onClick={() => void fav()} aria-pressed={v.fav} aria-label={v.fav ? "Not a favourite" : "Favourite"} title="Favourite">
+        <button className={`btn ghost${v.fav ? " on" : ""}`} hidden={v.device} onClick={() => void fav()} aria-pressed={v.fav} aria-label={v.fav ? "Not a favourite" : "Favourite"} title="Favourite">
           <Star size={18} fill={v.fav ? "currentColor" : "none"} />
         </button>
         <button ref={more} className="btn ghost" onClick={() => more.current && openMenuAt(more.current, menu())} aria-label="More" title="More">
