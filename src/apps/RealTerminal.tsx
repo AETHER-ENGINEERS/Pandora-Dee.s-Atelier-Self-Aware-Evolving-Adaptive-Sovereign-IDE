@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { openPrivacyAt, Sensitive } from "../ui/common.tsx";
+import { isLocalAddress } from "../lib/termLinks.ts";
+import { openInFullBrowser } from "./FullBrowser.tsx";
 import { termClose, termOpen, termSocketUrl, termState, useTerminalAllowed, type TermSession } from "../lib/terminal.ts";
 
 /** A real shell on the computer running the desktop, in a workspace folder of its own (server/terminal.mjs). */
@@ -101,7 +104,17 @@ function TermView({ id }: { id: string }) {
     const el = box.current;
     if (!el) return;
     const css = getComputedStyle(document.documentElement);
+    // web addresses the shell prints are links: they open in SEASIDE's own Browser window, except this computer's own
+    // addresses, which its engine refuses, so those open in a normal new tab
+    const openLink = (e: MouseEvent, uri: string) => {
+      e.preventDefault();
+      const tab = () => void window.open(uri, "_blank", "noopener");
+      if (isLocalAddress(uri)) tab();
+      else void openInFullBrowser(uri).catch(tab);
+    };
     const term = new Terminal({
+      // hidden links some programs print (OSC 8), sent the same way as plain addresses
+      linkHandler: { activate: (e, uri) => /^https?:/i.test(uri) && openLink(e, uri) },
       cursorBlink: true,
       fontFamily: "ui-monospace, SFMono-Regular, Consolas, 'Cascadia Mono', monospace",
       fontSize: 13,
@@ -110,6 +123,7 @@ function TermView({ id }: { id: string }) {
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
+    term.loadAddon(new WebLinksAddon(openLink));
     term.open(el);
     const ws = new WebSocket(termSocketUrl(id));
     ws.binaryType = "arraybuffer";
