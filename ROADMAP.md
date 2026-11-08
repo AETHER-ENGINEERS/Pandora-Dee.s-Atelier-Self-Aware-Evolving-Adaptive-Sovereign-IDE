@@ -138,6 +138,25 @@ SEASIDE as one house across your devices and your network, with the characters l
   storefront for a Vector shelf, or the other way round. Shelves are read-only folders you choose, off until
   Privacy allows them; a ratio in #OneMoment's barter tokens if wanted.
 
+## SEASIDE on every device (added 2026-11-08)
+
+- **An app picker first**: open the app and choose which SEASIDE to enter, like choosing a world: this phone's own,
+  the computer on your Wi-Fi, the laptop over your tailnet, a saved or linked one. Switching is a tap.
+- **The phone app is a window, a server, or both** (Phase 2's Tauri app, which runs on Android): a window onto a
+  SEASIDE server as the browser is today; a SEASIDE of its own that works with no computer; or both, linked through
+  PADS.
+- **A local cloud**: linked servers as data sources for each other. Browse and play across all of them, copy to
+  storage in either direction (phone → computer for keeping, computer → phone for the road), keep chosen folders in
+  step. ✅ Started in the browser: Music's shared libraries (each device's songs played from it, or copied to the
+  server).
+- **Android's own music catalogue (MediaStore)**: the native app asks for music access the way players do, so the
+  phone's whole library is shared without picking, in the background, with no page open.
+- **Links between servers that can't see each other**: PIPE NERD (bonded, encrypted priority lanes between trusted
+  devices over Bluetooth, LoRa, Reticulum, Tor or I2P) and MORP NERD (anonymous onion routing across strangers) carry
+  Nostr events where Wi-Fi and the tailnet don't reach; messages, sync and small files, not bulk. Both are
+  pre-release (their READMEs block any release), so SEASIDE's server links are designed to take a transport like
+  them later; watch them on Nostr for an authorised release. MIT / CC0.
+
 ## The keystore layer (added 2026-11-08, with Grok and Mrrowr-murrr)
 
 A character's keys are hers: her nsec, API keys and wallets, and what she does with them, sharing included. There is
