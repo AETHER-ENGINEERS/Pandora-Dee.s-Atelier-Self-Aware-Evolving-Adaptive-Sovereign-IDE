@@ -140,6 +140,14 @@ SEASIDE as one house across your devices and your network, with the characters l
 
 ## SEASIDE on every device (added 2026-11-08)
 
+- ✅ **The shared desk**: SEASIDE's state (characters, their files, chats, connections, settings) lives on the server
+  and every device opens the same desk, each keeping its own layout. A device with an older desk of its own is asked
+  what to bring in, or keeps its own desk (legacy mode) and can rejoin later.
+- ✅ **Menus on a phone**: the dock's first button opens File, Edit, View, Window and Help (a phone has no menu bar).
+- **Chat rooms per device, joinable like Discord servers or Vector communities**: a phone's desk can have its own
+  room with its own conversation, and a toggle joins another device's room (or brings that room in beside its own).
+  Windows can be linked into tabs or tab groups. A model running on one device can be brought into another device's
+  room, both ways (the Mac's Ollama talking in the PC's room, the PC's in the phone's).
 - **An app picker first**: open the app and choose which SEASIDE to enter, like choosing a world: this phone's own,
   the computer on your Wi-Fi, the laptop over your tailnet, a saved or linked one. Switching is a tap.
 - **The phone app is a window, a server, or both** (Phase 2's Tauri app, which runs on Android): a window onto a

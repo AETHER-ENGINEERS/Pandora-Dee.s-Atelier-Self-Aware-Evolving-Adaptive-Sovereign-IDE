@@ -1,6 +1,6 @@
 import { toCss, viewH, viewW } from "../lib/zoom.ts";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { GripVertical, MonitorPlay, Trees } from "lucide-react";
+import { GripVertical, Menu, MonitorPlay, Trees } from "lucide-react";
 import { APPS, desk, inToddler, useDesk, type AppId, type DockPrefs } from "../lib/store.ts";
 import { ICONS, openSettings } from "./desktopApi.tsx";
 import { openMenu, type MenuItem } from "./ContextMenu.tsx";
@@ -23,7 +23,7 @@ function labelOf(id: string) {
 }
 
 /** The app bar: on any edge, optionally hidden until called, with the apps you choose. */
-export function Dock({ front, phone }: { front?: AppId; phone?: boolean }) {
+export function Dock({ front, phone, menus }: { front?: AppId; phone?: boolean; menus?: (el: Element) => void }) {
   const wins = useDesk((s) => s.wins);
   const saved = useDesk((s) => s.dock);
   // A phone's dock sits along the bottom or the top: its sides are where swiping means "back", and a floating dock
@@ -170,6 +170,11 @@ export function Dock({ front, phone }: { front?: AppId; phone?: boolean }) {
         <span className="dock-grip" onPointerDown={grip} title="Drag to move the dock anywhere; let go near an edge to dock it there" aria-hidden="true">
           <GripVertical size={14} />
         </span>
+        {menus ? (
+          <button className="dock-menus" style={{ width: d.size, height: d.size }} onClick={(e) => menus(e.currentTarget)} data-tip="Menus" aria-label="Menus" aria-haspopup="menu">
+            <Menu size={Math.round(d.size * 0.5)} />
+          </button>
+        ) : null}
         {d.items.map((id, i) => (toddler && id !== "|" && !inToddler(id) ? null : button(id, i)))}
       </nav>
       {dragEdge ? <div className={`dock-target ${dragEdge}`} /> : null}

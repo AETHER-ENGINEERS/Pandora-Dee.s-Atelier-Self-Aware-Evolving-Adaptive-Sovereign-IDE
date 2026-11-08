@@ -270,7 +270,7 @@ export function Desktop() {
         ))}
       </div>
       <Cats />
-      <Dock front={front} phone={phone} />
+      <Dock front={front} phone={phone} menus={phone && !s.toddler ? (el) => phoneMenu(el, () => fileRef.current?.click()) : undefined} />
       {drop ? <div className="drop-hint">Drop a character backup to bring them in</div> : null}
       <ContextMenuHost />
       <AskHost />
@@ -381,6 +381,54 @@ function barMenu(): MenuItem[] {
     { label: "Hide until the pointer reaches its edge", checked: b.autoHide, run: () => set({ autoHide: !b.autoHide }) },
     { label: "Turn the menu bar off", hint: "Settings → Look brings it back", run: () => desk().set({ menuBar: false }) },
   ];
+}
+
+/** A phone has no room for the menu bar: the dock's first button opens its menus instead, one at a time. */
+function phoneMenu(el: Element, onLoad: () => void) {
+  const s = desk();
+  const focusChar = s.character(s.focus);
+  const back: MenuItem = { label: "‹ Menus", run: () => phoneMenu(el, onLoad) };
+  const sub = (items: MenuItem[]) => () => openMenuAt(el, [back, { sep: true }, ...items]);
+  const menus: Record<string, MenuItem[]> = {
+    Pandora: [
+      { label: "Getting started", run: () => s.openApp("welcome") },
+      { label: "Settings…", run: () => openSettings() },
+      ...(s.toddler ? [] : ([{ label: "Classic Pandora Dee", run: () => s.set({ classic: true }) }, { label: "🧸 Toddler mode", run: () => (startToddler() ? openSettings("adult") : s.say("Toddler mode is on. The passcode turns it off.")) }] as MenuItem[])),
+      { label: "Lock the desktop", disabled: !s.accounts.length, run: () => s.lock() },
+    ],
+    File: [
+      { label: "New character…", run: () => s.openApp("cast") },
+      { label: "Load a character backup…", run: onLoad },
+      { label: `Save ${focusChar?.short ?? "character"}'s backup`, disabled: !focusChar, run: () => focusChar && download(`${focusChar.id}-backup.json`, makeBackup(focusChar, s.filesOf(focusChar.id))) },
+      { label: "Export or import everything…", run: () => openSettings("backup") },
+    ],
+    Edit: [
+      { label: "Copy the conversation", run: () => void copyText(s.messages.filter((m) => !m.pass).map((m) => `${m.name}: ${m.text}`).join("\n\n")).then((ok) => ok && desk().say("Conversation copied.")) },
+      { label: "Clear the conversation", run: () => s.clearRoom() },
+      { label: "Preferences…", run: () => openSettings() },
+    ],
+    View: [
+      { label: "Hangout: just the scene and the characters", run: () => s.set({ hangout: true }) },
+      { label: "Characters on the desktop", checked: s.hang.onDesktop, run: () => s.set({ hang: { ...s.hang, onDesktop: !s.hang.onDesktop } }) },
+      { label: "Character wallpaper", checked: s.wallpaper, run: () => s.set({ wallpaper: !s.wallpaper }) },
+      { label: "Bigger text", run: () => s.set({ fontSize: Math.min(22, s.fontSize + 1) }) },
+      { label: "Smaller text", run: () => s.set({ fontSize: Math.max(12, s.fontSize - 1) }) },
+      { label: "Full screen", run: () => void (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.()) },
+    ],
+    Window: [
+      ...APPS.filter((a) => !s.toddler || inToddler(a.id)).map((a): MenuItem => ({ label: a.title, checked: s.wins[a.id].open, run: () => s.openApp(a.id) })),
+      { sep: true },
+      { label: "Reset the layout", run: () => s.resetLayout() },
+    ],
+    Help: [
+      { label: "Getting started", run: () => s.openApp("welcome") },
+      { label: "Connect an AI model", run: () => openSettings("ai") },
+      { label: "Privacy, explained", run: () => openSettings("privacy") },
+      ...(installed() ? [] : [{ label: "Install as an app", run: () => void install().then((m) => m && desk().say(m)) }]),
+    ],
+  };
+  // (a menu closes when one of its lines is chosen, so the submenu opens just after)
+  openMenuAt(el, Object.entries(menus).map(([label, items]): MenuItem => ({ label: `${label} ›`, run: () => window.setTimeout(sub(items), 0) })));
 }
 
 function MenuBar({ onLoad }: { onLoad: () => void }) {
