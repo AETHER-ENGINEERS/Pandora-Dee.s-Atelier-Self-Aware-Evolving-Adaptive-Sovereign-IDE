@@ -164,9 +164,16 @@
   const win = new Proxy(
     {
       label: "main",
-      show: noop, hide: noop, close: noop, setFocus: async () => window.focus(), setOverlayIcon: noop, setBadgeCount: noop,
+      show: noop, hide: noop, setFocus: async () => window.focus(), setOverlayIcon: noop, setBadgeCount: noop,
       setTitle: async (t) => void (document.title = t), isVisible: async () => true, isFocused: async () => document.hasFocus(),
-      isMaximized: async () => false, isMinimized: async () => false, isFullscreen: async () => Boolean(document.fullscreenElement),
+      isMinimized: async () => false, isFullscreen: async () => Boolean(document.fullscreenElement),
+      // Vector 0.5's own title bar: its buttons work the desktop's Vector window; dragging is the desktop's title bar's job
+      minimize: async () => inDesk && void (await askDesk("window", { do: "minimize" })),
+      toggleMaximize: async () => inDesk && void (await askDesk("window", { do: "maximize" })),
+      close: async () => inDesk && void (await askDesk("window", { do: "close" })),
+      isMaximized: async () => (inDesk ? Boolean((await askDesk("window", { do: "state" }))?.maximized) : false),
+      startDragging: noop,
+      outerPosition: async () => ({ x: 0, y: 0 }),
       innerSize: async () => ({ width: innerWidth, height: innerHeight }), outerSize: async () => ({ width: innerWidth, height: innerHeight }),
       scaleFactor: async () => devicePixelRatio,
       onFocusChanged: async (fn) => (focusFns.add(fn), () => focusFns.delete(fn)),
@@ -227,7 +234,14 @@
       openPath: async (p) => inDesk && void (await askDesk("open", { path: String(p) })),
       revealItemInDir: async (p) => inDesk && void (await askDesk("reveal", { path: String(p) })),
     },
-    window: { getCurrentWindow: () => win, getAllWindows: async () => [win] },
+    // currentMonitor: none here (Vector then leaves maximising to the window), and dpi's size types for completeness
+    window: { getCurrentWindow: () => win, getAllWindows: async () => [win], currentMonitor: async () => null },
+    dpi: {
+      PhysicalPosition: class { constructor(x, y) { Object.assign(this, { x, y }); } },
+      PhysicalSize: class { constructor(width, height) { Object.assign(this, { width, height }); } },
+      LogicalPosition: class { constructor(x, y) { Object.assign(this, { x, y }); } },
+      LogicalSize: class { constructor(width, height) { Object.assign(this, { width, height }); } },
+    },
     webview: { getCurrentWebview: () => win },
     webviewWindow: { getCurrentWebviewWindow: () => win },
     updater: { check: async () => null },

@@ -81,8 +81,8 @@ const isPicture = (a: Attachment) => /^(png|jpe?g|gif|webp|avif)$/i.test(a.exten
 
 const ANDROID = "https://github.com/VectorPrivacy/Vector/releases/latest/download/Vector-arm64-v8a.apk";
 const RELEASES = "https://github.com/VectorPrivacy/Vector/releases/latest";
-/** Vector 0.5.0's beta on the web; when 0.5.0 is released, "Open Vector here" moves to it. */
-const VECTOR_WEB_BETA = "https://web.vectorapp.io";
+/** Vector on the web (0.5 and later), signed in by QR code from Vector on a phone. */
+const VECTOR_WEB = "https://web.vectorapp.io";
 
 type AppInfo = { id: string; installed: boolean; version: string; how: string; where: string; job: { state: string; done: number; total: number; error: string } | null };
 
@@ -127,6 +127,14 @@ function VectorHosted({ onBack }: { onBack: () => void }) {
       const reply = (value: unknown) => frame.current?.contentWindow?.postMessage({ pddReply: true, id: m.id, value }, location.origin);
       try {
         if (m.pddVector === "pick") return reply(await pickInExplorer({ mode: m.mode as PickOptions["mode"], multiple: Boolean(m.multiple), filters: m.filters as PickOptions["filters"], defaultName: m.defaultName as string, title: m.title as string }));
+        // Vector 0.5's own title bar (its minimise, maximise and close) works this window
+        if (m.pddVector === "window") {
+          const d = desk();
+          if (m.do === "minimize") d.minimizeApp("vector");
+          else if (m.do === "maximize") d.toggleMax("vector");
+          else if (m.do === "close") d.closeApp("vector");
+          return reply({ maximized: Boolean(desk().wins.vector?.max) });
+        }
         if (m.pddVector === "ask") return reply(await askUser(String(m.title || "Vector"), String(m.body || ""), String(m.yes || "OK"), String(m.no ?? "")));
         if (m.pddVector === "reveal" || (m.pddVector === "open" && !/\.xdc$/i.test(String(m.path)))) return reply(void showInExplorer(String(m.path)));
         if (m.pddVector === "miniapp" || m.pddVector === "open") {
@@ -309,15 +317,14 @@ function VectorHome({ onClient, onHost }: { onClient: () => void; onHost: () => 
           <button className="btn primary" onClick={onHost}>
             Open Vector here
           </button>
-          {/* Vector 0.5.0's beta on the web, until 0.5.0 is released (Nov 2026) and "Open Vector here" moves to it. Vector's web app
-              doesn't allow being shown inside other pages (a deliberate protection for a messenger holding keys), so it opens
-              in a window of its own; signing in with the QR code from Vector 0.5.0 on a phone works there. */}
+          {/* Vector's web app doesn't allow being shown inside other pages (a deliberate protection for a messenger holding
+              keys), so it opens in a window of its own; signing in with the QR code from Vector on a phone works there. */}
           <p className="small muted">
-            <b>Beta 0.5.0:</b> the next Vector, on the web, with sign-in by QR code from Vector 0.5.0 on your phone. It opens in the desktop's
+            <b>Vector on the web:</b> the same Vector in a browser, signed in by QR code from Vector on your phone. It opens in the desktop's
             full browser, which keeps it signed in.
           </p>
-          <button className="btn" onClick={() => void openInFullBrowser(VECTOR_WEB_BETA).catch((e: Error) => setNote(e.message))}>
-            Beta 0.5.0 <ExternalLink size={13} />
+          <button className="btn" onClick={() => void openInFullBrowser(VECTOR_WEB).catch((e: Error) => setNote(e.message))}>
+            Vector on the web <ExternalLink size={13} />
           </button>
           <p className="small muted">
             Or a lighter built-in client: chats, Communities, files, and Mini Apps opened straight into Games & Apps, on Vector's vector-agent.
