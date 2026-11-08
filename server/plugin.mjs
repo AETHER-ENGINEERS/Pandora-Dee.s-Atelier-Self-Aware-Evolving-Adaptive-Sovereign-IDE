@@ -36,6 +36,7 @@ import { createLuantiWeb } from "./luantiWeb.mjs";
 import { createLuantiRelay } from "./luantiRelay.mjs";
 import { openDuplex } from "./wsduplex.mjs";
 import { createTerminals } from "./terminal.mjs";
+import { createPadsWire } from "./padsWire.mjs";
 import { createRequire } from "node:module";
 import { createPeers } from "./peers.mjs";
 import { createPadsLink } from "./padsLink.mjs";
@@ -163,6 +164,8 @@ export function deskServer() {
   const pairs = createPairs({ file: () => path.join(dataDir, "classic-pairs.json") });
   // PADS: the account's devices, what's on them, and how they're arranged (see pads.mjs)
   const pads = createPads({ dataDir: () => dataDir });
+  // PADS's live wire (padsWire.mjs): a mouse and keyboard crossing between an account's devices
+  const padsWire = createPadsWire({ pads });
   // linked servers (one per device): PADS and "Send to" across all of them (see peers.mjs, padsLink.mjs)
   const peers = createPeers({ file: () => path.join(dataDir, "pads-servers.json") });
   let padsLink = null; // made once vaultFile is defined, below
@@ -1147,6 +1150,13 @@ export function deskServer() {
       if (fromElsewhere(req)) return void socket.destroy();
       const conn = openDuplex(req, socket);
       return void (conn ? luantiRelay.attach(conn) : socket.destroy());
+    }
+    // PADS's live wire: the desktop's own page only, as with /api
+    if (where === "/api/pads/ws") {
+      if (fromElsewhere(req)) return void socket.destroy();
+      const q = new URL(req.url || "/", "http://x").searchParams;
+      const conn = openDuplex(req, socket);
+      return void (conn ? padsWire.attach(conn, { account: q.get("account") || "", device: q.get("device") || "" }) : socket.destroy());
     }
     // a real terminal's window: same rules as its routes
     if (where === "/api/terminal/ws") {

@@ -39,8 +39,21 @@ export type Device = {
 export type Server = { id: string; name: string; here: boolean; me?: boolean; url?: string; error?: string };
 export type ServersInfo = { me: { id: string; name: string }; servers: { id: string; name: string; url: string; created: number; seen: number }[]; canChange: boolean; addresses: string[]; lan: boolean };
 
-type Me = { on: boolean; name: string; kind: Kind };
-const ME_KEY = "pdd-pads-me";
+/** cross: this device's mouse and keys may cross to the neighbours at its screen edges; control: this device may be
+ *  driven from the account's other devices (off until switched on here). */
+type Me = { on: boolean; name: string; kind: Kind; cross: boolean; control: boolean };
+// A browser tab can stand in for a device of its own (?pads-device=name, kept for that tab): for trying crossing out
+// with two tabs on one computer.
+const tabDevice = (() => {
+  try {
+    const q = new URLSearchParams(location.search).get("pads-device");
+    if (q && /^[A-Za-z0-9_-]{8,40}$/.test(q)) sessionStorage.setItem("pdd-tab-device", q);
+    return sessionStorage.getItem("pdd-tab-device") || "";
+  } catch {
+    return "";
+  }
+})();
+const ME_KEY = tabDevice ? `pdd-pads-me-${tabDevice}` : "pdd-pads-me";
 const ID_KEY = "pdd-device-id";
 
 const ua = () => navigator.userAgent;
@@ -62,6 +75,7 @@ const browserName = () => {
 
 /** This device's lasting id (kept in this browser). */
 export function deviceId(): string {
+  if (tabDevice) return tabDevice;
   try {
     let id = localStorage.getItem(ID_KEY);
     if (!id || !/^[A-Za-z0-9_-]{8,40}$/.test(id)) {
@@ -77,9 +91,9 @@ export function deviceId(): string {
 let me: Me = (() => {
   try {
     const m = JSON.parse(localStorage.getItem(ME_KEY) || "null") as Partial<Me> | null;
-    return { on: m?.on === true, name: m?.name || "", kind: (m?.kind as Kind) || guessKind() };
+    return { on: m?.on === true, name: m?.name || "", kind: (m?.kind as Kind) || guessKind(), cross: m?.cross === true, control: m?.control === true };
   } catch {
-    return { on: false, name: "", kind: guessKind() };
+    return { on: false, name: "", kind: guessKind(), cross: false, control: false };
   }
 })();
 const meListeners = new Set<() => void>();
@@ -98,6 +112,10 @@ export function setMe(patch: Partial<Me>) {
 /** What this device is called in PADS: the name given, or a sensible default. */
 export const myName = () => me.name || `${KINDS.find((k) => k.id === me.kind)?.name ?? "Device"} (${browserName()})`;
 export const account = () => desk().session || "";
+/** This device's PADS settings as they are now. */
+export const meNow = () => me;
+/** Called when this device's settings change (PADS on or off, crossing, control). */
+export const onMe = (f: () => void) => (meListeners.add(f), () => meListeners.delete(f));
 
 /** What's on this SEASIDE now: its open windows (a miniature), which is in front, Hangout, music. */
 function state() {

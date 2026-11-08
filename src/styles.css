@@ -1130,3 +1130,14 @@ html { touch-action: pan-x pan-y; }
 .real-term-bar { gap: 6px; padding: 6px 8px; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
 .real-term-view { flex: 1; min-height: 0; padding: 4px 6px; background: #0b0912; }
 .real-term-view .xterm { height: 100%; }
+
+/* PADS edge crossing (lib/padsControl.ts): another device's cursor here, and the notes while crossing */
+.pads-cursor { position: fixed; left: 0; top: 0; z-index: 2147483646; pointer-events: none; display: none; will-change: transform; }
+.pads-cursor span { position: absolute; left: 16px; top: 18px; white-space: nowrap; font-size: 11px; padding: 1px 6px; border-radius: 8px; background: var(--accent, #9b7bff); color: #fff; }
+.pads-banner { position: fixed; left: 50%; top: 10px; transform: translateX(-50%); z-index: 2147483645; pointer-events: none; padding: 6px 14px; border-radius: 999px; background: rgba(20, 16, 32, .92); color: #fff; font-size: 13px; border: 1px solid var(--accent, #9b7bff); }
+.pads-hint { position: fixed; z-index: 2147483645; padding: 6px 12px; border-radius: 10px; background: var(--accent, #9b7bff); color: #fff; font-size: 13px; box-shadow: 0 4px 20px rgba(0,0,0,.4); pointer-events: none; }
+.pads-hint[data-side="right"] { right: 8px; top: 50%; transform: translateY(-50%); }
+.pads-hint[data-side="left"] { left: 8px; top: 50%; transform: translateY(-50%); }
+.pads-hint[data-side="top"] { top: 8px; left: 50%; transform: translateX(-50%); }
+.pads-hint[data-side="bottom"] { bottom: 8px; left: 50%; transform: translateX(-50%); }
+.pads-shield { position: fixed; inset: 0; z-index: 2147483644; cursor: none; background: rgba(10, 8, 20, .18); }

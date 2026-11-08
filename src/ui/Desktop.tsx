@@ -30,6 +30,7 @@ import { startHeart } from "../lib/heart.ts";
 import { startOwnTime } from "../lib/ownTime.ts";
 import { startBodies } from "../lib/bodies.ts";
 import { startTerminalSync } from "../lib/terminal.ts";
+import { startPadsControl } from "../lib/padsControl.ts";
 import { loadNotes } from "../lib/notes.ts";
 import { ContextMenuHost, openMenu, openMenuAt, type MenuItem } from "./ContextMenu.tsx";
 import { formatClock, validLocale, validZone, type ClockPrefs } from "../lib/clock.ts";
@@ -151,6 +152,7 @@ export function Desktop() {
     resumeBridges();
     // PADS: this device reports in while it's switched on here (it does nothing until then)
     startPads();
+    startPadsControl();
     // memory: minimized windows unloaded after a while, when that's switched on
     startMemory();
     // characters with a heartbeat check in on their own (each beat taken by one device)

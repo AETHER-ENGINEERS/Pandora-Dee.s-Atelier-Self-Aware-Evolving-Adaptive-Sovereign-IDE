@@ -222,10 +222,30 @@ export function PadsApp() {
             ))}
           </select>
         </div>
+        {me.on ? (
+          <div className="row" style={{ gap: 14, flexWrap: "wrap", alignItems: "center", marginTop: 4 }}>
+            <label className="check small" style={{ padding: 0 }} title="Push the mouse past an edge to drive the device arranged there (or Ctrl+Alt+arrow). The first crossing asks for one click; Esc comes home.">
+              <input type="checkbox" checked={me.cross} onChange={(e) => setMe({ cross: e.target.checked })} />
+              <span>Cross to my other devices at the screen edges</span>
+            </label>
+            <label className="check small" style={{ padding: 0 }} title="Your other devices in PADS can move a cursor here, click, scroll and type, while this is on.">
+              <input
+                type="checkbox"
+                checked={me.control}
+                onChange={async (e) => {
+                  const on = e.target.checked;
+                  if (on && !(await askUser("Let your other devices control this one?", "While this is on, your other devices signed into this account can move a cursor here and click, scroll and type in SEASIDE on this device, by crossing its edge in the PADS room. It works only inside SEASIDE here, not the rest of this computer. Switch it off here any time.", "Let them", "Not now"))) return;
+                  setMe({ control: on });
+                }}
+              />
+              <span>Let my other devices control this one</span>
+            </label>
+          </div>
+        ) : null}
         <p className="small faint" style={{ margin: "4px 0 0" }}>
           PADS (Pandora's Atelier's Distributed Systems): every SEASIDE you're signed into{session ? ` as ${session}` : ""}, on devices where it's
-          switched on, shows here. Arrange them the way they sit in your room. Next: your keyboard, mouse and controller cross from one to the next at
-          their edges.
+          switched on, shows here. Arrange them the way they sit in your room: with crossing on, your mouse and keyboard pass from one to the next at the edges
+          where they meet.
         </p>
       </section>
 
