@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { openPrivacyAt, Sensitive } from "../ui/common.tsx";
 import { isLocalAddress } from "../lib/termLinks.ts";
+import { wireTermLinks } from "../lib/termLinksWire.ts";
 import { openInFullBrowser } from "./FullBrowser.tsx";
 import { termClose, termOpen, termSocketUrl, termState, useTerminalAllowed, type TermSession } from "../lib/terminal.ts";
 
@@ -113,8 +113,6 @@ function TermView({ id }: { id: string }) {
       else void openInFullBrowser(uri).catch(tab);
     };
     const term = new Terminal({
-      // hidden links some programs print (OSC 8), sent the same way as plain addresses
-      linkHandler: { activate: (e, uri) => /^https?:/i.test(uri) && openLink(e, uri) },
       cursorBlink: true,
       fontFamily: "ui-monospace, SFMono-Regular, Consolas, 'Cascadia Mono', monospace",
       fontSize: 13,
@@ -123,8 +121,9 @@ function TermView({ id }: { id: string }) {
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
-    term.loadAddon(new WebLinksAddon(openLink));
     term.open(el);
+    // plain addresses and hidden (OSC 8) links; Ctrl+click opens one even while a program has the mouse
+    const unlink = wireTermLinks(term, openLink);
     const ws = new WebSocket(termSocketUrl(id));
     ws.binaryType = "arraybuffer";
     const size = () => {
@@ -155,6 +154,7 @@ function TermView({ id }: { id: string }) {
       ro.disconnect();
       typed.dispose();
       ws.close();
+      unlink();
       term.dispose();
     };
   }, [id]);
