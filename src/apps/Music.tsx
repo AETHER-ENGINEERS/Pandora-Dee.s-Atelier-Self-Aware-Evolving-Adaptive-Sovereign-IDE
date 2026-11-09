@@ -1,6 +1,6 @@
 import { toCss } from "../lib/zoom.ts";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AudioWaveform, ChevronUp, ChevronsRight, Disc3, Folder, FolderOpen, FolderPlus, Globe2, ListMusic, Maximize2, Mic2, MonitorSmartphone, Pause, Play, Radio, Repeat, Repeat1, Search, Shuffle, SkipBack, Sparkles, SkipForward, Star, Trash2, Upload, Users, Volume2 } from "lucide-react";
+import { ArrowDown, ArrowUp, FileDown, FileUp, FolderInput, ListPlus, Pencil, Plus, X, AudioWaveform, ChevronUp, ChevronsRight, Disc3, Folder, FolderOpen, FolderPlus, Globe2, ListMusic, Maximize2, Mic2, MonitorSmartphone, Pause, Play, Radio, Repeat, Repeat1, Search, Shuffle, SkipBack, Sparkles, SkipForward, Star, Trash2, Upload, Users, Volume2 } from "lucide-react";
 import { desk, useDesk } from "../lib/store.ts";
 import {
   addFiles,
@@ -20,6 +20,7 @@ import {
   toggle,
   useMusic,
   type Item,
+  type MusicPlaylist,
   type Station,
   type Track,
   shuffled,
@@ -36,11 +37,13 @@ import { WorldRadio } from "./WorldRadio.tsx";
 import { SongMaker } from "./SongMaker.tsx";
 import { openSongInfo, SongInfoHost } from "../ui/SongInfo.tsx";
 import { copyText } from "../lib/clipboard.ts";
-import { askText } from "../ui/Ask.tsx";
+import { askText, askUser } from "../ui/Ask.tsx";
+import { baseName, pickInExplorer, rawUrl } from "../lib/explorer.ts";
+import { matchEntries, nameFromFile, parsePlaylist, readDeviceFile, saveTextToDevice, saveToVault, writeM3u } from "../lib/playlistFile.ts";
 
 const PAGE = 400;
 
-type View = "songs" | "make" | "albums" | "artists" | "world" | "radio" | "find" | "folders" | "shared";
+type View = "songs" | "make" | "albums" | "artists" | "world" | "radio" | "find" | "folders" | "shared" | "playlist";
 const time = (s: number) => (Number.isFinite(s) && s > 0 ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}` : "–:––");
 const setPrefs = (p: Partial<ReturnType<typeof desk>["music"]>) => desk().set({ music: { ...desk().music, ...p } });
 const asItems = (ts: Track[]): Item[] => ts.map((t) => ({ kind: "track", ...t }));
@@ -60,6 +63,8 @@ export function MusicApp() {
   const [view, setView] = useState<View>("songs");
   const [q, setQ] = useState("");
   const [album, setAlbum] = useState<string | null>(null);
+  const [listId, setListId] = useState("");
+  const openList = (p: MusicPlaylist) => (setView("playlist"), setListId(p.id));
   const [dropping, setDropping] = useState(false);
   const [ref, width] = useWidth<HTMLDivElement>();
   const files = useRef<HTMLInputElement>(null);
@@ -104,6 +109,7 @@ export function MusicApp() {
     { label: "Add to the queue", run: () => enqueue(asItems([list[i]])) },
     { sep: true },
     { label: "Copy title and artist", run: () => void copyText(`${list[i].title}${list[i].artist ? ` · ${list[i].artist}` : ""}`) },
+    ...addToPlaylistItems(list[i], openList),
     { sep: true },
     { label: "Properties…", run: () => openSongInfo({ track: list[i], made: desk().media.made.find((s) => s.file.replace(/\.[^.]+$/, "") === list[i].title || s.title === list[i].title) }) },
   ];
@@ -152,6 +158,17 @@ export function MusicApp() {
       <button className="item" onClick={vizMenu} aria-haspopup="menu">
         <AudioWaveform size={15} /> Visualizer
       </button>
+      <div className="music-side-head">
+        <span className="folder grow">Playlists</span>
+        <button className="icon-btn" title="A new playlist, or one from a file" aria-label="A new playlist, or one from a file" onClick={(e) => openMenu(e, playlistFileMenu(openList))}>
+          <Plus size={13} />
+        </button>
+      </div>
+      {(prefs.playlists ?? []).map((p) => (
+        <button key={p.id} className={`item${view === "playlist" && listId === p.id ? " on" : ""}`} onClick={() => openList(p)} title={p.name}>
+          <ListMusic size={15} /> {p.name}
+        </button>
+      ))}
     </nav>
   );
 
@@ -324,6 +341,7 @@ export function MusicApp() {
             {view === "find" ? <FindStations /> : null}
             {view === "folders" ? <Folders onFiles={() => files.current?.click()} onShared={() => setView("shared")} /> : null}
             {view === "shared" ? <SharedLibraries /> : null}
+            {view === "playlist" ? <PlaylistView id={listId} trackMenu={trackMenu} onGone={() => setView("songs")} /> : null}
           </div>
         </section>
       </div>
@@ -799,6 +817,192 @@ function SharedLibraries() {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ---- playlists: made here, kept with the desk (every device has the same ones), read from and saved as M3U files ----
+
+const playlistsNow = () => desk().music.playlists ?? [];
+const setPlaylists = (playlists: MusicPlaylist[]) => setPrefs({ playlists });
+const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+/** The song's path on the desktop (its music folder, then where it is inside). */
+const pathOf = (t: Track) => (t.rel ? `${t.folder}${t.folder.includes("\\") ? "\\" : "/"}${t.rel}` : (t.file ?? t.title));
+
+function changePlaylist(id: string, patch: Partial<MusicPlaylist>) {
+  setPlaylists(playlistsNow().map((p) => (p.id === id ? { ...p, ...patch } : p)));
+}
+function makePlaylist(name: string, items: string[]): MusicPlaylist {
+  const p = { id: newId(), name: name.replace(/\s+/g, " ").trim().slice(0, 80) || "Playlist", items: [...new Set(items)] };
+  setPlaylists([...playlistsNow(), p]);
+  return p;
+}
+
+/** "Add to playlist" lines for a song's menu: each playlist (ticked where it's in already), and a new one. */
+function addToPlaylistItems(t: Track, onMade?: (p: MusicPlaylist) => void): MenuItem[] {
+  return [
+    { sep: true },
+    { heading: "Add to playlist" },
+    ...playlistsNow().map(
+      (p): MenuItem => ({
+        label: p.name,
+        checked: p.items.includes(t.id),
+        run: () => changePlaylist(p.id, { items: p.items.includes(t.id) ? p.items.filter((x) => x !== t.id) : [...p.items, t.id] }),
+      }),
+    ),
+    {
+      label: "New playlist…",
+      icon: <ListPlus size={14} />,
+      run: () =>
+        void askText("A new playlist", "", { placeholder: "Road trip", yes: "Make it" }).then((name) => {
+          if (name?.trim()) onMade?.(makePlaylist(name, [t.id]));
+        }),
+    },
+  ];
+}
+
+/** A playlist file (M3U, M3U8 or PLS) made into a playlist: from this device, or from the desktop's own files. */
+async function openPlaylistFile(src: "device" | "desk"): Promise<MusicPlaylist | null> {
+  let got: { name: string; text: string } | null = null;
+  if (src === "device") got = await readDeviceFile();
+  else {
+    const p = (await pickInExplorer({ mode: "open", title: "Which playlist file? (.m3u, .m3u8, .pls)", filters: [{ name: "Playlists", extensions: ["m3u", "m3u8", "pls"] }] }))?.[0];
+    if (!p) return null;
+    const r = await fetch(rawUrl(p));
+    got = r.ok ? { name: baseName(p), text: await r.text() } : null;
+  }
+  if (!got) return null;
+  const entries = parsePlaylist(got.text);
+  const { found, missing } = matchEntries(entries, useMusic.getState().tracks.filter((t) => !t.src), pathOf);
+  if (!found.length) {
+    desk().say(`None of the ${entries.length} in ${got.name} are in your music library.`);
+    return null;
+  }
+  const p = makePlaylist(nameFromFile(got.name), found.map((t) => t.id));
+  desk().say(`${p.name}: ${found.length} song${found.length === 1 ? "" : "s"}${missing.length ? `; ${missing.length} not found in your library` : ""}.`);
+  return p;
+}
+
+function savePlaylistFile(p: MusicPlaylist, to: "device" | "vault") {
+  const byId = new Map(useMusic.getState().tracks.map((t) => [t.id, t]));
+  const text = writeM3u(
+    p.items
+      .map((id) => byId.get(id))
+      .filter((t): t is Track => Boolean(t))
+      .map((t) => ({ path: pathOf(t), title: t.artist ? `${t.artist} - ${t.title}` : t.title, seconds: t.duration })),
+  );
+  const name = `${p.name.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").trim() || "Playlist"}.m3u8`;
+  if (to === "device") saveTextToDevice(name, text);
+  else void saveToVault(name, text).then((at) => desk().say(`Saved as ${at}.`), (e) => desk().say(e instanceof Error ? e.message : String(e)));
+}
+
+const playlistFileMenu = (onMade: (p: MusicPlaylist) => void): MenuItem[] => [
+  {
+    label: "New playlist…",
+    icon: <ListPlus size={14} />,
+    run: () => void askText("A new playlist", "", { body: "Then add songs from their menus (right-click, or hold).", placeholder: "Road trip", yes: "Make it" }).then((n) => n?.trim() && onMade(makePlaylist(n, []))),
+  },
+  { sep: true },
+  { heading: "Open a playlist file (.m3u, .m3u8, .pls)" },
+  { label: "From this device…", icon: <FileUp size={14} />, run: () => void openPlaylistFile("device").then((p) => p && onMade(p)) },
+  { label: "From the desktop's files…", icon: <FolderOpen size={14} />, run: () => void openPlaylistFile("desk").then((p) => p && onMade(p)) },
+];
+
+/** One playlist: its songs in order, played, shuffled, rearranged, renamed, saved as a file, or deleted. */
+function PlaylistView({ id, trackMenu, onGone }: { id: string; trackMenu: (list: Track[], i: number) => MenuItem[]; onGone: () => void }) {
+  const p = useDesk((s) => (s.music.playlists ?? []).find((x) => x.id === id));
+  const m = useMusic();
+  const cur = current();
+  if (!p) return <p className="small muted" style={{ margin: 12 }}>That playlist isn't here any more.</p>;
+  const byId = new Map(m.tracks.map((t) => [t.id, t]));
+  const songs = p.items.map((x) => byId.get(x)).filter((t): t is Track => Boolean(t));
+  const move = (i: number, by: number) => {
+    const ids = songs.map((t) => t.id);
+    const [x] = ids.splice(i, 1);
+    ids.splice(Math.max(0, Math.min(ids.length, i + by)), 0, x);
+    changePlaylist(p.id, { items: ids });
+  };
+  return (
+    <div className="music-playlist">
+      <div className="toolbar">
+        <ListMusic size={16} className="faint" />
+        <b className="grow">{p.name}</b>
+        <span className="faint small">
+          {songs.length} song{songs.length === 1 ? "" : "s"}
+          {p.items.length > songs.length ? ` · ${p.items.length - songs.length} not in the library now` : ""}
+        </span>
+        <button className="btn small primary" disabled={!songs.length} onClick={() => playList(asItems(songs), 0, true)}>
+          <Play size={13} /> Play
+        </button>
+        <button className="btn small" disabled={!songs.length} onClick={() => playList(asItems(shuffled(songs)), 0, true)}>
+          <Shuffle size={13} /> Shuffle
+        </button>
+        <button
+          className="btn small ghost"
+          disabled={!songs.length}
+          title="As an .m3u8 file, which VLC, foobar2000, Windows Media Player and the Xbox can play"
+          onClick={(e) =>
+            openMenu(e, [
+              { heading: "Save as a playlist file (.m3u8)" },
+              { label: "To this device", icon: <FileDown size={14} />, run: () => savePlaylistFile(p, "device") },
+              { label: "In Vault › Playlists", icon: <FolderInput size={14} />, run: () => savePlaylistFile(p, "vault") },
+            ])
+          }
+        >
+          <FileDown size={13} /> Save as a file
+        </button>
+        <button className="btn small ghost" onClick={() => void askText("Rename the playlist", p.name, { yes: "Rename" }).then((n) => n?.trim() && changePlaylist(p.id, { name: n.trim() }))}>
+          <Pencil size={13} /> Rename
+        </button>
+        <button
+          className="btn small ghost"
+          onClick={() =>
+            void askUser(`Delete ${p.name}?`, "Only the list goes; the songs stay in your library.", "Delete it", "Keep it").then((yes) => {
+              if (!yes) return;
+              setPlaylists(playlistsNow().filter((x) => x.id !== p.id));
+              onGone();
+            })
+          }
+        >
+          <Trash2 size={13} /> Delete
+        </button>
+      </div>
+      {songs.length ? (
+        <table className="songs">
+          <tbody>
+            {songs.map((t, i) => (
+              <tr
+                key={t.id}
+                className={cur?.kind === "track" && cur.id === t.id ? "on" : ""}
+                onDoubleClick={() => playList(asItems(songs), i, true)}
+                onContextMenu={(e) =>
+                  openMenu(e, [
+                    { label: "Earlier in the playlist", icon: <ArrowUp size={14} />, disabled: i === 0, run: () => move(i, -1) },
+                    { label: "Later in the playlist", icon: <ArrowDown size={14} />, disabled: i === songs.length - 1, run: () => move(i, 1) },
+                    { label: `Take off ${p.name}`, icon: <X size={14} />, run: () => changePlaylist(p.id, { items: p.items.filter((x) => x !== t.id) }) },
+                    { sep: true },
+                    ...trackMenu(songs, i),
+                  ])
+                }
+              >
+                <td className="play-cell">
+                  <button className="icon-btn" aria-label={`Play ${t.title}`} onClick={() => playList(asItems(songs), i, true)}>
+                    {cur?.kind === "track" && cur.id === t.id && m.playing ? <Volume2 size={13} /> : <Play size={13} />}
+                  </button>
+                </td>
+                <td className="faint num-cell">{i + 1}</td>
+                <td className="t-title">{t.title}</td>
+                <td className="muted">{t.artist}</td>
+                <td className="faint num-cell">{time(t.duration)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p className="small muted" style={{ margin: 12 }}>
+          Nothing in it yet. Add songs from their menus: right-click one (or hold it), then Add to playlist.
+        </p>
+      )}
     </div>
   );
 }

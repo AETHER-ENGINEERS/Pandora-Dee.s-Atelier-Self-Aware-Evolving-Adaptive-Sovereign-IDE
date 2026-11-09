@@ -7,12 +7,13 @@ import { outbound } from "./outbound.ts";
 import { allowed, blockedBecause } from "./privacy.ts";
 import { speech } from "./voice.ts";
 
-export type { MusicPrefs, Station } from "./musicPrefs.ts";
+export type { MusicPlaylist, MusicPrefs, Station } from "./musicPrefs.ts";
 import type { Station } from "./musicPrefs.ts";
 export type Item = ({ kind: "track" } & Track) | ({ kind: "radio" } & Station);
 export type Track = {
   id: string; title: string; artist: string; album: string; year: number; track: number; genre: string; duration: number; cover: boolean; bitrate: number; size: number; folder: string; comment?: string;
   /** the file's own name */ file?: string;
+  /** where it is inside its music folder (for playlist files) */ rel?: string;
   /** a song another device is sharing (lib/musicShare.ts): where it plays from, and which device has it */ src?: string; device?: string;
 };
 

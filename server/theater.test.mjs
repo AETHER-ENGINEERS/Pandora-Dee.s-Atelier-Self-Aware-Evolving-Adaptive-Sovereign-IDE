@@ -129,3 +129,26 @@ test("videos know their show and season folder; collections keep shows in an ord
   C.dropCollection(films.id);
   assert.deepEqual(C.list().collections.map((c) => c.name), ["Kids"]);
 });
+
+test("a shelf, or a show on one, added to another shelf; shelves renamed; where a shelf came from", () => {
+  const v = fs.mkdtempSync(path.join(os.tmpdir(), "theater-s-"));
+  const S = createTheater({ vaultDir: () => v });
+  S.mkShelf("Elsa stuff", "Mia's Android phone");
+  fs.mkdirSync(path.join(v, "Videos", "Elsa stuff", "Songs"), { recursive: true });
+  fs.writeFileSync(path.join(v, "Videos", "Elsa stuff", "Songs", "let it go.mp4"), "a");
+  S.mkShelf("Kids");
+  const c = S.saveCollection({ name: "Kids", items: ["Elsa stuff/Songs"] });
+  assert.equal(S.list().from["Elsa stuff"], "Mia's Android phone");
+  assert.deepEqual(S.addToShelf("Elsa stuff", "", "Kids"), { shelf: "Kids", folder: "Elsa stuff" });
+  const l = S.list();
+  assert.deepEqual(l.videos.map((x) => [x.shelf, x.folder]), [["Kids", "Elsa stuff/Songs"]]);
+  assert.deepEqual(l.collections.find((x) => x.id === c.id).items, ["Kids/Elsa stuff/Songs"], "collections follow");
+  assert.deepEqual(l.from, { "Kids/Elsa stuff": "Mia's Android phone" }, "where it came from follows");
+  assert.throws(() => S.addToShelf("Kids", "Elsa stuff", "Kids"), /already/);
+  assert.deepEqual(S.addToShelf("Kids", "Elsa stuff", ""), { shelf: "Elsa stuff", folder: "" }, "back to a shelf of its own");
+  assert.deepEqual(S.renameShelf("Elsa stuff", "Frozen"), { shelf: "Frozen" });
+  assert.deepEqual(S.list().from, { Frozen: "Mia's Android phone" });
+  assert.deepEqual(S.list().videos.map((x) => [x.shelf, x.folder]), [["Frozen", "Songs"]]);
+  assert.throws(() => S.renameShelf("Frozen", "Kids"), /already/);
+  assert.throws(() => S.addToShelf("Frozen", "../..", "Kids"), /Which folder/);
+});

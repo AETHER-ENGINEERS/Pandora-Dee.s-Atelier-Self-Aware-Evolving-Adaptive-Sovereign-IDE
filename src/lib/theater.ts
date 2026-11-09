@@ -4,12 +4,14 @@
 
 import { useSyncExternalStore } from "react";
 import { rawUrl } from "./explorer.ts";
+import { deviceName } from "./devshare.ts";
 
 export type Video = { id: string; path: string; name: string; ext: string; shelf: string; size: number; mtime: number; seconds: number; thumb: 1 | 0 | -1; fav: boolean; watched?: boolean; device?: boolean; folder?: string };
 export type Playlist = { id: string; name: string; items: string[]; made: number };
 /** Shows gathered under a name ("Kids"), in an order of one's own: each item is "<shelf>/<folder inside it>". */
 export type Collection = { id: string; name: string; items: string[]; kids?: boolean };
-export type Library = { root: string; shelves: string[]; videos: Video[]; playlists?: Playlist[]; folders?: { path: string; name: string }[]; canAddFolders?: boolean; scanning?: string[]; collections?: Collection[] };
+export type Library = { root: string; shelves: string[]; videos: Video[]; playlists?: Playlist[]; folders?: { path: string; name: string }[]; canAddFolders?: boolean; scanning?: string[]; collections?: Collection[];
+  /** which device each shelf came from (the one that made it, or first backed videos up to it) */ from?: Record<string, string> };
 
 async function call<T>(url: string, body?: unknown): Promise<T> {
   const r = await fetch(url, body === undefined ? undefined : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -57,7 +59,11 @@ export function useLibrary(): { lib: Library | null; error: string } {
 export const theaterApi = {
   fav: (id: string, on: boolean) => call<{ fav: boolean }>("/api/theater/fav", { id, on }),
   move: (path: string, shelf: string) => call<{ path: string }>("/api/theater/move", { path, shelf }),
-  shelf: (name: string) => call<{ shelf: string }>("/api/theater/shelf", { name }),
+  shelf: (name: string) => call<{ shelf: string }>("/api/theater/shelf", { name, device: deviceName() }),
+  /** A shelf, or a show folder on one, added to another shelf (moved there as a folder of its own); to "" it
+   *  becomes a shelf of its own. */
+  addToShelf: (shelf: string, folder: string, to: string) => call<{ shelf: string; folder: string }>("/api/theater/add-to-shelf", { shelf, folder, to }),
+  renameShelf: (shelf: string, name: string) => call<{ shelf: string }>("/api/theater/rename-shelf", { shelf, name }),
   have: (items: { name: string; size: number }[]) => call<{ have: (string | null)[] }>("/api/theater/have", { items }),
   /** Make a playlist (no id), or change one's name or videos. */
   playlist: (p: { id?: string; name?: string; items?: string[] }) => call<Playlist>("/api/theater/playlist", p),
@@ -283,7 +289,7 @@ async function sha256(b: ArrayBuffer): Promise<string> {
 
 async function send(j: Job) {
   const f = j.file;
-  const base = { shelf: j.shelf, name: f.name, size: String(f.size), modified: String(f.lastModified || "") };
+  const base = { shelf: j.shelf, name: f.name, size: String(f.size), modified: String(f.lastModified || ""), device: deviceName() };
   setJob(j, { state: "sending", error: undefined });
   let tries = 0;
   for (;;) {

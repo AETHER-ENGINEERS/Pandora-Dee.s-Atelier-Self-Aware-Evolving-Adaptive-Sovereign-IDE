@@ -791,7 +791,10 @@ export function deskServer() {
         if (m === "POST") {
           const b = JSON.parse((await readBody(req, 2_000_000)).toString("utf8") || "{}");
           if (parts[1] === "have") return send(res, 200, { have: theater.have(b.items) });
-          if (parts[1] === "shelf") return send(res, 200, { shelf: theater.mkShelf(b.name) });
+          if (parts[1] === "shelf") return send(res, 200, { shelf: theater.mkShelf(b.name, b.device) });
+          // a shelf, or a show inside one, added to another shelf (moved there); a shelf renamed
+          if (parts[1] === "add-to-shelf") return send(res, 200, theater.addToShelf(String(b.shelf ?? ""), String(b.folder ?? ""), String(b.to ?? "")));
+          if (parts[1] === "rename-shelf") return send(res, 200, theater.renameShelf(String(b.shelf ?? ""), b.name));
           if (parts[1] === "fav") return send(res, 200, theater.setFav(b.id, Boolean(b.on)));
           if (parts[1] === "playlist") return send(res, 200, b.drop ? theater.dropPlaylist(String(b.id || "")) : theater.savePlaylist(b));
           if (parts[1] === "collection") return send(res, 200, b.drop ? theater.dropCollection(String(b.id || "")) : theater.saveCollection(b));

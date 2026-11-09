@@ -28,9 +28,9 @@ export function createTheater({ vaultDir }) {
   function readMeta() {
     try {
       const j = JSON.parse(fs.readFileSync(metaFile(), "utf8"));
-      return { favs: j.favs ?? {}, seconds: j.seconds ?? {}, playlists: Array.isArray(j.playlists) ? j.playlists : [], folders: Array.isArray(j.folders) ? j.folders.filter((f) => f && typeof f.path === "string") : [], collections: Array.isArray(j.collections) ? j.collections : [] };
+      return { favs: j.favs ?? {}, seconds: j.seconds ?? {}, playlists: Array.isArray(j.playlists) ? j.playlists : [], folders: Array.isArray(j.folders) ? j.folders.filter((f) => f && typeof f.path === "string") : [], collections: Array.isArray(j.collections) ? j.collections : [], from: j.from && typeof j.from === "object" ? j.from : {} };
     } catch {
-      return { favs: {}, seconds: {}, playlists: [], folders: [], collections: [] };
+      return { favs: {}, seconds: {}, playlists: [], folders: [], collections: [], from: {} };
     }
   }
 
@@ -141,7 +141,7 @@ export function createTheater({ vaultDir }) {
     }
     out.sort((a, b) => b.mtime - a.mtime);
     shelves.sort((a, b) => (a === "From devices") - (b === "From devices") || a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
-    return { root: root(), shelves: [...shelves, ...watchedShelves.filter((s) => !shelves.includes(s))], videos: out, playlists: m.playlists, folders: m.folders, collections: m.collections, scanning };
+    return { root: root(), shelves: [...shelves, ...watchedShelves.filter((s) => !shelves.includes(s))], videos: out, playlists: m.playlists, folders: m.folders, collections: m.collections, from: m.from, scanning };
   }
 
   // What's in each watched folder, read without holding the server up (a network share can take seconds).
@@ -197,10 +197,87 @@ export function createTheater({ vaultDir }) {
     });
   }
 
-  function mkShelf(name) {
+  function mkShelf(name, device) {
     const dir = path.join(root(), safe(name, "New shelf"));
     fs.mkdirSync(dir, { recursive: true });
+    noteFrom(path.basename(dir), device);
     return path.basename(dir);
+  }
+
+  /** Which device a shelf came from (the one that made it, or first backed videos up to it), for grouping shelves
+   *  by device. Only the first is kept. */
+  function noteFrom(shelf, device) {
+    const d = String(device ?? "").replace(/\s+/g, " ").trim().slice(0, 60);
+    if (!shelf || !d) return;
+    const m = readMeta();
+    if (m.from[shelf]) return;
+    m.from[shelf] = d;
+    writeMeta(m);
+  }
+
+  /** Where a vault shelf (or the phone's share-menu "From devices") is, and a folder inside it; never a watched
+   *  folder, which stays as it is where it is. */
+  function placeOf(shelf, rel = "") {
+    const s = String(shelf ?? "");
+    if (readMeta().folders.some((f) => f.name === s)) throw fail(400, "A watched folder stays as it is where it is; add its shows to a collection instead.");
+    const base = s === "From devices" ? fromDevices() : shelfDir(s);
+    const segs = String(rel || "").split(/[\\/]+/).filter(Boolean);
+    if (segs.some((x) => x === ".." || x === ".")) throw fail(400, "Which folder?");
+    return path.join(base, ...segs);
+  }
+
+  /** Keys in collections ("<shelf>/<folder>") under one place, moved to another. */
+  function rekey(m, from, to) {
+    for (const c of m.collections) c.items = [...new Set(c.items.map((k) => (k === from ? to : k.startsWith(`${from}/`) ? to + k.slice(from.length) : k)))];
+  }
+
+  /** A shelf, or a show folder inside one, added to another shelf (moved there, as a folder of its own: Kids/Elsa).
+   *  To "" it becomes a shelf of its own. Ids stay (size and date), so favourites and playlists follow. */
+  function addToShelf(shelf, rel, to) {
+    const from = placeOf(shelf, rel);
+    if (!rel && (shelf === "" || shelf === "From devices") && !to) throw fail(400, "That's already where it is.");
+    if (!fs.existsSync(from) || !fs.statSync(from).isDirectory()) throw fail(404, "That folder isn't there any more.");
+    const into = to ? placeOf(to) : root();
+    const fromKey = rel ? `${shelf}/${rel}` : shelf;
+    if (path.resolve(into).toLowerCase() === path.resolve(path.dirname(from)).toLowerCase()) throw fail(400, `It's already on ${to || "its own shelf"}.`);
+    if ((path.resolve(into) + path.sep).toLowerCase().startsWith((path.resolve(from) + path.sep).toLowerCase())) throw fail(400, "A shelf can't go inside itself.");
+    fs.mkdirSync(into, { recursive: true });
+    const name = path.basename(from);
+    let k = 1, target = path.join(into, name);
+    while (fs.existsSync(target)) target = path.join(into, `${name} ${++k}`);
+    fs.renameSync(from, target);
+    const m = readMeta();
+    const toKey = to ? `${to}/${path.basename(target)}` : path.basename(target);
+    rekey(m, fromKey, toKey);
+    // where it came from follows it (Kids/Elsa stuff is still from her phone)
+    for (const k of Object.keys(m.from))
+      if (k === fromKey || k.startsWith(`${fromKey}/`)) {
+        m.from[toKey + k.slice(fromKey.length)] = m.from[k];
+        delete m.from[k];
+      }
+    writeMeta(m);
+    return { shelf: to || path.basename(target), folder: to ? path.basename(target) : "" };
+  }
+
+  /** A vault shelf under a new name (its folder renamed; collections and where it came from follow). */
+  function renameShelf(shelf, name) {
+    const from = placeOf(shelf);
+    if (!shelf || shelf === "From devices" || !fs.existsSync(from)) throw fail(400, "Which shelf?");
+    const n = safe(name, "");
+    if (!n) throw fail(400, "What should it be called?");
+    const target = path.join(root(), n);
+    if (target === from) return { shelf: n };
+    if (fs.existsSync(target) && target.toLowerCase() !== from.toLowerCase()) throw fail(409, `There's a shelf called ${n} already; add this one to it instead.`);
+    fs.renameSync(from, target);
+    const m = readMeta();
+    rekey(m, shelf, n);
+    for (const k of Object.keys(m.from))
+      if (k === shelf || k.startsWith(`${shelf}/`)) {
+        m.from[n + k.slice(shelf.length)] = m.from[k];
+        delete m.from[k];
+      }
+    writeMeta(m);
+    return { shelf: n };
   }
 
   // ---- uploads, in pieces ----
@@ -215,7 +292,7 @@ export function createTheater({ vaultDir }) {
   }
 
   /** One piece of an upload, checked against the SHA-256 the phone sent with it. The last piece files the video. */
-  function uploadPiece({ shelf, name, size, offset, sha256, modified }, bytes) {
+  function uploadPiece({ shelf, name, size, offset, sha256, modified, device }, bytes) {
     const total = Number(size), at = Number(offset);
     if (!Number.isFinite(total) || total <= 0) throw fail(400, "How big is it?");
     if (!Number.isFinite(at) || at < 0) throw fail(400, "Where does this piece go?");
@@ -238,6 +315,7 @@ export function createTheater({ vaultDir }) {
     let k = 1, target = path.join(dir, n);
     while (fs.existsSync(target)) target = path.join(dir, `${stem} (${++k})${ext}`);
     fs.renameSync(p, target);
+    if (shelf) noteFrom(path.basename(dir), device);
     const when = Number(modified);
     if (when > 0) fs.utimesSync(target, new Date(), new Date(when));
     if (fs.statSync(target).size !== total) throw fail(500, "The finished video isn't the right size.");
@@ -374,5 +452,5 @@ export function createTheater({ vaultDir }) {
     return target;
   }
 
-  return { root, list, folders, addFolder, dropFolder, saveCollection, dropCollection, have, mkShelf, uploadState, uploadPiece, dropUpload, sweep, thumbFile, setThumb, setFav, owns, moveTo, savePlaylist, dropPlaylist };
+  return { root, list, folders, addFolder, dropFolder, addToShelf, renameShelf, saveCollection, dropCollection, have, mkShelf, uploadState, uploadPiece, dropUpload, sweep, thumbFile, setThumb, setFav, owns, moveTo, savePlaylist, dropPlaylist };
 }

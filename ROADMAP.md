@@ -160,6 +160,11 @@ SEASIDE as one house across your devices and your network, with the characters l
 - **The same for Explorer, Theater (video) and pictures**: other devices' shared folders and the network places show
   up in each, played or opened from where they are, with copying either way. One sharing layer under all of them
   (what Music's shared libraries use today), so a device shares a folder once and every app sees it as its kind.
+- ✅ **Theater's sidebar**: kinds worked out from folder and file names (Movies by their folders, Series by show and
+  season, Screen recordings, Shared to the server by device, Unknown), collections, playlists, shelves grouped by
+  the device they came from, folders on this computer, network shares, other devices; right-click a shelf or a show
+  for "Add to shelf". Playlists in Music too, and both read and write M3U / M3U8 / PLS files. Next: correcting a
+  video's kind by hand, and noticing playlist files in watched folders.
 - **Android's own music catalogue (MediaStore)**: the native app asks for music access the way players do, so the
   phone's whole library is shared without picking, in the background, with no page open.
 - **Links between servers that can't see each other**: PIPE NERD (bonded, encrypted priority lanes between trusted

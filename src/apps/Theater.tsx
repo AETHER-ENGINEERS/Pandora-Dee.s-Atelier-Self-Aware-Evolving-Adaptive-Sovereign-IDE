@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Download, Film, Folder, FolderInput, FolderOpen, FolderPlus, ListMusic, ListPlus, MoreHorizontal, Pencil, Play, Plus, RefreshCw, Repeat, Search, Shuffle, Star, Trash2, Upload, X } from "lucide-react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, FileDown, FileUp, HardDrive, MonitorPlay, MonitorSmartphone, Library, Network, PanelLeft, Smartphone, Tv, Download, Film, Folder, FolderInput, FolderOpen, FolderPlus, ListMusic, ListPlus, MoreHorizontal, Pencil, Play, Plus, RefreshCw, Repeat, Search, Shuffle, Star, Trash2, Upload, X } from "lucide-react";
 import { desk, useDesk } from "../lib/store.ts";
-import { downloadToDevice, fileApi, pickInExplorer } from "../lib/explorer.ts";
+import { baseName, downloadToDevice, fileApi, pickInExplorer, rawUrl } from "../lib/explorer.ts";
+import { KINDS, kindOf, placeIn, type Kind } from "../lib/videoKinds.ts";
+import { matchEntries, nameFromFile, parsePlaylist, readDeviceFile, saveTextToDevice, saveToVault, writeM3u } from "../lib/playlistFile.ts";
 import {
   backUp,
   cancelJob,
@@ -31,7 +33,20 @@ import { askText, askUser } from "../ui/Ask.tsx";
 import { inFolder, underFolder } from "../lib/episodes.ts";
 import { useWidth } from "../ui/hooks.ts";
 
-const ALL = "\u0000all", FAVS = "\u0000favs", LIST = "\u0000list:", DEV = "\u0000device:", COL = "\u0000col:";
+const ALL = "\u0000all", FAVS = "\u0000favs", LIST = "\u0000list:", DEV = "\u0000device:", COL = "\u0000col:", KIND = "\u0000kind:", SHARED = "\u0000shared";
+const KIND_ICON: Record<Kind, React.ReactNode> = { movie: <Clapperboard size={14} />, series: <Tv size={14} />, recording: <MonitorPlay size={14} />, unknown: <Film size={14} /> };
+const OPEN_KEY = "pdd-theater-open";
+/** Which of the sidebar's sections are open (each device remembers its own). */
+const savedOpen = (): Set<string> => {
+  try {
+    const j = JSON.parse(localStorage.getItem(OPEN_KEY) ?? "null");
+    if (Array.isArray(j)) return new Set(j.map(String));
+  } catch {
+    /* the usual ones, then */
+  }
+  return new Set(["kinds", "collections", "playlists", "shelves", "local", "network", "devices"]);
+};
+const fileSafe = (n: string) => n.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").trim() || "Playlist";
 
 /** "Add to playlist" lines for a video's menus: each playlist (ticked where it already is), and a new one. */
 function addToPlaylistItems(v: Video, playlists: Playlist[]): MenuItem[] {
@@ -87,6 +102,8 @@ export function TheaterApp() {
   const pick = useRef<HTMLInputElement>(null);
   const [ref, width] = useWidth<HTMLDivElement>();
   const narrow = width < 560;
+  // under this the sidebar folds away behind a button, and opens over the videos
+  const slim = width < 720;
 
   useEffect(() => {
     void refreshLibrary();
@@ -132,6 +149,134 @@ export function TheaterApp() {
   const browsing = !q && !playlist && !onDevice && !collection && shelf !== ALL && shelf !== FAVS;
   const open = (s: string, rel: string, from: Collection | null = via) => (from !== via && setViaRoot(rel), setVia(from), setShelf(s), setLoc({ shelf: s, where: rel }), setOrder(null));
   const videosOf = (s: string) => (lib?.videos ?? []).filter((v) => v.shelf === s);
+  // shelves a backup or a move can go to: the vault's own (not watched folders, not From devices)
+  const watchedNames = new Set((lib?.folders ?? []).map((f) => f.name));
+  const shelves = (lib?.shelves ?? []).filter((s) => s !== "From devices" && !watchedNames.has(s));
+  const from = lib?.from ?? {};
+  // every video sorted by kind (movies, series, screen recordings, unknown), each placed in its kind's own folders
+  // (Pixar › Ice Age, SpongeBob › Season 2), and what came from devices, by device
+  const sorted = useMemo(() => {
+    const by: Record<Kind, Video[]> = { movie: [], series: [], recording: [], unknown: [] };
+    const shared: Video[] = [];
+    const f = lib?.from ?? {};
+    for (const v of lib?.videos ?? []) {
+      const k = kindOf(v);
+      by[k].push({ ...v, folder: placeIn(v, k) });
+      // from a device: its shelf, or a folder added to another shelf since (Kids/Elsa stuff, still from her phone)
+      const top = (v.folder ?? "").split("/")[0];
+      const dev = f[v.shelf] ?? (top ? f[`${v.shelf}/${top}`] : undefined);
+      if (v.shelf === "From devices" || dev)
+        shared.push({ ...v, folder: [dev || "Shared from a phone", v.shelf === "From devices" ? "" : v.shelf, v.folder ?? ""].filter(Boolean).join("/") });
+    }
+    return { by, shared };
+  }, [lib]);
+  const kindShown = shelf.startsWith(KIND) ? (shelf.slice(KIND.length) as Kind) : null;
+  const virtual = Boolean(kindShown) || shelf === SHARED;
+  const labelOf = (id: string) => (kindShown ? (KINDS.find((k) => k.id === kindShown)?.label ?? "") : id === SHARED ? "Shared to the server" : id);
+  const fail = (e: unknown) => desk().say(e instanceof Error ? e.message : String(e));
+  const go = (id: string, rel = "") => {
+    setShelf(id);
+    setOrder(null);
+    setVia(null);
+    setLoc({ shelf: id, where: rel });
+    setSideOpen(false);
+  };
+  const [openSecs, setOpenSecs] = useState(savedOpen);
+  const toggleSec = (k: string) =>
+    setOpenSecs((prev) => {
+      const n = new Set(prev);
+      if (n.has(k)) n.delete(k);
+      else n.add(k);
+      try {
+        localStorage.setItem(OPEN_KEY, JSON.stringify([...n]));
+      } catch {
+        /* it just won't remember */
+      }
+      return n;
+    });
+  const [sideOpen, setSideOpen] = useState(false);
+
+  /** "Add to shelf" for a shelf or a show folder on one: moved onto another shelf, as a folder of its own there. */
+  const addToShelfItems = (s: string, rel: string): MenuItem[] => {
+    if (watchedNames.has(s) || (!rel && (s === "" || s === "From devices"))) return [];
+    const name = rel.split("/").pop() || s;
+    const put = async (to: string) => {
+      try {
+        const r = await theaterApi.addToShelf(s, rel, to);
+        await refreshLibrary();
+        desk().say(to ? `${name} is on ${to} now.` : `${name} is a shelf of its own now.`);
+        if (shelf === s && (!rel || where.startsWith(rel))) go(r.shelf, r.folder);
+      } catch (e) {
+        fail(e);
+      }
+    };
+    return [
+      { sep: true },
+      { heading: "Add to shelf" },
+      ...shelves.filter((x) => x !== s).map((x): MenuItem => ({ label: x, icon: <FolderInput size={14} />, run: () => void put(x) })),
+      {
+        label: "New shelf…",
+        icon: <FolderPlus size={14} />,
+        run: () =>
+          void askText(`A new shelf for ${name}`, "", { placeholder: "Kids", yes: "Make it" }).then(async (n) => {
+            if (!n?.trim()) return;
+            try {
+              await put((await theaterApi.shelf(n.trim())).shelf);
+            } catch (e) {
+              fail(e);
+            }
+          }),
+      },
+      ...(rel ? [{ label: "A shelf of its own", icon: <Folder size={14} />, run: () => void put("") } as MenuItem] : []),
+    ];
+  };
+  /** "Add to shelf" for one video (moved there). */
+  const videoShelfItems = (v: Video): MenuItem[] =>
+    toddler || v.watched || v.device
+      ? []
+      : [
+          { sep: true },
+          { heading: "Add to shelf" },
+          ...["", ...shelves]
+            .filter((x) => x !== v.shelf)
+            .map(
+              (x): MenuItem => ({
+                label: x || "Videos (no shelf)",
+                icon: <FolderInput size={14} />,
+                run: () => void theaterApi.move(v.path, x).then(() => (desk().say(`${v.name} is on ${x || "Videos"} now.`), refreshLibrary()), fail),
+              }),
+            ),
+        ];
+
+  // ---- playlist files (M3U / M3U8 / PLS) ----
+  const openPlaylistFile = async (src: "device" | "desk") => {
+    let got: { name: string; text: string } | null = null;
+    if (src === "device") got = await readDeviceFile();
+    else {
+      const p = (await pickInExplorer({ mode: "open", title: "Which playlist file? (.m3u, .m3u8, .pls)", filters: [{ name: "Playlists", extensions: ["m3u", "m3u8", "pls"] }] }))?.[0];
+      if (!p) return;
+      const r = await fetch(rawUrl(p));
+      got = r.ok ? { name: baseName(p), text: await r.text() } : null;
+    }
+    if (!got) return;
+    const entries = parsePlaylist(got.text);
+    const { found, missing } = matchEntries(entries, lib?.videos ?? [], (v) => v.path);
+    if (!found.length) return desk().say(`None of the ${entries.length} in ${got.name} are in the Theater.`);
+    try {
+      const p = await changePlaylist({ name: nameFromFile(got.name), items: found.map((v) => v.id) });
+      go(LIST + p.id);
+      desk().say(`${p.name}: ${found.length} video${found.length === 1 ? "" : "s"}${missing.length ? `; ${missing.length} not found here` : ""}.`);
+    } catch (e) {
+      fail(e);
+    }
+  };
+  const savePlaylistFile = (p: Playlist, to: "device" | "vault") => {
+    const byId = new Map((lib?.videos ?? []).map((v) => [v.id, v]));
+    const text = writeM3u(p.items.map((id) => byId.get(id)).filter((v): v is Video => Boolean(v)).map((v) => ({ path: v.path, title: v.name, seconds: v.seconds })));
+    const name = `${fileSafe(p.name)}.m3u8`;
+    if (to === "device") saveTextToDevice(name, text);
+    else void saveToVault(name, text).then((at) => desk().say(`Saved as ${at}.`), fail);
+  };
   /** Play a show from an episode on: through its seasons, in order. */
   const playOn = (list: Video[], from?: Video) => {
     if (!list.length) return;
@@ -175,7 +320,33 @@ export function TheaterApp() {
             (name) => name?.trim() && void changeCollection({ name: name.trim(), items: [key] }).then((c) => desk().say(`${c.name}: made, with ${rel.split("/").pop() || s} in it.`), fail),
           ),
       },
+      ...addToShelfItems(s, rel),
     );
+    return items;
+  };
+  /** A shelf's own menu (in the sidebar): play it, gather it, add it to another shelf, rename it, or stop watching. */
+  const shelfMenu = (s: string): MenuItem[] => {
+    const items = showMenu(s, "");
+    if (toddler) return items;
+    const w = (lib?.folders ?? []).find((f) => f.name === s);
+    if (w && lib?.canAddFolders)
+      items.push({ sep: true }, {
+        label: "Stop showing it",
+        icon: <X size={14} />,
+        run: () =>
+          void askUser(`Stop showing ${s}?`, "The folder and its videos stay where they are; it just isn't a shelf here any more.", "Stop showing it", "Keep it").then(
+            (yes) => yes && void theaterApi.dropFolder(w.path).then(() => (go(ALL), refreshLibrary())),
+          ),
+      });
+    if (shelves.includes(s))
+      items.push({ sep: true }, {
+        label: "Rename shelf…",
+        icon: <Pencil size={14} />,
+        run: () =>
+          void askText("Rename the shelf", s, { yes: "Rename" }).then(
+            (n) => n?.trim() && n.trim() !== s && void theaterApi.renameShelf(s, n.trim()).then((r) => (refreshLibrary(), shelf === s && go(r.shelf)), fail),
+          ),
+      });
     return items;
   };
   const addFolder = async () => {
@@ -195,6 +366,9 @@ export function TheaterApp() {
     const words = q.toLowerCase().split(/\s+/).filter(Boolean);
     const match = (v: Video) => words.every((w) => `${v.name} ${v.shelf}`.toLowerCase().includes(w));
     if (onDevice) return (devVideos?.videos ?? []).filter(match);
+    // a kind (Movies, Series…) or what came from devices: in that one's own folders
+    if (kindShown) return sorted.by[kindShown].filter(match);
+    if (shelf === SHARED) return sorted.shared.filter(match);
     // a collection's shows can come from any shelf: everything stays in reach of the player
     if (collection) return (lib?.videos ?? []).filter(match);
     // a playlist shows its videos in its own order (those still here)
@@ -203,7 +377,7 @@ export function TheaterApp() {
       return playlist.items.map((id) => byId.get(id)).filter((v): v is Video => Boolean(v) && match(v!));
     }
     return (lib?.videos ?? []).filter((v) => (shelf === ALL || (shelf === FAVS ? v.fav : v.shelf === shelf)) && match(v));
-  }, [lib, shelf, q, playlist, onDevice, devVideos, collection]);
+  }, [lib, shelf, q, playlist, onDevice, devVideos, collection, kindShown, sorted]);
   const here = useMemo(() => (browsing ? inFolder(shown, where) : null), [browsing, shown, where]);
   // what the player steps through: the shuffled order while one is playing shuffled, otherwise what's shown
   const queue = useMemo(() => {
@@ -254,15 +428,126 @@ export function TheaterApp() {
     if (!n) desk().say("Those aren't videos the Theater keeps (mp4, mov, webm, mkv…).");
   };
 
-  // shelves a backup can go to: the vault's own (not watched folders, not From devices)
-  const watchedNames = new Set((lib?.folders ?? []).map((f) => f.name));
-  const shelves = (lib?.shelves ?? []).filter((s) => s !== "From devices" && !watchedNames.has(s));
   const current = playing ? (lib?.videos.find((v) => v.id === playing) ?? devVideos?.videos.find((v) => v.id === playing) ?? null) : null;
+
+  // ---- the sidebar: kinds, collections, playlists, shelves (by the device they came from), folders, devices ----
+  const counts = new Map<string, number>();
+  for (const v of lib?.videos ?? []) counts.set(v.shelf, (counts.get(v.shelf) ?? 0) + 1);
+  const ownShelves = (lib?.shelves ?? []).filter((s) => !watchedNames.has(s));
+  const byDevice = new Map<string, string[]>();
+  for (const s of ownShelves) if (from[s]) byDevice.set(from[s], [...(byDevice.get(from[s]) ?? []), s]);
+  const plainShelves = ownShelves.filter((s) => !from[s]);
+  const localFolders = (lib?.folders ?? []).filter((f) => !f.path.startsWith("\\\\"));
+  const netFolders = (lib?.folders ?? []).filter((f) => f.path.startsWith("\\\\"));
+  const newPlaylist = () =>
+    void askText("A new playlist", "", { body: "Then add videos to it from their menus (right-click, or hold).", placeholder: "Saturday cartoons", yes: "Make it" }).then(
+      (name) => name?.trim() && void changePlaylist({ name: name.trim(), items: [] }).then((p) => go(LIST + p.id), fail),
+    );
+  const newCollection = () =>
+    void askText("A new collection", "", { body: "Shows from any shelf, gathered under a name, in an order of your own. Add shows from their menus.", placeholder: "Kids", yes: "Make it" }).then(
+      (name) => name?.trim() && void changeCollection({ name: name.trim(), items: [] }).then((c) => go(COL + c.id), fail),
+    );
+  const side = (
+    <SideCtx.Provider value={{ shelf, where, virtual, go, openSecs, toggleSec }}>
+    <nav className="side theater-side" aria-label="Shelves">
+      <Item id={ALL} label="All videos" icon={<Film size={14} />} n={lib?.videos.length} />
+      <Item id={FAVS} label="Favourites" icon={<Star size={14} />} n={(lib?.videos ?? []).filter((v) => v.fav).length} />
+      <Sec k="kinds" title="Kinds">
+        {KINDS.map(({ id, label }) => {
+          const vs = sorted.by[id];
+          if (!vs.length && id !== "unknown") return null;
+          const top = id === "movie" || id === "series" ? inFolder(vs, "").folders : [];
+          return top.length ? (
+            <Sec key={id} k={`kind:${id}`} title={`${label} · ${vs.length}`} icon={KIND_ICON[id]} depth={1}>
+              <Item id={KIND + id} label={`All ${label.toLowerCase()}`} depth={2} n={vs.length} />
+              {top.slice(0, 300).map((f) => (
+                <Item key={f.rel} id={KIND + id} rel={f.rel} label={f.name} depth={2} n={f.videos.length} />
+              ))}
+            </Sec>
+          ) : (
+            <Item key={id} id={KIND + id} label={label} icon={KIND_ICON[id]} n={vs.length} depth={1} />
+          );
+        })}
+        {sorted.shared.length ? (
+          <Sec k="kind:shared" title={`Shared to the server · ${sorted.shared.length}`} icon={<MonitorSmartphone size={14} />} depth={1}>
+            <Item id={SHARED} label="Everything shared" depth={2} n={sorted.shared.length} />
+            {inFolder(sorted.shared, "").folders.map((f) => (
+              <Item key={f.rel} id={SHARED} rel={f.rel} label={f.name} depth={2} n={f.videos.length} />
+            ))}
+          </Sec>
+        ) : null}
+      </Sec>
+      <Sec k="collections" title="Collections" add={{ label: "A new collection", run: newCollection }}>
+        {collections.map((c) => (
+          <Item key={c.id} id={COL + c.id} label={`${c.kids ? "🧸 " : ""}${c.name}`} icon={<Library size={14} />} n={c.items.length} depth={1} />
+        ))}
+        {collections.length ? null : <p className="faint small theater-side-note">Shows gathered under a name, like Kids.</p>}
+      </Sec>
+      <Sec
+        k="playlists"
+        title="Playlists"
+        add={{
+          label: "A new playlist, or one from a file",
+          run: (e) =>
+            openMenu(e, [
+              { label: "New playlist…", icon: <ListPlus size={14} />, run: newPlaylist },
+              { sep: true },
+              { heading: "Open a playlist file (.m3u, .m3u8, .pls)" },
+              { label: "From this device…", icon: <FileUp size={14} />, run: () => void openPlaylistFile("device") },
+              { label: "From the desktop's files…", icon: <FolderOpen size={14} />, run: () => void openPlaylistFile("desk") },
+            ]),
+        }}
+      >
+        {playlists.map((p) => (
+          <Item key={p.id} id={LIST + p.id} label={p.name} icon={<ListMusic size={14} />} n={p.items.length} depth={1} />
+        ))}
+      </Sec>
+      <Sec
+        k="shelves"
+        title="Shelves"
+        add={{ label: "A new shelf", run: () => void chooseTarget("\u0000new").then(() => void 0) }}
+      >
+        {plainShelves.map((s) => (
+          <Item key={s} id={s} label={s} icon={<Folder size={14} />} n={counts.get(s)} depth={1} menu={() => shelfMenu(s)} />
+        ))}
+        {[...byDevice.entries()].map(([d, ss]) => (
+          <Sec key={d} k={`dev:${d}`} title={d} icon={<Smartphone size={14} />} depth={1}>
+            {ss.map((s) => (
+              <Item key={s} id={s} label={s} icon={<Folder size={14} />} n={counts.get(s)} depth={2} menu={() => shelfMenu(s)} title={`${s} · from ${d}`} />
+            ))}
+          </Sec>
+        ))}
+      </Sec>
+      {localFolders.length || lib?.canAddFolders ? (
+        <Sec k="local" title="On this computer" icon={<HardDrive size={14} />} add={lib?.canAddFolders ? { label: "Add a folder of videos", run: () => void addFolder() } : undefined}>
+          {localFolders.map((f) => (
+            <Item key={f.path} id={f.name} label={f.name} icon={<Folder size={14} />} n={counts.get(f.name)} depth={1} menu={() => shelfMenu(f.name)} title={f.path} />
+          ))}
+        </Sec>
+      ) : null}
+      {netFolders.length || lib?.canAddFolders ? (
+        <Sec k="network" title="Network" icon={<Network size={14} />} add={lib?.canAddFolders ? { label: "Add a network folder (Network places are in the picker's sidebar)", run: () => void addFolder() } : undefined}>
+          {netFolders.map((f) => (
+            <Item key={f.path} id={f.name} label={f.name} icon={<Folder size={14} />} n={counts.get(f.name)} depth={1} menu={() => shelfMenu(f.name)} title={f.path} />
+          ))}
+          {netFolders.length ? null : <p className="faint small theater-side-note">A share like \\ALICEMOVIES\movies, played from where it is.</p>}
+        </Sec>
+      ) : null}
+      {devices.length ? (
+        <Sec k="devices" title="Other devices" icon={<MonitorSmartphone size={14} />}>
+          {devices.map((d) => (
+            <Item key={d.path} id={DEV + d.path} label={d.name} icon={<Smartphone size={14} />} depth={1} />
+          ))}
+        </Sec>
+      ) : null}
+    </nav>
+    </SideCtx.Provider>
+  );
 
   return (
     <div
       ref={ref}
-      className={`theater${narrow ? " narrow" : ""}`}
+      className={`theater${narrow ? " narrow" : ""}${slim ? " slim" : ""}`}
       onDragOver={(e) => e.dataTransfer.types.includes("Files") && e.preventDefault()}
       onDrop={(e) => {
         if (!e.dataTransfer.files.length) return;
@@ -272,6 +557,11 @@ export function TheaterApp() {
     >
       {toddler ? null : (
       <div className="theater-top">
+        {slim ? (
+          <button className={`btn small${sideOpen ? " on" : " ghost"}`} onClick={() => setSideOpen(!sideOpen)} aria-expanded={sideOpen} title="Shelves, kinds and playlists">
+            <PanelLeft size={15} /> <span className="theater-here">{shelf === ALL ? "All" : shelf === FAVS ? "Favourites" : (collection?.name ?? playlist?.name ?? (onDevice ? devices.find((d) => d.path === onDevice)?.name : labelOf(shelf)))}</span>
+          </button>
+        ) : null}
         <div className="theater-search">
           <Search size={15} />
           <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a video" aria-label="Find a video" />
@@ -292,11 +582,6 @@ export function TheaterApp() {
             <option value={"\u0000new"}>New shelf…</option>
           </select>
         </label>
-        {lib?.canAddFolders && !toddler ? (
-          <button className="btn small" onClick={() => void addFolder()} title="A folder of videos watched where it is: a network share, or a folder on this computer">
-            <FolderPlus size={14} /> {narrow ? "Folder" : "Add a folder"}
-          </button>
-        ) : null}
         <button className="btn small ghost" onClick={() => void refreshLibrary(true)} title="Look again" aria-label="Look again">
           <RefreshCw size={14} />
         </button>
@@ -315,35 +600,20 @@ export function TheaterApp() {
       </div>
       )}
 
-      <div className="theater-shelves" role="tablist" aria-label="Shelves">
-        {(toddler
-          ? kidsCols.map((c) => [COL + c.id, `▦ ${c.name}`])
-          : [
-          [ALL, "All"],
-          [FAVS, "★ Favourites"],
-          ...collections.map((c) => [COL + c.id, `▦ ${c.name}`]),
-          ...playlists.map((p) => [LIST + p.id, `≡ ${p.name}`]),
-          ...(lib?.shelves ?? []).map((s) => [s, watchedNames.has(s) ? `⇄ ${s}` : s]),
-          ...devices.map((d) => [DEV + d.path, `📱 ${d.name}`]),
-        ]).map(([id, label]) => (
-          <button key={id} role="tab" aria-selected={shelf === id} className={`chip${shelf === id ? " focus" : ""}`} onClick={() => (setShelf(id), setOrder(null), setVia(null), setLoc({ shelf: id, where: "" }))}>
-            {label}
-          </button>
-        ))}
-        {toddler ? null : (
-          <button
-            className="chip"
-            title="A new playlist"
-            onClick={() =>
-              void askText("A new playlist", "", { body: "Then add videos to it from their menus (right-click, or hold).", placeholder: "Saturday cartoons", yes: "Make it" }).then(
-                (name) => name?.trim() && void changePlaylist({ name: name.trim(), items: [] }).then((p) => setShelf(LIST + p.id), (e) => desk().say(String(e))),
-              )
-            }
-          >
-            <Plus size={12} /> Playlist
-          </button>
-        )}
-      </div>
+      {toddler ? (
+        // toddler mode: only the collections chosen for it, as big chips (no sidebar)
+        <div className="theater-shelves" role="tablist" aria-label="Shelves">
+          {kidsCols.map((c) => (
+            <button key={c.id} role="tab" aria-selected={shelf === COL + c.id} className={`chip${shelf === COL + c.id ? " focus" : ""}`} onClick={() => go(COL + c.id)}>
+              ▦ {c.name}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="theater-body">
+      {toddler || (slim && !sideOpen) ? null : side}
+      <div className="theater-main">
 
       {playlist ? (
         <div className="theater-playlist-bar">
@@ -367,6 +637,20 @@ export function TheaterApp() {
           <span style={{ flex: 1 }} />
           {toddler ? null : (
             <>
+              <button
+                className="btn small ghost"
+                disabled={!playlist.items.length}
+                title="As an .m3u8 file, which VLC, Kodi, Windows Media Player and the Xbox can play"
+                onClick={(e) =>
+                  openMenu(e, [
+                    { heading: "Save as a playlist file (.m3u8)" },
+                    { label: "To this device", icon: <FileDown size={14} />, run: () => savePlaylistFile(playlist, "device") },
+                    { label: "In Vault › Playlists", icon: <FolderInput size={14} />, run: () => savePlaylistFile(playlist, "vault") },
+                  ])
+                }
+              >
+                <FileDown size={13} /> Save as a file
+              </button>
               <button
                 className="btn small ghost"
                 onClick={() => void askText("Rename the playlist", playlist.name, { yes: "Rename" }).then((name) => name?.trim() && void changePlaylist({ id: playlist.id, name: name.trim() }))}
@@ -439,7 +723,7 @@ export function TheaterApp() {
           ) : null}
           {toddler ? null : (
             <button className="link-btn" onClick={() => open(shelf, "")}>
-              {shelf}
+              {labelOf(shelf)}
             </button>
           )}
           {where
@@ -539,7 +823,7 @@ export function TheaterApp() {
             {here.folders.length ? (
               <div className="theater-grid">
                 {here.folders.map((f) => (
-                  <FolderTile key={f.rel} name={f.name} videos={f.videos} onOpen={() => open(shelf, f.rel)} menu={() => showMenu(shelf, f.rel)} />
+                  <FolderTile key={f.rel} name={f.name} videos={f.videos} onOpen={() => open(shelf, f.rel)} menu={() => (virtual ? [{ label: "Play from the start", icon: <Play size={14} />, run: () => playOn(underFolder(shown, f.rel)) }] : showMenu(shelf, f.rel))} />
                 ))}
               </div>
             ) : null}
@@ -551,7 +835,7 @@ export function TheaterApp() {
                     v={v}
                     // on from this one: through the rest of the show (its seasons in order), or what's loose here
                     onPlay={() => playOn(where ? underFolder(shown, where.split("/")[0]) : here.here, v)}
-                    menu={() => (toddler ? [] : addToPlaylistItems(v, playlists))}
+                    menu={() => (toddler ? [] : [...addToPlaylistItems(v, playlists), ...videoShelfItems(v)])}
                   />
                 ))}
               </div>
@@ -569,7 +853,7 @@ export function TheaterApp() {
                   onPlay={() => (setOrder(null), setPlaying(v.id))}
                   menu={() => {
                     if (toddler) return [];
-                    const items = addToPlaylistItems(v, playlists);
+                    const items = [...addToPlaylistItems(v, playlists), ...videoShelfItems(v)];
                     if (!playlist || q) return items;
                     // inside a playlist: its order, and leaving it
                     const move = (to: number) => {
@@ -592,6 +876,8 @@ export function TheaterApp() {
           </section>
         ))}
       </div>
+      </div>
+      </div>
 
       {current ? (
         <Player
@@ -607,6 +893,43 @@ export function TheaterApp() {
       ) : null}
     </div>
   );
+}
+
+type Side = { shelf: string; where: string; virtual: boolean; go: (id: string, rel?: string) => void; openSecs: Set<string>; toggleSec: (k: string) => void };
+const SideCtx = createContext<Side>({ shelf: "", where: "", virtual: false, go: () => {}, openSecs: new Set(), toggleSec: () => {} });
+
+function Item({ id, rel = "", label, icon, n, depth = 0, menu, title }: { id: string; rel?: string; label: string; icon?: React.ReactNode; n?: number; depth?: number; menu?: () => MenuItem[]; title?: string }) {
+  const { shelf, where, virtual, go } = useContext(SideCtx);
+return (
+  <button
+    className={`item${shelf === id && (rel ? where === rel : !where || !virtual) ? " on" : ""}`}
+    style={depth ? { paddingLeft: 8 + depth * 14 } : undefined}
+    onClick={() => go(id, rel)}
+    onContextMenu={menu ? (e) => openMenu(e, menu()) : undefined}
+    title={title ?? label}
+  >
+    {icon} <span className="grow theater-side-name">{label}</span>
+    {n ? <span className="faint small">{n}</span> : null}
+  </button>
+);
+}
+function Sec({ k, title, icon, add, children, depth = 0 }: { k: string; title: string; icon?: React.ReactNode; add?: { label: string; run: (e: React.MouseEvent) => void }; children: React.ReactNode; depth?: number }) {
+  const { openSecs, toggleSec } = useContext(SideCtx);
+return (
+  <>
+    <div className="theater-sec" style={depth ? { paddingLeft: 4 + depth * 14 } : undefined}>
+      <button className="theater-sec-head" onClick={() => toggleSec(k)} aria-expanded={openSecs.has(k)}>
+        {openSecs.has(k) ? <ChevronDown size={13} /> : <ChevronRight size={13} />} {icon} <span className="theater-side-name">{title}</span>
+      </button>
+      {add ? (
+        <button className="icon-btn" onClick={add.run} title={add.label} aria-label={add.label}>
+          <Plus size={13} />
+        </button>
+      ) : null}
+    </div>
+    {openSecs.has(k) ? children : null}
+  </>
+);
 }
 
 /** A show or a season: a folder of videos, with a picture from the first that has one, and how many it holds. */
