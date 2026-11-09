@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { askText } from "../ui/Ask.tsx";
 import { desk, useDesk } from "../lib/store.ts";
 import { FLOOD_RULES, type Role } from "../lib/flood.ts";
 import { allowed } from "../lib/privacy.ts";
@@ -140,10 +141,11 @@ export function SentryApp() {
               ["battery", "Battery and charger"],
               ["network", "Network going up or down"],
               ["screen", "Someone leaving or returning to the desktop"],
+              ["lan", "A new device on the local network, or one that starts sharing folders (looked at every 5 minutes from the desktop's own computer)"],
             ] as const
           ).map(([k, label]) => (
             <label key={k} className="check">
-              <input type="checkbox" checked={s.sensors[k]} onChange={(e) => desk().set({ sensors: { ...s.sensors, [k]: e.target.checked } })} />
+              <input type="checkbox" checked={Boolean(s.sensors[k])} onChange={(e) => desk().set({ sensors: { ...s.sensors, [k]: e.target.checked } })} />
               <span>{label}</span>
             </label>
           ))}
@@ -152,6 +154,7 @@ export function SentryApp() {
             <span>Mention it in the Room when Jade is there</span>
           </label>
           <p className="small faint">Calls, texts, location, camera and microphone are phone features and aren't watched here.</p>
+          <NetworkDevices />
         </>
       )}
 
@@ -162,5 +165,64 @@ export function SentryApp() {
       </div>
       {risk ? <RiskDialog feature="sensors" onClose={() => setRisk(false)} /> : null}
     </div>
+  );
+}
+
+type LanDevice = { mac: string; ip: string; name: string; label: string; sharing: boolean; first: number; last: number };
+
+/** The devices on the local network, as this computer last saw them (shown on the desktop's own computer only). */
+function NetworkDevices() {
+  const [list, setList] = useState<{ at: number; devices: LanDevice[] } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    void fetch("/api/lan").then((r) => (r.ok ? r.json().then(setList) : null), () => null);
+  }, []);
+  if (!list) return null;
+  const look = async () => {
+    setBusy(true);
+    setErr("");
+    try {
+      const r = await fetch("/api/lan/scan", { method: "POST" });
+      if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error || `It answered ${r.status}.`);
+      setList(await r.json());
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const name = async (d: LanDevice) => {
+    const label = await askText("What is it?", d.label || d.name, { body: `${d.ip} · ${d.mac}`, placeholder: "Kai's tablet", yes: "Save" });
+    if (label === null) return;
+    const r = await fetch("/api/lan/label", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mac: d.mac, label }) });
+    if (r.ok) setList(await r.json());
+  };
+  return (
+    <>
+      <div className="divider" />
+      <div className="row" style={{ gap: 8, alignItems: "center" }}>
+        <h4 style={{ margin: 0 }}>On the local network</h4>
+        <span className="grow" />
+        <span className="small faint">{list.at ? `looked ${new Date(list.at).toLocaleTimeString()}` : "not looked yet"}</span>
+        <button className="btn small" disabled={busy} onClick={() => void look()}>
+          {busy ? "Looking…" : "Look now"}
+        </button>
+      </div>
+      {err ? <p className="small bad-text">{err}</p> : null}
+      <p className="small faint">From this computer's own list of devices it has heard from; each is only asked whether it shares folders. Click one to name it.</p>
+      <table className="small" style={{ width: "100%", borderCollapse: "collapse" }}>
+        <tbody>
+          {list.devices.map((d) => (
+            <tr key={d.mac} onClick={() => void name(d)} style={{ cursor: "pointer" }} title="Name it">
+              <td>{d.label || d.name || <span className="faint">unnamed</span>}</td>
+              <td className="mono faint">{d.ip}</td>
+              <td>{d.sharing ? "shares folders" : ""}</td>
+              <td className="faint">{new Date(d.last).toLocaleDateString()}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
   );
 }

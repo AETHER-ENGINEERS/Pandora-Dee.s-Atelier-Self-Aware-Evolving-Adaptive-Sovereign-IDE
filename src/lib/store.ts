@@ -525,7 +525,7 @@ export type State = {
   /** Voice engines (speaking and listening) and which one turns your speech into text. */
   voices: VoiceEnginePrefs;
   sentryLog: string[];
-  sensors: { battery: boolean; network: boolean; screen: boolean; tellRoom: boolean };
+  sensors: { battery: boolean; network: boolean; screen: boolean; tellRoom: boolean; /** new devices on the local network (watched from the desktop's own computer) */ lan?: boolean };
   hangout: boolean;
   hang: HangPrefs;
   dock: DockPrefs;

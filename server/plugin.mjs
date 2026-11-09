@@ -26,6 +26,7 @@ import { createMcpStdio } from "./mcpstdio.mjs";
 import { createResidentKeys } from "./residentKeys.mjs";
 import { createHeart } from "./heart.mjs";
 import { createDeskState } from "./deskState.mjs";
+import { createLan } from "./lan.mjs";
 import { createBodies } from "./bodies.mjs";
 import { createModules } from "./modules.mjs";
 import { createTheater, PIECE_MAX, VIDEO_EXT } from "./theater.mjs";
@@ -202,6 +203,8 @@ export function deskServer() {
   const stdioPrint = (b) => createHash("sha256").update(JSON.stringify([String(b.command || ""), (b.args ?? []).map(String), String(b.cwd || ""), Object.entries(b.env ?? {}).map(([k, v]) => [k, String(v)]).sort()])).digest("hex").slice(0, 32);
   const engine = createEngine({ dataDir: () => dataDir, getChoice: () => readConfig().browserEngine, deskPorts: () => [...deskPorts] });
   // the shared desk (deskState.mjs): SEASIDE's state on the server, sealed, one desk every device opens
+  // the devices on the local network (lan.mjs): for Sentry's network watch and Explorer's computers
+  const lanWatch = createLan({ dataDir: () => dataDir });
   const desk = createDeskState({ dataDir: () => dataDir, seal: (o) => residentKeys.seal(o), open: (x) => residentKeys.open(x) });
 
   // the heart (heart.mjs): one page does the background work; with "keep them running" on, the keeper opens the
@@ -961,6 +964,21 @@ export function deskServer() {
     }
     // the shared desk: the desktop's own pages and devices over Tailscale's https or the LAN (as the desktop itself is);
     // the first copy is made from the desktop's own computer
+    // the local network's devices: seen and looked for only on this computer (a map of the household isn't for every page)
+    if (parts[0] === "lan") {
+      try {
+        if (!onThisPc(req)) return send(res, 403, { error: "The network watch is on the desktop's own computer." });
+        if (m === "GET" && !parts[1]) return send(res, 200, lanWatch.list());
+        if (m === "POST" && parts[1] === "scan") return send(res, 200, await lanWatch.scan());
+        if (m === "POST" && parts[1] === "label") {
+          const b = JSON.parse((await readBody(req, 10_000)).toString("utf8") || "{}");
+          return send(res, 200, lanWatch.label(String(b.mac || ""), b.label));
+        }
+        return send(res, 404, { error: "Not found" });
+      } catch (e) {
+        return send(res, e.status || 500, { error: e.message });
+      }
+    }
     if (parts[0] === "desk") {
       try {
         if (m === "GET" && !parts[1]) return send(res, 200, { ...desk.get(Number(url.searchParams.get("since")) || 0), here: onThisPc(req) });

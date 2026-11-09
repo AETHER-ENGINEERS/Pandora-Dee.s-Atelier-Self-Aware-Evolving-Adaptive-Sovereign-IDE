@@ -78,17 +78,29 @@ export function createFiles({ dataDir, musicFolders, videoFolders = () => [], ge
     // a network place, opened from this computer itself (typing its address is the choice to go there)
     if (local && netShare(full)?.share) return full;
     if (places().some((pl) => inside(full, pl.path))) return full;
+    // a network place this computer has opened before (or a mapped drive's share): any device may go there too
+    // (or any share on a computer one of those is on, since this computer already goes there; never a hidden admin
+    // share like C$, which this computer's own sign-in might open)
+    const ns = netShare(full);
+    if (ns?.share && (knownPlaces().some((pl) => inside(full, pl)) || (knownHost(ns.host) && !ns.share.endsWith("$")))) return full;
     const sh = sharing();
     if (sh.wholePc || sh.folders.some((f) => inside(full, f))) return full;
     throw Object.assign(new Error("That's outside the desktop's places."), { status: 403 });
   }
 
-  /** Network places for this computer's own Explorer: the ones opened before, and the mapped drives' shares. */
+  // the mapped drives' shares, as last read (net use takes a moment; read again with every Network list)
+  let mappedShares = [];
+  const knownPlaces = () => [...readPlaces(placesFile()), ...mappedShares];
+  /** A computer one of the known places is on (its share list can be shown to any device). */
+  const knownHost = (host) => knownPlaces().some((p) => netShare(p)?.host?.toLowerCase() === String(host).toLowerCase());
+
+  /** Network places: the ones this computer opened before, and the mapped drives' shares. Every device sees them;
+   *  only this computer opens new ones (opening one makes this computer connect to that host). */
   async function network(local) {
-    if (!local) return [];
-    const mapped = Object.values(await netUse());
+    mappedShares = Object.values(await netUse());
+    void local;
     const seen = new Set();
-    return [...readPlaces(placesFile()), ...mapped]
+    return knownPlaces()
       .filter((p) => !seen.has(p.toLowerCase()) && seen.add(p.toLowerCase()))
       .map((p, i) => ({ id: `net-${i}`, name: p.replace(/^\\\\/, ""), path: p, kind: "network" }));
   }
@@ -97,7 +109,7 @@ export function createFiles({ dataDir, musicFolders, videoFolders = () => [], ge
   async function listAny(p, local) {
     const s = netShare(String(p || ""));
     if (s && !s.share) {
-      if (!local) throw Object.assign(new Error("Network places are opened on the desktop's own computer."), { status: 403 });
+      if (!local && !knownHost(s.host)) throw Object.assign(new Error("New network places are opened on the desktop's own computer first; then every device has them."), { status: 403 });
       const shares = await netView(s.host);
       if (!shares.length) throw Object.assign(new Error(`Couldn't see what \\\\${s.host} shares. Type the share's address too, like \\\\${s.host}\\media.`), { status: 404 });
       return { path: `\\\\${s.host}`, parent: null, entries: shares.map((n) => ({ name: n, path: `\\\\${s.host}\\${n}`, dir: true, size: 0, mtime: 0, ext: "" })) };
@@ -109,8 +121,8 @@ export function createFiles({ dataDir, musicFolders, videoFolders = () => [], ge
       if (s && e.code && e.code !== "EACCES") throw Object.assign(new Error(`Couldn't open ${p}. If it asks for a sign-in, open it once in Windows' File Explorer (Windows remembers it), then try again.`), { status: 404 });
       throw e;
     }
-    if (s && local) {
-      rememberPlace(placesFile(), `\\\\${s.host}\\${s.share}`);
+    if (s) {
+      if (local) rememberPlace(placesFile(), `\\\\${s.host}\\${s.share}`);
       if (!out.parent) out.parent = `\\\\${s.host}`; // a share's top goes up to its computer's shares
     }
     return out;

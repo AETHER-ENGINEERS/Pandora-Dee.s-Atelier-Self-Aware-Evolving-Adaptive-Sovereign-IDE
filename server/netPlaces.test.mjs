@@ -50,3 +50,22 @@ test("a zip unpacks beside itself, and its names can't climb out", async () => {
   assert.ok(!fs.existsSync(path.join(data, "escape.txt")));
   assert.equal(path.basename(F.unzip(zip, false).path), "readings (2)", "a second unpack doesn't overwrite the first");
 });
+
+test("a phone reaches the network places this computer opened, and that computer's other shares, never C$", async () => {
+  const { createFiles } = await import("./files.mjs");
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), "pdd-netp-"));
+  fs.writeFileSync(path.join(d, "network-places.json"), JSON.stringify([String.raw`\\ALICEMOVIES\music`]));
+  const F = createFiles({ dataDir: () => d, musicFolders: () => [], getWholePc: () => false, setWholePc: () => {} });
+  const ok = (p) => {
+    try {
+      F.allowed(p, false);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  assert.equal(ok(String.raw`\\ALICEMOVIES\music\Album`), true);
+  assert.equal(ok(String.raw`\\ALICEMOVIES\movies`), true, "another share on a computer it already goes to");
+  assert.equal(ok(String.raw`\\ALICEMOVIES\C$`), false, "never a hidden admin share");
+  assert.equal(ok(String.raw`\\ELSEWHERE\music`), false, "a computer it hasn't opened");
+});

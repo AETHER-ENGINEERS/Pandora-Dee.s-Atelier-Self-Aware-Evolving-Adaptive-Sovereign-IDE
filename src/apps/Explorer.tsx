@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowLeft, ChevronLeft, ChevronRight, Copy, Download, ExternalLink, File as FileIcon, FileText, Folder, FolderPlus, FolderUp, Gamepad2, HardDrive, Image as ImageIcon,
-  LayoutGrid, LayoutList, Link2, Link2Off, Monitor, Music2, Network, PackageOpen, RotateCcw, Share2, Smartphone, Trash2, Upload, Video,
+  LayoutGrid, LayoutList, Link2, Link2Off, Monitor, RefreshCw, Music2, Network, PackageOpen, RotateCcw, Share2, Smartphone, Trash2, Upload, Video,
 } from "lucide-react";
 import { desk } from "../lib/store.ts";
 import { Markdown } from "../ui/common.tsx";
@@ -366,12 +366,13 @@ function FileBrowser({ mode, go, pick }: { mode: Mode; go?: { path: string; at: 
             <Share2 size={15} /> {p.name}
           </button>
         ))}
-        {ov?.wholePc.local ? <div className="folder">Network</div> : null}
+        {ov?.wholePc.local || network.length ? <div className="folder">Network</div> : null}
         {network.map((p) => (
           <button key={p.id} className={`item${!trashView && cwd.toLowerCase().startsWith(p.path.toLowerCase()) ? " on" : ""}`} onClick={() => void open(p.path)} title={p.path}>
             <Network size={15} /> {p.name}
           </button>
         ))}
+        {ov?.wholePc.local ? <Computers cwd={cwd} known={network.map((p) => p.path)} onOpen={(p) => void open(p)} /> : null}
         {ov?.wholePc.local ? (
           <button className="item faint" onClick={() => void openNetworkPlace()} title="A computer or share on your network: \\computer\share">
             <Network size={15} /> Open a network place…
@@ -735,5 +736,41 @@ function Preview({ e, deviceExplorer, onClose }: { e: Entry; deviceExplorer: boo
         </button>
       </div>
     </aside>
+  );
+}
+
+/** Computers on the local network that share folders (as this computer last saw them, server/lan.mjs), one click from
+ *  their shares; "Look for computers" looks again. Shown on the desktop's own computer. */
+function Computers({ cwd, known, onOpen }: { cwd: string; known: string[]; onOpen: (p: string) => void }) {
+  const [list, setList] = useState<{ ip: string; name: string; label: string; sharing: boolean }[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    void fetch("/api/lan").then((r) => (r.ok ? r.json().then((j: { devices: typeof list }) => setList(j.devices)) : null), () => null);
+  }, []);
+  const look = async () => {
+    setBusy(true);
+    try {
+      const r = await fetch("/api/lan/scan", { method: "POST" });
+      if (r.ok) setList(((await r.json()) as { devices: NonNullable<typeof list> }).devices);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const knownHosts = new Set(known.map((p) => p.replace(/^\\\\/, "").split("\\")[0].toLowerCase()));
+  const sharing = (list ?? []).filter((d) => d.sharing && !knownHosts.has((d.name || d.ip).toLowerCase()));
+  return (
+    <>
+      {sharing.map((d) => {
+        const p = `\\\\${d.name || d.ip}`;
+        return (
+          <button key={d.ip} className={`item${cwd.toLowerCase() === p.toLowerCase() ? " on" : ""}`} onClick={() => onOpen(p)} title={`${p} · ${d.ip}`}>
+            <Monitor size={15} /> {d.label || d.name || d.ip}
+          </button>
+        );
+      })}
+      <button className="item faint" disabled={busy} onClick={() => void look()} title="Which computers on your network share folders (from this computer's own list of devices it has heard from)">
+        <RefreshCw size={15} /> {busy ? "Looking…" : "Look for computers"}
+      </button>
+    </>
   );
 }
