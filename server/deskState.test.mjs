@@ -55,3 +55,15 @@ test("a device's old desk is kept with its keys blanked", () => {
   assert.equal(s.legacyList()[0].name, kept);
   assert.throws(() => s.legacyRead("../state.sealed"), /Which one/);
 });
+
+test("a room's stale copy isn't written over a newer one: the device is told, to merge and send again", () => {
+  const { s } = setup();
+  s.put({ device: "pc", changes: { "room:a": { messages: [1] }, model: {} } }, { mayFound: true });
+  const seen = s.get().sections["room:a"].rev;
+  s.put({ device: "phone", base: { "room:a": seen }, changes: { "room:a": { messages: [1, 2] } } });
+  const r = s.put({ device: "pc", base: { "room:a": seen }, changes: { "room:a": { messages: [1, 3] }, model: { x: 1 } }, merge: ["room:a"] });
+  assert.deepEqual(r.stale, ["room:a"]);
+  assert.deepEqual(r.clashes, []);
+  assert.deepEqual(s.get().sections["room:a"].value, { messages: [1, 2] }, "the phone's copy stays until the merged one comes");
+  assert.deepEqual(s.get().sections.model.value, { x: 1 }, "the rest of the save goes in");
+});

@@ -41,6 +41,7 @@ import { openSettings } from "../ui/desktopApi.tsx";
 import { copyText } from "../lib/clipboard.ts";
 import { askText } from "../ui/Ask.tsx";
 import { takeRoomDraft } from "../lib/sendTo.ts";
+import { RoomTabs } from "../ui/RoomTabs.tsx";
 
 /** The latest character reply that Retry would replace. */
 function retryTarget(messages: Message[]) {
@@ -242,6 +243,7 @@ export function RoomApp() {
         void attach(e.dataTransfer.files);
       }}
     >
+      <RoomTabs />
       <div className="room-bar">
         <button className="chat-title" onClick={(e) => openMenuAt(e.currentTarget, chatMenu())} data-tip="Branches: switch, start a new one, rename" aria-label={`Chat: ${title}. Saved chats`}>
           <span className="t">{title}</span>

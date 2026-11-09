@@ -3,7 +3,7 @@
 // once, the later one stands and this desk says so. A device keeping its own desk (legacy mode) doesn't take part.
 
 import { desk, useDesk } from "./store.ts";
-import { applySections, toSections } from "./deskSections.ts";
+import { applySections, keepsWhenAbsent, MEMORY_ONLY, toSections } from "./deskSections.ts";
 import { ASK, FOUND, LEGACY, MODE, REV } from "./deskBoot.ts";
 import { deviceName } from "./devshare.ts";
 import { deviceId } from "./pads.ts";
@@ -27,12 +27,15 @@ async function save(founding = false) {
       const json = JSON.stringify(v);
       if (sent.get(k) !== json) changes[k] = v;
     }
-    for (const k of sent.keys()) if (!(k in now)) changes[k] = null; // a character removed: their files go too
+    // a character removed: their files go too (a room this device just isn't in stays, of course)
+    for (const k of sent.keys()) if (!(k in now) && !keepsWhenAbsent(k)) changes[k] = null;
     if (!Object.keys(changes).length) return;
-    const r = await fetch("/api/desk/save", { method: "POST", body: JSON.stringify({ device: me(), base, changes }) });
+    const r = await fetch("/api/desk/save", { method: "POST", body: JSON.stringify({ device: me(), base, changes, merge: Object.keys(changes).filter(keepsWhenAbsent) }) });
     if (!r.ok) return; // the server will hear the next change; nothing is lost here
-    const j = (await r.json()) as { rev: number; clashes?: { section: string; with: string }[] };
+    const j = (await r.json()) as { rev: number; clashes?: { section: string; with: string }[]; stale?: string[] };
+    const stale = new Set(j.stale ?? []);
     for (const [k, v] of Object.entries(changes)) {
+      if (stale.has(k)) continue;
       if (v === null) sent.delete(k);
       else sent.set(k, JSON.stringify(v));
     }
@@ -40,12 +43,30 @@ async function save(founding = false) {
     // the next pull has to see that; this desk's own sections come back in it and are skipped as its own)
     void j.rev;
     if (founding) localStorage.removeItem(FOUND);
+    // a room another device spoke in meanwhile: its copy taken in and merged with this one (sent on the next save)
+    if (stale.size) await takeIn([...stale]);
     if (j.clashes?.length) desk().notice(`Another device changed ${j.clashes.map((c) => c.section.replace(/^files:/, "the files of ")).join(", ")} at the same time (${j.clashes[0].with}). This device's change stands.`);
   } catch {
     /* the server isn't answering: tried again on the next change */
   } finally {
     saving = false;
   }
+}
+
+/** The server's copies of these sections, laid into this desk (a room's conversation merged). */
+async function takeIn(names: string[]) {
+  const theirs: Record<string, unknown> = {};
+  for (const k of names) {
+    const r = await fetch(`/api/desk/section?name=${encodeURIComponent(k)}`);
+    if (!r.ok) continue;
+    const x = (await r.json()) as { rev: number; value: unknown };
+    base[k] = x.rev;
+    theirs[k] = x.value;
+  }
+  const s = desk() as unknown as Record<string, unknown>;
+  desk().set(applySections({ files: s.files, roomId: s.roomId, chatId: s.chatId, messages: s.messages, gone: s.gone }, theirs) as never);
+  window.clearTimeout(timer);
+  timer = window.setTimeout(() => void save(), 300);
 }
 
 /** What the other devices changed since this desk last looked. */
@@ -67,11 +88,43 @@ async function pull() {
     localStorage.setItem(REV, String(rev));
     if (Object.keys(theirs).length) {
       const s = desk() as unknown as Record<string, unknown>;
-      const next = applySections({ files: s.files }, theirs);
+      // (with the room this device is in, so a conversation two devices share is merged, not overwritten)
+      const next = applySections({ files: s.files, roomId: s.roomId, chatId: s.chatId, messages: s.messages, gone: s.gone }, theirs);
       desk().set(next as never);
     }
   } catch {
     /* tried again shortly */
+  }
+}
+
+/** Save what's changed now (before going to another room). */
+export async function flush() {
+  for (let i = 0; i < 30 && saving; i++) await new Promise((r) => setTimeout(r, 100));
+  await save();
+}
+
+/** A section this device is about to work in, as the server has it (going into a room): known, so it isn't sent back
+ *  or taken for a clash. */
+export function adopt(section: string, rev: number, value: unknown) {
+  base[section] = rev;
+  sent.set(section, JSON.stringify(value));
+}
+/** Removed for everyone (a room deleted). */
+export async function dropSection(section: string) {
+  await fetch("/api/desk/save", { method: "POST", body: JSON.stringify({ device: me(), base, changes: { [section]: null } }) });
+  sent.delete(section);
+}
+
+/** What only a page should hold (an unlocked adult shelf, who's signed in…), left on the server by an older version:
+ *  cleared, so no device ever takes it in. */
+async function clearStrays() {
+  for (const k of MEMORY_ONLY) {
+    try {
+      const x = (await (await fetch(`/api/desk/section?name=${k}`)).json()) as { value: unknown };
+      if (x.value !== null) await dropSection(k);
+    } catch {
+      /* tried again next time SEASIDE opens */
+    }
   }
 }
 
@@ -84,6 +137,7 @@ export function startDeskSync() {
   // what this desk holds now is what the server holds (deskBoot laid it in), unless this device is starting the desk
   if (!founding) for (const [k, v] of Object.entries(sectionsNow())) sent.set(k, JSON.stringify(v));
   void (founding ? save(true) : pull());
+  void clearStrays();
   useDesk.subscribe(() => {
     window.clearTimeout(timer);
     timer = window.setTimeout(() => void save(), 1200);

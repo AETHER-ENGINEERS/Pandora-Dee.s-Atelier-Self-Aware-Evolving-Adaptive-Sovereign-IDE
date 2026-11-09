@@ -1174,3 +1174,12 @@ html { touch-action: pan-x pan-y; }
 .music-side-head .folder { padding: 4px 8px 2px; }
 .music.narrow .music-side-head .folder { display: none; }
 .music-playlist .toolbar { flex-wrap: wrap; }
+
+/* Rooms as tabs above the conversation (ui/RoomTabs.tsx) */
+.room-tabs { display: flex; align-items: flex-end; gap: 2px; padding: 4px 8px 0; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; flex-shrink: 0; }
+.room-tab { display: inline-flex; align-items: center; gap: 5px; border: 1px solid transparent; border-bottom: 0; background: transparent; color: var(--muted); padding: 4px 10px; border-radius: 8px 8px 0 0; font-size: .82em; white-space: nowrap; cursor: pointer; max-width: 180px; }
+.room-tab span { overflow: hidden; text-overflow: ellipsis; }
+.room-tab:hover { background: var(--raise); color: inherit; }
+.room-tab.on { background: var(--raise); border-color: var(--line); color: inherit; font-weight: 600; }
+.room-tab.going { opacity: .6; }
+.room-tab.add { padding: 4px 7px; }

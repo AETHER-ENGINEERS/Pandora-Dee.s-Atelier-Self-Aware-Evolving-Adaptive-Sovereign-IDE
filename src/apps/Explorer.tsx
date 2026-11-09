@@ -135,8 +135,10 @@ function FileBrowser({ mode, go, pick }: { mode: Mode; go?: { path: string; at: 
         setError("");
         setSel(selectName ? [l.entries.find((e) => e.name === selectName)?.path ?? ""].filter(Boolean) : []);
         if (!picking) localStorage.setItem("pdd-explorer-cwd", l.path);
+        return true;
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
+        return false;
       }
     },
     [cwd, picking],
@@ -146,7 +148,10 @@ function FileBrowser({ mode, go, pick }: { mode: Mode; go?: { path: string; at: 
   // first folder: where we were sent, or the last one, or the vault
   useEffect(() => {
     if (!ov || listing) return;
-    void open(cwd || ov.places[0]?.path || "", undefined, false).then(undefined, () => ov.places[0] && open(ov.places[0].path, undefined, false));
+    // (a remembered folder that's gone since: the vault instead, not an error)
+    void open(cwd || ov.places[0]?.path || "", undefined, false).then((ok) => {
+      if (!ok && ov.places[0]) void open(ov.places[0].path, undefined, false);
+    });
   }, [ov]); // eslint-disable-line react-hooks/exhaustive-deps
   // "show in file explorer": the file's folder, with the file selected (or the folder itself)
   useEffect(() => {

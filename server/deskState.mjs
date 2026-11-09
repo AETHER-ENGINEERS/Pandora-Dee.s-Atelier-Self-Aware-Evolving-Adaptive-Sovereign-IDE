@@ -46,23 +46,33 @@ export function createDeskState({ dataDir, seal, open, now = Date.now }) {
    * is a clash: this change still stands (it's the later one), and it's reported. Founding (the very first save) is
    * only allowed when `mayFound` (the desktop's own computer).
    */
-  function put({ device, base = {}, changes = {} }, { mayFound = false } = {}) {
+  function put({ device, base = {}, changes = {}, merge = [] }, { mayFound = false } = {}) {
     const st = read();
     if (st.rev === 0 && !mayFound) throw Object.assign(new Error("The shared desk is started from the desktop's own computer."), { status: 409 });
     const by = String(device || "").slice(0, 60) || "a device";
     const clashes = [];
+    // sections the device merges itself (a room's conversation): a stale copy isn't written over a newer one; the
+    // device is told, takes the newer one in, and sends the two together
+    const merging = new Set(Array.isArray(merge) ? merge.map(String) : []);
+    const stale = [];
     let rev = st.rev;
     const sections = { ...st.sections };
     for (const [k, value] of Object.entries(changes ?? {})) {
       if (!NAME.test(k)) continue;
       const cur = sections[k];
-      if (cur && Number(base[k] ?? 0) < cur.rev && cur.by !== by) clashes.push({ section: k, with: cur.by });
+      if (cur && Number(base[k] ?? 0) < cur.rev && cur.by !== by) {
+        if (merging.has(k)) {
+          stale.push(k);
+          continue;
+        }
+        clashes.push({ section: k, with: cur.by });
+      }
       rev += 1;
       if (value === null) delete sections[k];
       else sections[k] = { rev, at: now(), by, value };
     }
     if (rev !== st.rev) write({ rev, sections });
-    return { rev, clashes };
+    return { rev, clashes, stale };
   }
 
   /** A device's old desk, kept as it was (the page leaves the keys' values out; anything that slips through is blanked). */

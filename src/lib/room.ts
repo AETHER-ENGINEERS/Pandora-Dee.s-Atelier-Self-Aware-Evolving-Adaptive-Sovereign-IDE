@@ -15,6 +15,8 @@ export type Message = {
   /** Said by a character voiced from outside (another AI or program, through the inbound API): it counts like a
    *  person's message for the loop breaker, since nobody here wrote it on a model. */
   outside?: boolean;
+  /** How many times it's been changed (two devices in one room keep the copy changed more often). */
+  v?: number;
   /** Character id for characters, the person's name for humans. */
   who: string;
   name: string;

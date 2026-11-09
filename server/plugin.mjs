@@ -955,6 +955,11 @@ export function deskServer() {
     if (parts[0] === "desk") {
       try {
         if (m === "GET" && !parts[1]) return send(res, 200, { ...desk.get(Number(url.searchParams.get("since")) || 0), here: onThisPc(req) });
+        // one section as it is now (a device going into a room)
+        if (m === "GET" && parts[1] === "section") {
+          const s = desk.get(0).sections[String(url.searchParams.get("name") || "")];
+          return send(res, 200, { rev: s?.rev ?? 0, value: s?.value ?? null });
+        }
         if (m === "GET" && parts[1] === "legacy") return send(res, 200, parts[2] ? JSON.parse(desk.legacyRead(decodeURIComponent(parts[2]))) : { kept: desk.legacyList() });
         if (m === "POST") {
           const b = JSON.parse((await readBody(req, 200_000_000)).toString("utf8") || "{}");

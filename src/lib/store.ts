@@ -224,6 +224,9 @@ export type SshHost = {
 export type InboxItem = { id: string; at: number; from: string; where: string; via: "vector" | "discord" | "desk"; text: string; note?: string; urgent?: boolean; done?: boolean };
 
 /** A saved conversation. The open one's messages live in `messages`; the others are files in the vault. */
+/** A room of its own (lib/rooms.ts): a device's, which others can join. The Home room is the one every desk had. */
+export type RoomMeta = { id: string; name: string; device: string; made: number };
+
 export type ChatMeta = {
   id: string;
   title: string;
@@ -497,6 +500,13 @@ export type State = {
   members: string[];
   focus: string;
   messages: Message[];
+  /** Messages removed from this room's conversation lately, so a device that still has them doesn't bring them back. */
+  gone: string[];
+  /** The rooms besides Home (every device sees the list). */
+  rooms: RoomMeta[];
+  /** The room this device is in ("" = Home), and the rooms it keeps as tabs. Each device's own. */
+  roomId: string;
+  roomTabs: string[];
   loopBreak: boolean;
   freeTalk: boolean;
   // AI
@@ -716,6 +726,10 @@ const INITIAL: State = {
   members: [...DEFAULT_ROOM],
   focus: DEFAULT_ROOM[0],
   messages: [],
+  gone: [],
+  rooms: [],
+  roomId: "",
+  roomTabs: [],
   loopBreak: true,
   freeTalk: false,
   model: MODEL_DEFAULT,
@@ -894,12 +908,13 @@ export const useDesk = create<Store>()(
         set((s) => ({ messages: [...s.messages, { ...m, id, at: m.at ?? now() }].slice(-Math.min(5000, Math.max(400, s.chat.historyLimit + 50))) }));
         return id;
       },
-      patchMessage: (id, patch) => set((s) => ({ messages: s.messages.map((m) => (m.id === id ? { ...m, ...patch } : m)) })),
+      // (each change counted, so where two devices hold the same message, the one changed more often stands)
+      patchMessage: (id, patch) => set((s) => ({ messages: s.messages.map((m) => (m.id === id ? { ...m, ...patch, v: (m.v ?? 0) + 1 } : m)) })),
       notice: (text) => {
         get().post({ kind: "notice", who: "desk", name: "Desk", text, source: "desk" });
       },
-      clearRoom: () => set({ messages: [] }),
-      removeMessage: (id) => set((s) => ({ messages: s.messages.filter((m) => m.id !== id) })),
+      clearRoom: () => set((s) => ({ messages: [], gone: [...(s.gone ?? []), ...s.messages.map((m) => m.id)].slice(-300) })),
+      removeMessage: (id) => set((s) => ({ messages: s.messages.filter((m) => m.id !== id), gone: [...(s.gone ?? []), id].slice(-300) })),
 
       role: () => {
         const s = get();
