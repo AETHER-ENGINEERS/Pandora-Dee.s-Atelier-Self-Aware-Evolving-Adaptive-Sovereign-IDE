@@ -795,6 +795,7 @@ export function deskServer() {
           // a shelf, or a show inside one, added to another shelf (moved there); a shelf renamed
           if (parts[1] === "add-to-shelf") return send(res, 200, theater.addToShelf(String(b.shelf ?? ""), String(b.folder ?? ""), String(b.to ?? "")));
           if (parts[1] === "rename-shelf") return send(res, 200, theater.renameShelf(String(b.shelf ?? ""), b.name));
+          if (parts[1] === "rename-folder") return send(res, 200, theater.renameFolder(String(b.shelf ?? ""), String(b.folder ?? ""), b.name));
           if (parts[1] === "fav") return send(res, 200, theater.setFav(b.id, Boolean(b.on)));
           if (parts[1] === "playlist") return send(res, 200, b.drop ? theater.dropPlaylist(String(b.id || "")) : theater.savePlaylist(b));
           if (parts[1] === "collection") return send(res, 200, b.drop ? theater.dropCollection(String(b.id || "")) : theater.saveCollection(b));
@@ -915,6 +916,14 @@ export function deskServer() {
         return i ? send(res, 200, i) : send(res, 404, { error: "That song isn't in the library." });
       }
       if (parts[1] === "radio") return void (await M.radio(req, res, String(url.searchParams.get("url") || "")));
+      if (parts[1] === "rename" && m === "POST") {
+        try {
+          const b = JSON.parse((await readBody(req, 10_000)).toString("utf8") || "{}");
+          return send(res, 200, M.rename(String(b.id || ""), b.name, { local: onThisPc(req) }));
+        } catch (e) {
+          return send(res, e?.status ?? 400, { error: e instanceof Error ? e.message : String(e) });
+        }
+      }
       if (parts[1] === "upload" && m === "POST") {
         try {
           const name = M.upload(decodeURIComponent(String(req.headers["x-filename"] || "track")), await readBody(req, 500_000_000));

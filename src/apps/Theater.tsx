@@ -49,6 +49,23 @@ const savedOpen = (): Set<string> => {
 const fileSafe = (n: string) => n.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").trim() || "Playlist";
 
 /** "Add to playlist" lines for a video's menus: each playlist (ticked where it already is), and a new one. */
+/** A video's file renamed where it is (its kind kept: .mp4 stays .mp4). Its id stays (size and date), so favourites,
+ *  playlists and where it was left off all follow. Returns the new path. */
+async function renameVideo(p: string, current: string): Promise<string | null> {
+  const name = (await askText("Rename", current, { yes: "Rename" }))?.trim();
+  if (!name || name === current) return null;
+  const ext = p.match(/\.[^.\\/]+$/)?.[0] ?? "";
+  try {
+    const r = await fileApi.rename(p, name.toLowerCase().endsWith(ext.toLowerCase()) ? name : `${name}${ext}`);
+    await refreshLibrary();
+    desk().say(`Renamed to ${name}.`);
+    return r.path;
+  } catch (e) {
+    desk().say(e instanceof Error ? e.message : String(e));
+    return null;
+  }
+}
+
 function addToPlaylistItems(v: Video, playlists: Playlist[]): MenuItem[] {
   const fail = (e: unknown) => desk().say(e instanceof Error ? e.message : String(e));
   return [
@@ -236,6 +253,8 @@ export function TheaterApp() {
       ? []
       : [
           { sep: true },
+          { label: "Rename…", icon: <Pencil size={14} />, run: () => void renameVideo(v.path, v.name) },
+          { sep: true },
           { heading: "Add to shelf" },
           ...["", ...shelves]
             .filter((x) => x !== v.shelf)
@@ -322,6 +341,21 @@ export function TheaterApp() {
       },
       ...addToShelfItems(s, rel),
     );
+    // a show or season folder on a vault shelf (a whole shelf is renamed from its own menu in the sidebar)
+    if (rel && !watchedNames.has(s))
+      items.push({ sep: true }, {
+        label: "Rename folder…",
+        icon: <Pencil size={14} />,
+        run: () =>
+          void askText("Rename the folder", rel.split("/").pop() ?? "", { yes: "Rename" }).then((n) => {
+            if (!n?.trim() || n.trim() === rel.split("/").pop()) return;
+            void theaterApi.renameFolder(s, rel, n.trim()).then(async (r) => {
+              await refreshLibrary();
+              if (shelf === s && where.startsWith(rel)) open(s, r.folder + where.slice(rel.length));
+              desk().say(`Renamed to ${n.trim()}.`);
+            }, fail);
+          }),
+      });
     return items;
   };
   /** A shelf's own menu (in the sidebar): play it, gather it, add it to another shelf, rename it, or stop watching. */
@@ -1121,6 +1155,7 @@ function Player({
 /** What this device is backing up, and what's safe to let go of. */
 function Uploads() {
   const jobs = useJobs();
+  const toddler = useDesk((s) => s.toddler);
   const safe = jobs.filter((j) => j.state === "done" || j.state === "kept");
   const busy = jobs.filter((j) => !["done", "kept", "failed"].includes(j.state));
   const total = busy.reduce((n, j) => n + j.file.size, 0), sent = busy.reduce((n, j) => n + j.sent, 0);
@@ -1178,6 +1213,16 @@ function Uploads() {
                 {j.state === "failed" ? (
                   <button className="btn small" onClick={() => retryJob(j)}>
                     Try again
+                  </button>
+                ) : null}
+                {(j.state === "done" || j.state === "kept") && j.path && !toddler ? (
+                  <button
+                    className="btn small ghost"
+                    onClick={() => void renameVideo(j.path!, baseName(j.path!).replace(/\.[^.]+$/, "")).then((p) => p && (j.path = p))}
+                    aria-label={`Rename ${j.file.name} on the desktop`}
+                    title="Rename it on the desktop"
+                  >
+                    <Pencil size={13} />
                   </button>
                 ) : null}
                 {j.state !== "done" && j.state !== "kept" ? (

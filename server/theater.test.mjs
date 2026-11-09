@@ -152,3 +152,16 @@ test("a shelf, or a show on one, added to another shelf; shelves renamed; where 
   assert.throws(() => S.renameShelf("Frozen", "Kids"), /already/);
   assert.throws(() => S.addToShelf("Frozen", "../..", "Kids"), /Which folder/);
 });
+
+test("a show folder renamed where it is; collections follow", () => {
+  const v = fs.mkdtempSync(path.join(os.tmpdir(), "theater-r-"));
+  const R = createTheater({ vaultDir: () => v });
+  fs.mkdirSync(path.join(v, "Videos", "Kids", "spongebob stuff", "Season 1"), { recursive: true });
+  fs.writeFileSync(path.join(v, "Videos", "Kids", "spongebob stuff", "Season 1", "ep.mp4"), "a");
+  const c = R.saveCollection({ name: "Kids", items: ["Kids/spongebob stuff"] });
+  assert.deepEqual(R.renameFolder("Kids", "spongebob stuff", "SpongeBob"), { folder: "SpongeBob" });
+  assert.deepEqual(R.list().videos.map((x) => x.folder), ["SpongeBob/Season 1"]);
+  assert.deepEqual(R.list().collections.find((x) => x.id === c.id).items, ["Kids/SpongeBob"]);
+  assert.deepEqual(R.renameFolder("Kids", "SpongeBob/Season 1", "Season 01"), { folder: "SpongeBob/Season 01" });
+  assert.throws(() => R.renameFolder("Kids", "../x", "y"), /Which folder/);
+});

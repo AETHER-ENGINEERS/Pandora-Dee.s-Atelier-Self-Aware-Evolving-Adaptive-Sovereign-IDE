@@ -109,6 +109,7 @@ export function MusicApp() {
     { label: "Add to the queue", run: () => enqueue(asItems([list[i]])) },
     { sep: true },
     { label: "Copy title and artist", run: () => void copyText(`${list[i].title}${list[i].artist ? ` · ${list[i].artist}` : ""}`) },
+    ...(list[i].src ? [] : [{ sep: true } as MenuItem, { label: "Rename…", icon: <Pencil size={14} />, run: () => void renameSong(list[i]) } as MenuItem]),
     ...addToPlaylistItems(list[i], openList),
     { sep: true },
     { label: "Properties…", run: () => openSongInfo({ track: list[i], made: desk().media.made.find((s) => s.file.replace(/\.[^.]+$/, "") === list[i].title || s.title === list[i].title) }) },
@@ -828,6 +829,23 @@ const setPlaylists = (playlists: MusicPlaylist[]) => setPrefs({ playlists });
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 /** The song's path on the desktop (its music folder, then where it is inside). */
 const pathOf = (t: Track) => (t.rel ? `${t.folder}${t.folder.includes("\\") ? "\\" : "/"}${t.rel}` : (t.file ?? t.title));
+
+/** A song's file renamed in its folder (from another device, songs added from a device). Playlists follow it. */
+async function renameSong(t: Track) {
+  const current = (t.file ?? t.title).replace(/\.[^.]+$/, "");
+  const name = (await askText("Rename the song's file", current, { body: "Its title in the library follows when it was only ever the file's name.", yes: "Rename" }))?.trim();
+  if (!name || name === current) return;
+  try {
+    const r = await fetch("/api/music/rename", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: t.id, name }) });
+    const j = (await r.json().catch(() => ({}))) as { id?: string; file?: string; error?: string };
+    if (!r.ok || !j.id) throw new Error(j.error || `It answered ${r.status}.`);
+    if (j.id !== t.id) setPlaylists(playlistsNow().map((p) => (p.items.includes(t.id) ? { ...p, items: p.items.map((x) => (x === t.id ? j.id! : x)) } : p)));
+    await loadLibrary();
+    desk().say(`Renamed to ${j.file}.`);
+  } catch (e) {
+    desk().say(e instanceof Error ? e.message : String(e));
+  }
+}
 
 function changePlaylist(id: string, patch: Partial<MusicPlaylist>) {
   setPlaylists(playlistsNow().map((p) => (p.id === id ? { ...p, ...patch } : p)));

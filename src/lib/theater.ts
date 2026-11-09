@@ -64,6 +64,8 @@ export const theaterApi = {
    *  becomes a shelf of its own. */
   addToShelf: (shelf: string, folder: string, to: string) => call<{ shelf: string; folder: string }>("/api/theater/add-to-shelf", { shelf, folder, to }),
   renameShelf: (shelf: string, name: string) => call<{ shelf: string }>("/api/theater/rename-shelf", { shelf, name }),
+  /** A show or season folder on a vault shelf, renamed where it is. */
+  renameFolder: (shelf: string, folder: string, name: string) => call<{ folder: string }>("/api/theater/rename-folder", { shelf, folder, name }),
   have: (items: { name: string; size: number }[]) => call<{ have: (string | null)[] }>("/api/theater/have", { items }),
   /** Make a playlist (no id), or change one's name or videos. */
   playlist: (p: { id?: string; name?: string; items?: string[] }) => call<Playlist>("/api/theater/playlist", p),

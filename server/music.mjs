@@ -371,5 +371,29 @@ export function createMusic(dataDir) {
     return { ...rest, ...format, size: st?.size ?? t.size, modified: st?.mtimeMs ?? t.mtime, exists: Boolean(st), own: path.dirname(t.path) === ownDir || t.path.startsWith(ownDir + path.sep) };
   }
 
-  return { scan, list, serve, cover, radio, upload, info, folders: () => index.folders };
+  /** A song's file renamed in its folder (its kind kept: .mp3 stays .mp3). Its id follows its path, so the new id comes
+   *  back for playlists to follow. From another device only songs added here (the data folder's music/) can be. */
+  function rename(id, name, { local = false } = {}) {
+    const t = index.tracks[id];
+    if (!t) throw Object.assign(new Error("That song isn't in the library any more."), { status: 404 });
+    const own = t.path.startsWith(ownDir + path.sep);
+    if (!local && !own) throw Object.assign(new Error("Songs in your music folders are renamed on the desktop's own computer; songs added from a device can be renamed from anywhere."), { status: 403 });
+    const ext = path.extname(t.path);
+    let stem = String(name ?? "").replace(/[\\/:*?"<>|\x00-\x1f]+/g, "_").replace(/\s+/g, " ").trim().slice(0, 150);
+    if (stem.toLowerCase().endsWith(ext.toLowerCase())) stem = stem.slice(0, -ext.length).trim();
+    if (!stem || stem.startsWith(".")) throw Object.assign(new Error("What should it be called?"), { status: 400 });
+    const target = path.join(path.dirname(t.path), stem + ext);
+    if (target === t.path) return { id, file: path.basename(target) };
+    if (target.toLowerCase() !== t.path.toLowerCase() && fs.existsSync(target)) throw Object.assign(new Error("Another song there already has that name."), { status: 409 });
+    fs.renameSync(t.path, target);
+    const old = path.basename(t.path, ext);
+    const nid = idOf(target);
+    delete index.tracks[id];
+    // (the title follows when it was only ever the file's name)
+    index.tracks[nid] = { ...t, id: nid, path: target, title: t.title === old ? stem : t.title };
+    save();
+    return { id: nid, file: path.basename(target) };
+  }
+
+  return { scan, list, serve, cover, radio, upload, info, rename, folders: () => index.folders };
 }

@@ -259,6 +259,30 @@ export function createTheater({ vaultDir }) {
     return { shelf: to || path.basename(target), folder: to ? path.basename(target) : "" };
   }
 
+  /** A show or season folder on a vault shelf, renamed where it is (collections and where it came from follow). */
+  function renameFolder(shelf, rel, name) {
+    if (!rel) return renameShelf(shelf, name);
+    const from = placeOf(shelf, rel);
+    if (!fs.existsSync(from) || !fs.statSync(from).isDirectory()) throw fail(404, "That folder isn't there any more.");
+    const n = safe(name, "");
+    if (!n) throw fail(400, "What should it be called?");
+    const target = path.join(path.dirname(from), n);
+    if (target === from) return { folder: rel };
+    if (fs.existsSync(target) && target.toLowerCase() !== from.toLowerCase()) throw fail(409, `There's a folder called ${n} there already.`);
+    fs.renameSync(from, target);
+    const parent = rel.split("/").slice(0, -1).join("/");
+    const nrel = parent ? `${parent}/${n}` : n;
+    const m = readMeta();
+    rekey(m, `${shelf}/${rel}`, `${shelf}/${nrel}`);
+    for (const k of Object.keys(m.from))
+      if (k === `${shelf}/${rel}` || k.startsWith(`${shelf}/${rel}/`)) {
+        m.from[`${shelf}/${nrel}` + k.slice(`${shelf}/${rel}`.length)] = m.from[k];
+        delete m.from[k];
+      }
+    writeMeta(m);
+    return { folder: nrel };
+  }
+
   /** A vault shelf under a new name (its folder renamed; collections and where it came from follow). */
   function renameShelf(shelf, name) {
     const from = placeOf(shelf);
@@ -452,5 +476,5 @@ export function createTheater({ vaultDir }) {
     return target;
   }
 
-  return { root, list, folders, addFolder, dropFolder, addToShelf, renameShelf, saveCollection, dropCollection, have, mkShelf, uploadState, uploadPiece, dropUpload, sweep, thumbFile, setThumb, setFav, owns, moveTo, savePlaylist, dropPlaylist };
+  return { root, list, folders, addFolder, dropFolder, addToShelf, renameShelf, renameFolder, saveCollection, dropCollection, have, mkShelf, uploadState, uploadPiece, dropUpload, sweep, thumbFile, setThumb, setFav, owns, moveTo, savePlaylist, dropPlaylist };
 }
