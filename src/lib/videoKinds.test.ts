@@ -38,3 +38,12 @@ test("a phone's own videos aren't screen recordings", () => {
   assert.equal(kindOf({ name: "VID_20261101_120000", shelf: "Mia", folder: "" }), "unknown");
   assert.equal(kindOf({ name: "Halo run", shelf: "Xbox", folder: "Game Clips" }), "recording");
 });
+
+test("'001 - Show - Title' is an episode of that show, in number order", () => {
+  const a = { name: "001 - Cat Crazy - Pawesome Sauce", shelf: "Kids", folder: "" };
+  const b = { name: "002 - Cat Crazy - The Trouble with Toddlers", shelf: "Kids", folder: "" };
+  assert.equal(kindOf(a), "series");
+  assert.equal(placeIn(a), "Cat Crazy");
+  assert.equal(placeIn(b), "Cat Crazy");
+  assert.equal(kindOf({ name: "2001 - A Space Odyssey", shelf: "Films", folder: "" }), "movie", "a number and a title alone isn't an episode");
+});

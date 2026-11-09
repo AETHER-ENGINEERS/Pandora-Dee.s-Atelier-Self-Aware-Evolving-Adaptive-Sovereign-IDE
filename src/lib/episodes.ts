@@ -13,6 +13,9 @@ export function episodeOf(name: string): { season?: number; episode?: number } {
   m = /\bseason\s*(\d{1,3})\D+?(?:episode|ep)\s*(\d{1,4})/i.exec(n);
   if (m) return { season: Number(m[1]), episode: Number(m[2]) };
   m = /\b(?:episode|ep|e)\s*(\d{1,4})\b/i.exec(n);
+  if (m) return { episode: Number(m[1]) };
+  // "001 - Cat Crazy - Pawesome Sauce": a number first, then the show, then the episode's own title
+  m = /^\s*(\d{1,4})\s+-\s+\S.*?\s+-\s+\S/.exec(name);
   return m ? { episode: Number(m[1]) } : {};
 }
 

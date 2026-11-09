@@ -45,6 +45,9 @@ export function kindOf(v: V): Kind {
 
 /** A show's name from a file name: what comes before S01E02 / 1x02 / "Episode 3". */
 function showFromName(name: string): string {
+  // "001 - Cat Crazy - Pawesome Sauce" → Cat Crazy
+  const numbered = /^\s*\d{1,4}\s+-\s+(.+?)\s+-\s+\S/.exec(name);
+  if (numbered) return numbered[1].trim();
   const n = name.replace(/[._]/g, " ");
   const m = /^(.*?)[\s-]*(\bs\d{1,3}\s*-?\s*e\d{1,4}|\b\d{1,2}x\d{1,3}\b|\bseason\s*\d|\b(episode|ep)\s*\d)/i.exec(n);
   return (m?.[1] ?? "").replace(/[\s-]+$/, "").trim();
