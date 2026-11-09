@@ -813,8 +813,26 @@ export function deskServer() {
       const who = String(url.searchParams.get("who") || "");
       const local = onThisPc(req);
       try {
+        // the fserve: a big file's link (a ticket for that one file, good for a day), for whoever was given it
+        if (m === "GET" && parts[1] === "get" && parts[2]) {
+          const t = linked.redeem(decodeURIComponent(parts[2]));
+          if (!t) return send(res, 410, "That link has run out. Ask for the file again.", "text/plain");
+          res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(t.name)}`);
+          return serveRange(req, res, t.full);
+        }
         if (m === "GET") {
-          if (parts[1] === "links") return send(res, 200, { links: linked.links().map((l) => ({ name: l.name, for: l.for, ...(local ? { path: l.path } : {}) })), canChange: local });
+          if (parts[1] === "links") return send(res, 200, { links: linked.links().map((l) => ({ name: l.name, for: l.for, serve: Boolean(l.serve), ...(local ? { path: l.path } : {}) })), canChange: local });
+          // what a character hands out: her shelves, a search, all of it
+          if (parts[1] === "shelves") return send(res, 200, { shelves: linked.shelves(who), count: linked.catalog(who).length });
+          if (parts[1] === "find") return send(res, 200, { files: linked.find(who, url.searchParams.get("q")) });
+          if (parts[1] === "catalog") return send(res, 200, { files: linked.catalog(who, Boolean(url.searchParams.get("fresh"))) });
+          // one file handed out: its bytes (to attach), only to the page on this computer that runs the bridges
+          if (parts[1] === "bytes") {
+            if (!local) return send(res, 403, { error: "Files are handed out from the desktop's own computer." });
+            const f = linked.pick(who, url.searchParams.get("which"));
+            if (f.size > 25 * 1048576) return send(res, 413, { error: "That one is too big to attach; it goes as a link." });
+            return serveRange(req, res, f.full);
+          }
           if (parts[1] === "list") return send(res, 200, { entries: linked.list(who, url.searchParams.get("path")) });
           if (parts[1] === "read") return send(res, 200, { text: linked.readFile(who, url.searchParams.get("path")) });
           if (parts[1] === "search") return send(res, 200, { hits: linked.search(who, url.searchParams.get("q"), url.searchParams.get("within") || "") });
@@ -824,6 +842,13 @@ export function deskServer() {
           const b = JSON.parse((await readBody(req, 100_000)).toString("utf8") || "{}");
           if (parts[1] === "link") return send(res, 200, linked.link({ path: files().allowed(b.path, local), name: b.name, for: b.for }));
           if (parts[1] === "unlink") return send(res, 200, linked.unlink(b.path));
+          if (parts[1] === "serve") return send(res, 200, linked.setServe(b.path, b.on));
+          // a file about to be handed out: which it is, its SHA-256, and (for a big one) a link's ticket
+          if (parts[1] === "fetch") {
+            const f = linked.pick(String(b.who || ""), b.which);
+            const { full: _full, ...file } = f;
+            return send(res, 200, { file, sha256: await linked.sha256(f), ticket: b.link ? linked.ticket(f) : undefined });
+          }
         }
       } catch (e) {
         return send(res, e?.status || (e?.code === "ENOENT" ? 404 : 400), { error: e?.code === "ENOENT" ? "That isn't there (is the network place reachable?)." : e instanceof Error ? e.message : String(e) });
@@ -1361,7 +1386,10 @@ export function deskServer() {
       }
       if (url.pathname.startsWith("/api/")) {
         if (isAppHost(req) && !lan()) return send(res, 403, { error: "Not available to apps." });
-        if (fromElsewhere(req)) return send(res, 403, { error: "Only the desktop's own page can use this." });
+        // (a character's link to a big file is clicked from Discord, Vector or anywhere: the ticket in it is the
+        // permission, for that one file, for a day, and fetching it changes nothing)
+        const ticketLink = req.method === "GET" && url.pathname.startsWith("/api/library/get/");
+        if (fromElsewhere(req) && !ticketLink) return send(res, 403, { error: "Only the desktop's own page can use this." });
         return await api(req, res, url);
       }
       // AICord's sign-in sends the browser back here (a top-level visit from aicordapp.com, so not under /api;

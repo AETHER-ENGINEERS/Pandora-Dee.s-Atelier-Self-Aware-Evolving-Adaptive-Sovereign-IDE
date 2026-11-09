@@ -5,6 +5,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 
 const TEXT = /\.(txt|md|markdown|json|jsonl|csv|tsv|xml|html?|yml|yaml|toml|ini|log|srt|vtt|rtf|tex|org|adoc|rst)$/i;
 const READ_MAX = 2_000_000; // one file read whole
@@ -16,6 +17,7 @@ export const linkName = (s) => clean(s, 60).replace(/[\\/:*?"<>|]/g, "-").replac
 
 export function createLibrary({ dataDir }) {
   const file = () => path.join(dataDir(), "library-links.json");
+  const catalogs = new Map(); // who → { at, files } (the fserve, below)
   const read = () => {
     try {
       const j = JSON.parse(fs.readFileSync(file(), "utf8"));
@@ -24,7 +26,8 @@ export function createLibrary({ dataDir }) {
       return [];
     }
   };
-  const write = (links) => fs.writeFileSync(file(), JSON.stringify(links, null, 2));
+  // (what each character hands out is looked at again whenever the links change)
+  const write = (links) => (fs.writeFileSync(file(), JSON.stringify(links, null, 2)), catalogs.clear());
 
   /** The links one character may read ("all" links, and the ones made for them). */
   const forChar = (who) => read().filter((l) => !l.for?.length || l.for.includes(String(who)));
@@ -119,5 +122,125 @@ export function createLibrary({ dataDir }) {
     return hits;
   }
 
-  return { links: read, forChar, link, unlink, list, readFile, search };
+  // ---- the fserve: a character hands out files from the linked folders she may serve (each keeps her own library) ----
+
+  /** Whether the characters a folder is linked for may hand out its files (on Vector and Discord). */
+  function setServe(p, on) {
+    const full = path.resolve(String(p || "")).toLowerCase();
+    const links = read();
+    const l = links.find((x) => path.resolve(x.path).toLowerCase() === full || x.name === p);
+    if (!l) throw Object.assign(new Error("That folder isn't linked."), { status: 404 });
+    l.serve = Boolean(on);
+    write(links);
+    return l;
+  }
+
+  /** Every file she may hand out, numbered (shelf by shelf, names in order): what `!list`, `@find` and `!get 12` use. */
+  function catalog(who, fresh = false) {
+    const c = catalogs.get(who);
+    if (c && !fresh && Date.now() - c.at < 5 * 60_000) return c.files;
+    const files = [];
+    for (const l of forChar(who).filter((x) => x.serve).sort((a, b) => a.name.localeCompare(b.name))) {
+      const walk = (dir, rel, depth) => {
+        if (depth > 6 || files.length >= 5000) return;
+        let entries;
+        try {
+          entries = fs.readdirSync(dir, { withFileTypes: true });
+        } catch {
+          return;
+        }
+        entries.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }));
+        for (const e of entries) {
+          if (e.name.startsWith(".") || files.length >= 5000) continue;
+          const full = path.join(dir, e.name);
+          if (e.isDirectory()) walk(full, `${rel}/${e.name}`, depth + 1);
+          else {
+            let size = 0;
+            try {
+              size = fs.statSync(full).size;
+            } catch {
+              continue;
+            }
+            files.push({ n: files.length + 1, shelf: l.name, rel: `${rel}/${e.name}`.replace(/^\//, ""), name: e.name, size, full });
+          }
+        }
+      };
+      walk(l.path, "", 0);
+    }
+    catalogs.set(who, { at: Date.now(), files });
+    return files;
+  }
+  const publicOf = ({ full: _f, ...rest }) => rest;
+
+  /** Her shelves: names and how many files each holds. */
+  const shelves = (who) => {
+    const out = new Map();
+    for (const f of catalog(who)) out.set(f.shelf, (out.get(f.shelf) ?? 0) + 1);
+    return [...out.entries()].map(([name, count]) => ({ name, count }));
+  };
+  /** Files whose name or path has every word. */
+  function find(who, words) {
+    const w = String(words || "").toLowerCase().split(/\s+/).filter(Boolean);
+    if (!w.length) return [];
+    return catalog(who)
+      .filter((f) => w.every((x) => `${f.shelf}/${f.rel}`.toLowerCase().includes(x)))
+      .slice(0, 25)
+      .map(publicOf);
+  }
+  /** One file by its number (or its exact name). */
+  function pick(who, which) {
+    const all = catalog(who);
+    const n = Number(String(which).replace(/^#/, ""));
+    const f = Number.isInteger(n) && n > 0 ? all[n - 1] : all.find((x) => x.name.toLowerCase() === String(which).toLowerCase().trim());
+    if (!f) throw Object.assign(new Error("There's no file with that number on the shelves; !list or @find shows them."), { status: 404 });
+    return f;
+  }
+
+  // SHA-256 of each file handed out, kept by path, size and date so it's worked out once
+  const hashFile = () => path.join(dataDir(), "fserve-hashes.json");
+  async function sha256(f) {
+    let st;
+    try {
+      st = fs.statSync(f.full);
+    } catch {
+      throw Object.assign(new Error("That file isn't there any more."), { status: 404 });
+    }
+    let all = {};
+    try {
+      all = JSON.parse(fs.readFileSync(hashFile(), "utf8"));
+    } catch {
+      /* none yet */
+    }
+    const key = `${f.full}\u0000${st.size}\u0000${Math.round(st.mtimeMs)}`;
+    if (all[key]) return all[key];
+    const h = crypto.createHash("sha256");
+    await new Promise((resolve, reject) => fs.createReadStream(f.full).on("data", (d) => h.update(d)).on("end", resolve).on("error", reject));
+    all[key] = h.digest("hex");
+    fs.writeFileSync(hashFile(), JSON.stringify(all));
+    return all[key];
+  }
+
+  // links for big files: a ticket good for a day, for that one file
+  // (kept in the data folder, so a link still works after the server restarts)
+  const ticketFile = () => path.join(dataDir(), "fserve-tickets.json");
+  const readTickets = () => {
+    try {
+      return JSON.parse(fs.readFileSync(ticketFile(), "utf8"));
+    } catch {
+      return {};
+    }
+  };
+  function ticket(f, hours = 24) {
+    const t = crypto.randomBytes(18).toString("base64url");
+    const all = Object.fromEntries(Object.entries(readTickets()).filter(([, v]) => v.until > Date.now()));
+    all[t] = { full: f.full, name: f.name, until: Date.now() + hours * 3600_000 };
+    fs.writeFileSync(ticketFile(), JSON.stringify(all));
+    return t;
+  }
+  const redeem = (t) => {
+    const x = readTickets()[String(t)];
+    return x && x.until > Date.now() ? x : null;
+  };
+
+  return { links: read, forChar, link, unlink, list, readFile, search, setServe, catalog: (who, fresh) => catalog(who, fresh).map(publicOf), shelves, find, pick, sha256, ticket, redeem };
 }

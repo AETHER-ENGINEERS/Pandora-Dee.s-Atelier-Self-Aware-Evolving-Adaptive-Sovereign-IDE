@@ -76,6 +76,9 @@ function io(id: BridgeId): BridgeIO {
     typing: async (chatId) => {
       await c()?.call("send_typing", { chat_id: chatId });
     },
+    file: async (chatId, name, base64) => {
+      await c()?.call("send_file_bytes", { chat_id: chatId, name, base64 });
+    },
     image: async (msgId, index) => {
       const raw = await c()?.call("download_attachment", { message_id: msgId, index, max_mb: 8 });
       const d = parseJson<{ base64?: string; name?: string; content_type?: string }>(raw ?? "", {});

@@ -39,6 +39,7 @@ import { allKeyValues, envFor } from "./residentKeys.ts";
 import { isLimitError, recordLimit, recordUsage } from "./meter.ts";
 import type { UsageKind } from "./meterCore.ts";
 import { record } from "./trajectories.ts";
+import { fserveOn, parseCommand, serveCommand } from "./fserve.ts";
 import { isImage, splitThink, type Attachment, type ToolUse } from "./room.ts";
 
 let controller: AbortController | null = null;
@@ -832,6 +833,8 @@ export type BridgeIO = {
   send: (chatId: string, text: string, replyTo?: string) => Promise<void>;
   typing: (chatId: string) => Promise<void>;
   image: (msgId: string, index: number) => Promise<{ data: string; mime: string } | null>;
+  /** A file sent into the chat (the fserve). */
+  file?: (chatId: string, name: string, base64: string) => Promise<void>;
 };
 
 function listOf(text: string) {
@@ -873,6 +876,16 @@ export function answerRule(m: Incoming): { answer: boolean; why: string } {
 }
 
 export const wantsAnswer = (m: Incoming) => answerRule(m).answer;
+
+/** May an fserve command be answered here? DMs as the bridge's DM rule says; in a group, only the channels it watches
+ *  (no name needed: commands are their own trigger). */
+function fserveMay(m: Incoming) {
+  if (!m.isGroup) return answerRule(m).answer;
+  const b = desk().bridges[m.source];
+  const role = bridgeRole(m.source, m.authorId);
+  const channels = listOf(b.channels);
+  return role === "keyholder" || channels.some((c) => c === m.chatId || c.replace(/^#/, "").toLowerCase() === (m.channelName ?? "").toLowerCase());
+}
 
 type Job = { m: Incoming; lines: string[]; io: BridgeIO };
 const queue: Job[] = [];
@@ -968,6 +981,12 @@ export async function receive(m: Incoming, io: BridgeIO) {
   s.post({ kind: "human", who: m.author, name: m.author, text: m.text, source: m.source, bridge: { chatId: m.chatId, msgId: m.msgId, author: m.authorId, isGroup: m.isGroup } });
   if (blocked) {
     s.notice(blocked);
+    return;
+  }
+  // the fserve: !list, @find, !get… answered from the character's own library, not by a model turn
+  const fc = parseCommand(m.text);
+  if (fc && fserveOn()) {
+    if (fserveMay(m)) void serveCommand(m, io, fc);
     return;
   }
   const rule = answerRule(m);

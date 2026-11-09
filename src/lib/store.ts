@@ -525,6 +525,8 @@ export type State = {
   /** Voice engines (speaking and listening) and which one turns your speech into text. */
   voices: VoiceEnginePrefs;
   sentryLog: string[];
+  /** The fserve (lib/fserve.ts): where links to big files point, and how big a file goes as an attachment. */
+  fserve: { linkBase: string; attachMB: number };
   sensors: { battery: boolean; network: boolean; screen: boolean; tellRoom: boolean; /** new devices on the local network (watched from the desktop's own computer) */ lan?: boolean };
   hangout: boolean;
   hang: HangPrefs;
@@ -745,6 +747,7 @@ const INITIAL: State = {
   voice: VOICE_DEFAULT,
   voices: VOICE_ENGINES_DEFAULT,
   sentryLog: [],
+  fserve: { linkBase: "", attachMB: 8 },
   sensors: { battery: false, network: false, screen: false, tellRoom: false },
   hangout: false,
   hang: HANG_DEFAULT,

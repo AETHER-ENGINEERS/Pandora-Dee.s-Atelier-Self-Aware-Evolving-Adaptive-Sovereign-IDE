@@ -86,7 +86,7 @@ function FileBrowser({ mode, go, pick }: { mode: Mode; go?: { path: string; at: 
 
   const loadOverview = useCallback(() => fileApi.overview().then(setOv, fail), []);
   // folders linked for the characters to read (library/<name>/… in their files)
-  const [links, setLinks] = useState<{ name: string; path?: string; for: string[] }[]>([]);
+  const [links, setLinks] = useState<{ name: string; path?: string; for: string[]; serve?: boolean }[]>([]);
   const loadLinks = useCallback(() => fileApi.links().then((j) => setLinks(j.links), () => {}), []);
   useEffect(() => void loadLinks(), [loadLinks]);
   const linkOf = (p: string) => links.find((l) => l.path?.toLowerCase() === p.toLowerCase());
@@ -304,6 +304,22 @@ function FileBrowser({ mode, go, pick }: { mode: Mode; go?: { path: string; at: 
             linkOf(e.path)
               ? { label: "Stop linking for the characters", icon: <Link2Off size={14} />, hint: `library/${linkOf(e.path)!.name}`, run: () => void fileApi.unlink(e.path).then(() => (loadLinks(), desk().say(`${e.name} isn't linked for the characters any more.`)), fail) }
               : { label: "Link for the characters to read…", icon: <Link2 size={14} />, hint: "read-only, not copied", run: () => window.setTimeout(() => linkFor(e), 0) },
+            // the fserve: the characters it's linked for may hand its files out on Vector and Discord
+            ...(linkOf(e.path)
+              ? [
+                  {
+                    label: "They may hand it out (Vector, Discord)",
+                    icon: <Share2 size={14} />,
+                    checked: Boolean(linkOf(e.path)!.serve),
+                    hint: "!list, @find, !get",
+                    run: () =>
+                      void fileApi.serve(e.path, !linkOf(e.path)!.serve).then(
+                        () => (loadLinks(), desk().say(linkOf(e.path)!.serve ? `${e.name} isn't handed out any more.` : `${e.name} is on their shelves: they can hand its files out on Vector and Discord (once Privacy allows it).`)),
+                        fail,
+                      ),
+                  } as MenuItem,
+                ]
+              : []),
           ]
         : []),
       ...(!many && e.dir && ov?.sharing.canChange

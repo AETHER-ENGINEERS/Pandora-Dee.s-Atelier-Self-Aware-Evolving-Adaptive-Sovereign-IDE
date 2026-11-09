@@ -18,11 +18,12 @@ import { Num } from "../ui/Num.tsx";
 import { useWidth } from "../ui/hooks.ts";
 import { copyText } from "../lib/clipboard.ts";
 
-type Tab = "discord" | "vector" | "inbox" | "mcp" | "web" | "ssh" | "api";
+type Tab = "discord" | "vector" | "libraries" | "inbox" | "mcp" | "web" | "ssh" | "api";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "discord", label: "Discord" },
   { id: "vector", label: "Vector" },
+  { id: "libraries", label: "Libraries" },
   { id: "inbox", label: "Inbox" },
   { id: "mcp", label: "Tool servers (MCP)" },
   { id: "web", label: "Web" },
@@ -113,6 +114,7 @@ export function ConnectionsApp() {
       </aside>
       <section className="section">
         {tab === "discord" || tab === "vector" ? <BridgePanel id={tab} key={tab} /> : null}
+        {tab === "libraries" ? <LibrariesPanel /> : null}
         {tab === "inbox" ? <InboxPanel /> : null}
         {tab === "mcp" ? <McpPanel /> : null}
         {tab === "web" ? <WebPanel /> : null}
@@ -963,6 +965,65 @@ function ApiPanel() {
       <pre className="mono small" style={{ whiteSpace: "pre-wrap" }}>{`curl --get -H "Authorization: Bearer $TOKEN" \\
   --data-urlencode 'message=What did we decide yesterday?' \\
   "${base}/v1/chat"`}</pre>
+    </>
+  );
+}
+
+// ---------- Libraries (the fserve) ----------
+
+/** Each character's library: the linked folders she may hand out on Vector and Discord, and how files go. */
+function LibrariesPanel() {
+  const fserve = useDesk((s) => s.fserve);
+  const [links, setLinks] = useState<{ name: string; for: string[]; serve: boolean; path?: string }[]>([]);
+  useEffect(() => {
+    void fetch("/api/library/links").then((r) => r.json()).then((j: { links: typeof links }) => setLinks(j.links ?? []), () => undefined);
+  }, []);
+  const set = (p: Partial<typeof fserve>) => desk().set({ fserve: { ...fserve, ...p } });
+  const served = links.filter((l) => l.serve);
+  const whose = (l: { for: string[] }) => (l.for.length ? l.for.map((id) => desk().character(id)?.short ?? id).join(", ") : "everyone");
+  return (
+    <>
+      <h2>Libraries</h2>
+      <p className="small muted">
+        Each character keeps her own library: the folders linked for her that she may hand out. On Vector and Discord, whoever is answering shares hers the
+        old-school way: <span className="mono">!list</span>, <span className="mono">@find words</span>, <span className="mono">!get 12</span>,{" "}
+        <span className="mono">!queue</span>. The one named in the message answers, or else the one that bridge answers as. Commands follow the bridge's own rules:
+        DMs as its DM setting says, and in groups only the channels it watches.
+      </p>
+      <Permission feature="fserve" />
+      <h4>On the shelves</h4>
+      {served.length ? (
+        <ul className="small">
+          {served.map((l) => (
+            <li key={l.name}>
+              <b>{l.name}</b> <span className="faint">· {whose(l)}</span>
+              {l.path ? <span className="mono faint"> · {l.path}</span> : null}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="small faint">
+          Nothing yet. In Explorer, right-click a folder → Link for the characters to read…, then right-click it again → They may hand it out.
+        </p>
+      )}
+      <h4>How files go</h4>
+      <label className="field">
+        <span>Attach files up to (MB)</span>
+        <input className="input" type="number" min={1} max={25} value={fserve.attachMB} onChange={(e) => set({ attachMB: Math.max(1, Math.min(25, Number(e.target.value) || 8)) })} style={{ maxWidth: 100 }} />
+      </label>
+      <label className="field">
+        <span>Bigger ones go as links to this address</span>
+        <input
+          className="input mono"
+          value={fserve.linkBase}
+          onChange={(e) => set({ linkBase: e.target.value.trim() })}
+          placeholder="https://your-pc.your-tailnet.ts.net  or  http://192.168.1.10:15693"
+        />
+      </label>
+      <p className="small faint">
+        Whoever gets a link can download that one file for a day, if they can reach this address: your tailnet's address reaches your own devices anywhere, a LAN
+        address only people at home. Left empty, big files are named but not sent.
+      </p>
     </>
   );
 }

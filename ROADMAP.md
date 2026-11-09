@@ -127,16 +127,17 @@ SEASIDE as one house across your devices and your network, with the characters l
   - **A device's screen coming to you** (the broken-screen phone), and each device's terminal and shares.
   - **Whole-system control** through a small helper on each machine (the app edition, or a browser extension):
     driving the computer itself, not only SEASIDE on it.
-- **Network places** in Explorer: Samba shares on the LAN (anonymous ones too) and mounted shares, to browse, play
-  and copy from on any device; characters get them only when given access.
-- **Sentry on the network**: a new device on the LAN, a share or port that appears, SEASIDE reached from somewhere
-  unexpected; Jade mentions it.
-- **The fserve**: a character (Pandora as the librarian) keeps shelves of shared files (models, markdown, Mini
-  Apps, character backups) and answers in Vector and Discord the old-school way: `!list`, `@find`, queues and
-  slots. Small files go as attachments (encrypted on Vector); big ones as links over the tailnet or the LAN, and
-  later through #OneMoment's peer-to-peer caching. Every file listed with its SHA-256; a Discord channel can be the
-  storefront for a Vector shelf, or the other way round. Shelves are read-only folders you choose, off until
-  Privacy allows them; a ratio in #OneMoment's barter tokens if wanted.
+- ✅ **Network places** in Explorer on every device (the ones this computer opened, and other shares on those
+  computers; never C$), and computers on the LAN that share folders. Still to come: anonymous Samba shares from a
+  Mac or Linux server, and characters reaching network places (through linked folders today).
+- ✅ **Sentry on the network**: a new device on the LAN, or one that starts sharing folders; Jade mentions it. Still
+  to come: a port that appears, and SEASIDE reached from somewhere unexpected.
+- ✅ **The fserve**: each character keeps her own library (the linked folders she may hand out) and answers in
+  Vector and Discord the old-school way: `!list`, `@find`, `!get`, `!queue`. Small files go as attachments
+  (encrypted on Vector); big ones as links that work for a day, over the tailnet or the LAN. Every file comes with
+  its SHA-256. Shelves are read-only folders you choose, off until Privacy allows them. Still to come: more than one
+  slot, #OneMoment's peer-to-peer caching, a Discord channel as the storefront for a Vector shelf, and a ratio in
+  #OneMoment's barter tokens if wanted.
 
 ## SEASIDE on every device (added 2026-11-08)
 

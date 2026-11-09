@@ -44,9 +44,11 @@ export const fileApi = {
   setWholePc: (on: boolean) => call<Overview>("/api/files/whole-pc", { on }),
   share: (p: string, on: boolean) => call<Overview>("/api/files/share", { path: p, on }),
   shareWholePc: (on: boolean) => call<Overview>("/api/files/share", { wholePc: on }),
-  links: () => call<{ links: { name: string; path?: string; for: string[] }[]; canChange: boolean }>("/api/library/links"),
+  links: () => call<{ links: { name: string; path?: string; for: string[]; serve?: boolean }[]; canChange: boolean }>("/api/library/links"),
   link: (p: string, name: string, whom: string[]) => call<{ name: string; path: string }>("/api/library/link", { path: p, name, for: whom }),
   unlink: (p: string) => call<{ ok: true }>("/api/library/unlink", { path: p }),
+  /** Whether the characters a linked folder is for may hand its files out (the fserve). */
+  serve: (p: string, on: boolean) => call<{ serve: boolean }>("/api/library/serve", { path: p, on }),
   unzip: (p: string) => call<{ path: string; files: number }>("/api/files/unzip", { path: p }),
   importXdc: (p: string) => call<{ id: string | null; added: number; errors: string[] }>("/api/files/import-xdc", { path: p }),
   async upload(dir: string, file: File): Promise<string> {

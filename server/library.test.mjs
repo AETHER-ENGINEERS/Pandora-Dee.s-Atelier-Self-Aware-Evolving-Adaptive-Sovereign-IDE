@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import crypto from "node:crypto";
 import { createLibrary } from "./library.mjs";
 
 const setup = () => {
@@ -41,4 +42,31 @@ test("a link for one character is only theirs; linking the same folder again upd
   assert.equal(L.list("dee", "").length, 1, "now everyone's");
   L.unlink(texts);
   assert.deepEqual(L.links(), []);
+});
+
+test("each character keeps her own library: only folders she may serve, numbered, found, checked by SHA-256", async () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), "pdd-fserve-"));
+  const shelf = path.join(d, "models");
+  fs.mkdirSync(path.join(shelf, "small"), { recursive: true });
+  fs.writeFileSync(path.join(shelf, "small", "tiny-model.gguf"), "weights");
+  fs.writeFileSync(path.join(shelf, "README.md"), "# models");
+  const secret = path.join(d, "diary");
+  fs.mkdirSync(secret);
+  fs.writeFileSync(path.join(secret, "private.md"), "no");
+  const L = createLibrary({ dataDir: () => d });
+  L.link({ path: shelf, name: "Models", for: ["dee"] });
+  L.link({ path: secret, name: "Diary", for: ["dee"] });
+  assert.deepEqual(L.catalog("dee"), [], "nothing is handed out until a folder is switched on");
+  L.setServe(shelf, true);
+  assert.deepEqual(L.catalog("dee").map((f) => [f.n, f.rel]), [[1, "README.md"], [2, "small/tiny-model.gguf"]], "the diary stays unshared");
+  assert.deepEqual(L.catalog("jade"), [], "her library is hers");
+  assert.deepEqual(L.shelves("dee"), [{ name: "Models", count: 2 }]);
+  assert.deepEqual(L.find("dee", "TINY gguf").map((f) => f.n), [2]);
+  assert.equal(L.catalog("dee")[0].full, undefined, "where it is on disk isn't given out");
+  const f = L.pick("dee", "#2");
+  assert.equal(await L.sha256(f), crypto.createHash("sha256").update("weights").digest("hex"));
+  assert.throws(() => L.pick("dee", 9), /no file with that number/);
+  const t = L.ticket(f);
+  assert.equal(L.redeem(t).name, "tiny-model.gguf");
+  assert.equal(L.redeem("made-up"), null);
 });
