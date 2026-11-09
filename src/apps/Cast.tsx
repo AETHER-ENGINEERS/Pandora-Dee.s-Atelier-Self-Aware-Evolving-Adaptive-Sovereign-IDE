@@ -844,6 +844,22 @@ function CharKeys({ c }: { c: Character }) {
           <button className="btn small" disabled={!name || !value} onClick={() => void save(name, value)}>
             Save
           </button>
+          {/* a key that's a file (a GitHub App's .pem, a wallet file): taken in whole, line breaks and all, never shown */}
+          <label className={`btn small${name ? "" : " disabled"}`} title={name ? `Put a file's contents in ${c.short}'s vault as ${name}` : "Name the key first"}>
+            From a file…
+            <input
+              type="file"
+              hidden
+              disabled={!name}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = "";
+                if (!f || !name) return;
+                if (f.size > 8000) return setNote(`${f.name} is too big to be one key.`);
+                void f.text().then((t) => (t.trim() ? save(name, t.replace(/\r\n/g, "\n").trim()) : setNote(`${f.name} is empty.`)));
+              }}
+            />
+          </label>
         </div>
       ) : (
         <p className="note small">{c.short}'s keys are set on the desktop's own computer, or over Tailscale's https.</p>

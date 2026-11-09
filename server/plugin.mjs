@@ -474,8 +474,17 @@ export function deskServer() {
         }
         if (parts[1] === "start" && m === "POST") {
           if (!stdioAllowed()[print]) return send(res, 403, { error: "This program hasn't been allowed yet.", print });
-          // the keys' values, filled in by the page from Keys, replace their ${NAME}s only now
-          const values = b.values ?? {};
+          // the keys' values replace their ${NAME}s only now: a character's own server gets her own keys first, read
+          // here from her sealed vault (they never pass through a page), then the household's Keys the page sent
+          // (whose it is was settled when it was allowed: a page can't claim it for someone else when starting it)
+          const owner = String(stdioAllowed()[print].owner || "");
+          let own = {};
+          try {
+            own = owner ? residentKeys.values(owner) : {};
+          } catch {
+            own = {};
+          }
+          const values = { ...(b.values ?? {}), ...own };
           const fill = (v) => String(v).replace(/\$\{([A-Za-z0-9_]+)\}/g, (_, n) => String(values[n] ?? process.env[n] ?? ""));
           return send(res, 200, stdio.start({ id: String(b.id || ""), command: asked.command, args: asked.args.map(fill), cwd: asked.cwd, env: Object.fromEntries(Object.entries(asked.env).map(([k, v]) => [k, fill(v)])) }));
         }

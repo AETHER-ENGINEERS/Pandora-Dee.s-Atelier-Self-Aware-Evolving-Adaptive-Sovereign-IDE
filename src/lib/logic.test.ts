@@ -352,8 +352,8 @@ test("her Classic model, turns and voice become her desktop preferences, and go 
 });
 
 test("her Classic vector memory settings come along, and go back", () => {
-  const conns = [{ id: "box", label: "Ollama on the box", kind: "ollama", baseUrl: "http://192.168.3.9:11434", keyName: "", model: "", enabled: true }] as Parameters<typeof prefsFromClassic>[1];
-  const p = prefsFromClassic({ memoryOn: true, memoryRag: true, memoryRagK: 10, embedModel: "mxbai-embed-large", embedHost: "http://192.168.3.9:11434/", embedNotes: true }, conns);
+  const conns = [{ id: "box", label: "Ollama on the box", kind: "ollama", baseUrl: "http://192.168.1.9:11434", keyName: "", model: "", enabled: true }] as Parameters<typeof prefsFromClassic>[1];
+  const p = prefsFromClassic({ memoryOn: true, memoryRag: true, memoryRagK: 10, embedModel: "mxbai-embed-large", embedHost: "http://192.168.1.9:11434/", embedNotes: true }, conns);
   assert.deepEqual(p.memory, { vectors: true, rag: true, ragK: 10, notes: true, model: "mxbai-embed-large", connection: "box" });
   assert.equal(prefsFromClassic({ model: "x" }, conns).memory, undefined);
   assert.equal(prefsFromClassic({ embedOn: false }, conns).memory?.vectors, false);
@@ -363,7 +363,7 @@ test("her Classic vector memory settings come along, and go back", () => {
   assert.equal(out.settings.embedOn, true);
   assert.equal(out.settings.memoryRagK, 10);
   assert.equal(out.settings.embedModel, "mxbai-embed-large");
-  assert.equal(out.settings.embedHost, "http://192.168.3.9:11434");
+  assert.equal(out.settings.embedHost, "http://192.168.1.9:11434");
 });
 
 test("her Classic thinking, journal, memory, helper model and heartbeat come along, and go back", () => {

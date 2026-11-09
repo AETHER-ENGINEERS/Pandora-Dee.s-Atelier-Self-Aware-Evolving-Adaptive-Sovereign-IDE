@@ -34,7 +34,7 @@ export function createTheater({ vaultDir }) {
     }
   }
 
-  // Folders watched where they are (a network share like \\ALICEMOVIES\movies, or a folder on this computer): each is
+  // Folders watched where they are (a network share like \\MEDIA-PC\movies, or a folder on this computer): each is
   // a shelf of its own, played from there; nothing is copied into the vault, and nothing in them is moved or changed.
   const folders = () => readMeta().folders;
   function addFolder(p, name) {

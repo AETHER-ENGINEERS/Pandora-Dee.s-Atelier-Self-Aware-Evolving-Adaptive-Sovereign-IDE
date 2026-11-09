@@ -564,7 +564,7 @@ export function TheaterApp() {
           {netFolders.map((f) => (
             <Item key={f.path} id={f.name} label={f.name} icon={<Folder size={14} />} n={counts.get(f.name)} depth={1} menu={() => shelfMenu(f.name)} title={f.path} />
           ))}
-          {netFolders.length ? null : <p className="faint small theater-side-note">A share like \\ALICEMOVIES\movies, played from where it is.</p>}
+          {netFolders.length ? null : <p className="faint small theater-side-note">A share like \\MEDIA-PC\movies, played from where it is.</p>}
         </Sec>
       ) : null}
       {devices.length ? (

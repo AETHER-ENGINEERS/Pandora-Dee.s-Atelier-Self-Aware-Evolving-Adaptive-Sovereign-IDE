@@ -40,7 +40,7 @@ export async function listFolders(where, placesFile, { newPlaces = true } = {}) 
     if (process.platform === "win32") for (const l of "CDEFGHIJKLMNOPQRSTUVWXYZ") candidates.push([`${l}:\\`, `${l}:`]);
     else candidates.push(["/Volumes", "Volumes"], ["/media", "media"], ["/mnt", "mnt"], ["/", "/"]);
     const ok = await Promise.all(candidates.map(([p]) => isDir(p)));
-    // a drive that's a network share says which (M: · \\ALICEMOVIES\1 Alice), and network places opened before come after
+    // a drive that's a network share says which (M: · \\MEDIA-PC\Films), and network places opened before come after
     const mapped = await netUse();
     const places = readPlaces(placesFile).filter((p) => !Object.values(mapped).some((r) => r.toLowerCase() === p.toLowerCase()));
     const folders = candidates.filter((_, i) => ok[i]).map(([p, name]) => ({ path: p, name: mapped[name] ? `${name} · ${mapped[name]}` : name }));
