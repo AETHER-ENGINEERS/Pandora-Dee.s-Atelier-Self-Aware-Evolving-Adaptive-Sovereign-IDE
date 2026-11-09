@@ -304,6 +304,21 @@ export function deskServer() {
   const onThisPc = (req) =>
     /^(127\.|::1$|::ffff:127\.)/.test(String(req.socket.remoteAddress || "")) && (isDeskHost(req) || hostOf(req) === "127.0.0.1" || hostOf(req) === "[::1]");
 
+  // Asked by one of SEASIDE's own pages. A browser says where each request comes from (Sec-Fetch-Site, or the page it was
+  // made on); a plain program on this computer doesn't, so a tool a character drives (her own http request, a script)
+  // can't be steered into reading the household's or the characters' keys. (The lasting answer is the server filling
+  // keys in itself, so they never leave it; until then, keys go only to pages.)
+  const fromOwnPage = (req) => {
+    const site = String(req.headers["sec-fetch-site"] || "");
+    if (site) return site === "same-origin";
+    try {
+      return new URL(String(req.headers.referer || "")).host === String(req.headers.host || "");
+    } catch {
+      return false;
+    }
+  };
+  const PAGES_ONLY = "Keys are handed only to SEASIDE's own pages, not to other programs.";
+
   const send = (res, code, body, type = "application/json") => {
     res.statusCode = code;
     res.setHeader("Content-Type", type);
@@ -438,6 +453,7 @@ export function deskServer() {
         const see = onThisPc(req) || viaTailnet(req);
         if (!parts[1] && m === "GET") return send(res, 200, { names: residentKeys.names(), canSee: see });
         if (!see) return send(res, 403, { error: "A character's keys are seen and set on the desktop's own computer, or over Tailscale's https." });
+        if (!fromOwnPage(req)) return send(res, 403, { error: PAGES_ONLY });
         const id = decodeURIComponent(parts[1] || "");
         if (parts[2] === "values" && m === "GET") return send(res, 200, { values: residentKeys.values(id) });
         if (!parts[2] && m === "PUT") {
@@ -450,6 +466,8 @@ export function deskServer() {
       }
     }
     if (parts[0] === "mcp-stdio") {
+      // (a character's own server starts with her keys: only her pages start, stop or talk to it)
+      if (!fromOwnPage(req)) return send(res, 403, { error: PAGES_ONLY });
       try {
         if (parts[1] === "rpc" && m === "POST") {
           const msg = JSON.parse((await readBody(req, 20_000_000)).toString("utf8") || "{}");
@@ -1014,6 +1032,8 @@ export function deskServer() {
       }
     }
     if (parts[0] === "desk") {
+      // (the shared desk carries the household's Keys)
+      if (!fromOwnPage(req)) return send(res, 403, { error: PAGES_ONLY });
       try {
         if (m === "GET" && !parts[1]) return send(res, 200, { ...desk.get(Number(url.searchParams.get("since")) || 0), here: onThisPc(req) });
         // one section as it is now (a device going into a room)
@@ -1048,6 +1068,8 @@ export function deskServer() {
         if (parts[1] === "config" && m === "GET") return send(res, 200, { ...heart.status(), canChange: here });
         if (!here) return send(res, 403, { error: "Keeping them running is set up on the desktop's own computer." });
         if (parts[1] === "config" && m === "POST") return send(res, 200, heart.setConfig(JSON.parse((await readBody(req, 10_000)).toString("utf8") || "{}")));
+        // (the heart's copy of the desktop holds the keys)
+        if (parts[1] === "state" && !fromOwnPage(req)) return send(res, 403, { error: PAGES_ONLY });
         if (parts[1] === "state" && m === "GET") return send(res, 200, await heart.get({ forKeeper: url.searchParams.get("keeper") === "1", since: Number(url.searchParams.get("since")) || 0 }));
         // PUT from the page, POST from sendBeacon as the page closes
         if (parts[1] === "state" && (m === "PUT" || m === "POST")) {

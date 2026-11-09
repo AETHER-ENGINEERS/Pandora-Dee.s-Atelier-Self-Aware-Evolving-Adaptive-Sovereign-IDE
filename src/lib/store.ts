@@ -187,7 +187,14 @@ export type StdioSpec = { command: string; args?: string[]; env?: Record<string,
 export type WebPrefs = { search: "auto" | "ollama" | "searxng" | "ddg" | "wikipedia"; searx: string };
 
 /** How requests leave the desktop by default (web search, page reading, http_request, backups, bridges). */
-export type NetPrefs = { via: Via; /** Python for the relay: an executable or its folder; empty = find it. */ python?: string };
+export type NetPrefs = {
+  via: Via;
+  /** Python for the relay: an executable or its folder; empty = find it. */ python?: string;
+  /** Local addresses (this computer, the home network, a tailnet) a character's own requests may reach (lib/netGuard.ts). */
+  localHosts?: string;
+  /** The hosts each key may be sent to by a character's requests, by its name; a key not listed goes anywhere public. */
+  keyHosts?: Record<string, string>;
+};
 
 /** The inbound API: other programs can talk to the characters. */
 export type ApiPrefs = { on: boolean; port: number; lan: boolean; keyName: string };
