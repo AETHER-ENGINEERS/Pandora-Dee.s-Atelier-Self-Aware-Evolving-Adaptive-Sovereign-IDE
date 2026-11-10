@@ -1,6 +1,10 @@
 {
   "pandora": [
     {
+      "version": "2.10.4",
+      "file": "pandora-dee-2.10.4.html"
+    },
+    {
       "version": "2.10.3",
       "file": "pandora-dee-2.10.3.html"
     },
