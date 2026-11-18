@@ -18,14 +18,19 @@ const SIZES = [
   { id: "576x1024", label: "Tall background (576×1024)" },
 ];
 
-/** Play samples once, through this page's speakers. */
+/** Play samples once, through this page's speakers, at the desktop's volume for games and apps. */
 export function playSamples(samples: Float32Array, rate = RATE) {
+  const volume = desk().voice.appVolume ?? 0.8;
+  if (volume <= 0) return;
   const ctx = new AudioContext();
   const buf = ctx.createBuffer(1, samples.length, rate);
   buf.copyToChannel(samples as Float32Array<ArrayBuffer>, 0);
   const src = ctx.createBufferSource();
   src.buffer = buf;
-  src.connect(ctx.destination);
+  const gain = ctx.createGain();
+  gain.gain.value = volume;
+  src.connect(gain);
+  gain.connect(ctx.destination);
   src.onended = () => void ctx.close();
   src.start();
 }
