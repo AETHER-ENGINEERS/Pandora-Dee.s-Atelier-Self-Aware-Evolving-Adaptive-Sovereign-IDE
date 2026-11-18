@@ -12,6 +12,8 @@ import {
   Minimize,
   Play,
   RefreshCw,
+  Sparkles,
+  Wand2,
   Rows3,
   Search,
   Square,
@@ -24,6 +26,7 @@ import { gameScreen } from "../lib/bus.ts";
 import { gameTurn } from "../lib/agent.ts";
 import { appOrigin, bridge, groupApps, library, readScreen, webImportSaid, type Pkg, type UpdateRow } from "../lib/xdc.ts";
 import { allowed } from "../lib/privacy.ts";
+import { imagineGame } from "../lib/gameMaker.ts";
 import { slug } from "../lib/characters.ts";
 import { CharAvatar, Confirm } from "../ui/common.tsx";
 import { openMenu, type MenuItem } from "../ui/ContextMenu.tsx";
@@ -154,6 +157,13 @@ function Library() {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const [busy, setBusy] = useState("");
+  // "Imagine a game", or "Change this game" from a card's menu (which asks for it with an event)
+  const [imagine, setImagine] = useState<ImagineFor | null>(null);
+  useEffect(() => {
+    const on = (e: Event) => setImagine((e as CustomEvent<ImagineFor>).detail);
+    window.addEventListener("pdd-imagine", on);
+    return () => window.removeEventListener("pdd-imagine", on);
+  }, []);
   const fileRef = useRef<HTMLInputElement>(null);
   const dirRef = useRef<HTMLInputElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -281,6 +291,9 @@ function Library() {
         <button className="btn small" onClick={() => dirRef.current?.click()}>
           <FolderInput size={14} /> Import a folder
         </button>
+        <button className="btn small primary" disabled={s.toddler} onClick={() => setImagine({})} title="Describe a game and the character you're with makes it">
+          <Sparkles size={14} /> Imagine a game
+        </button>
         <button className="btn small" onClick={() => desk().openApp("studio")}>
           <Code2 size={14} /> XDC Studio
         </button>
@@ -365,6 +378,100 @@ function Library() {
         webkitdirectory=""
         onChange={(e) => e.target.files && void doImport(e.target.files)}
       />
+      {imagine ? <ImagineDialog what={imagine} onClose={() => setImagine(null)} /> : null}
+    </div>
+  );
+}
+
+/** What "Imagine a game" works on: nothing (a new game), a Mini App's version, or a built-in game (copied first). */
+type ImagineFor = { base?: Pkg; versions?: string[]; game?: { title: string; path: string } };
+
+/** Play a version of a Mini App, with its other versions beside it. */
+function playPkg(p: Pkg, all: Pkg[]) {
+  const list = all.filter((x) => x.appKey === p.appKey);
+  launch({ key: `xdc:${p.appKey}`, kind: "xdc", title: p.name, blurb: p.description, icon: "", size: 0, added: p.added, versions: (list.length ? list : [p]).map((x) => ({ id: x.id, label: x.version, pkg: x })) }, { id: p.id, label: p.version, pkg: p });
+}
+
+function ImagineDialog({ what, onClose }: { what: ImagineFor; onClose: () => void }) {
+  const s = useDesk();
+  const room = s.roomCharacters();
+  const [who, setWho] = useState(room.find((c) => c.id === s.focus)?.id ?? room[0]?.id ?? "");
+  const [ask, setAsk] = useState("");
+  const canPictures = s.media.images.some((e) => e.enabled);
+  const canMusic = s.media.songs.some((e) => e.enabled);
+  const [pictures, setPictures] = useState(canPictures);
+  const [music, setMusic] = useState(false);
+  const [busy, setBusy] = useState("");
+  const stop = useRef<AbortController | null>(null);
+  const changing = Boolean(what.base || what.game);
+  const title = what.base?.name ?? what.game?.title ?? "";
+
+  const go = async () => {
+    if (!ask.trim() || !who) return;
+    stop.current = new AbortController();
+    try {
+      let base = what.base;
+      let versions = what.versions;
+      if (!base && what.game) {
+        setBusy(`Copying ${what.game.title} so it can be changed…`);
+        base = (await library.importWeb({ game: what.game.path }, allowed(s.privacy, "web"))).pkg;
+        versions = [];
+      }
+      const r = await imagineGame({ charId: who, ask, base, versions, pictures, music, progress: setBusy, signal: stop.current.signal });
+      libraryChanged();
+      const all = await library.list();
+      const said = [`${r.title} ${changing ? `version ${r.pkg.version}` : ""} is ready.`.replace(/\s+/g, " "), r.note, r.made.length ? `Made for it: ${r.made.join(", ")}.` : "", r.skipped.length ? `Not made (no engine for them): ${r.skipped.join(", ")}.` : ""];
+      desk().say(said.filter(Boolean).join(" "));
+      onClose();
+      playPkg(r.pkg, all);
+    } catch (e) {
+      if (!(e instanceof DOMException && e.name === "AbortError")) desk().say(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy("");
+    }
+  };
+
+  return (
+    <div className="scrim" onPointerDown={(e) => e.target === e.currentTarget && !busy && onClose()}>
+      <div className="dialog" role="dialog" aria-modal="true" aria-label={changing ? `Change ${title}` : "Imagine a game"}>
+        <h2>{changing ? `Change ${title}` : "Imagine a game"}</h2>
+        <textarea
+          className="input"
+          rows={4}
+          autoFocus
+          value={ask}
+          onChange={(e) => setAsk(e.target.value)}
+          placeholder={changing ? "Make the cats faster, and add a score that counts up" : "A game where a cat hops across lily pads to catch fireflies, getting faster each level"}
+        />
+        <div className="col" style={{ gap: 6, marginTop: 8 }}>
+          <label className="row small" style={{ gap: 6 }}>
+            <span className="faint">Made by</span>
+            <select className="input" value={who} onChange={(e) => setWho(e.target.value)} aria-label="Who makes it">
+              {room.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="row small" style={{ gap: 6 }} title={canPictures ? "" : "Set up a picture engine in Create first"}>
+            <input type="checkbox" disabled={!canPictures} checked={pictures && canPictures} onChange={(e) => setPictures(e.target.checked)} /> Pictures for it{canPictures ? "" : " (no picture engine yet)"}
+          </label>
+          <label className="row small" style={{ gap: 6 }} title={canMusic ? "" : "Set up a song engine in the Song Maker first"}>
+            <input type="checkbox" disabled={!canMusic} checked={music && canMusic} onChange={(e) => setMusic(e.target.checked)} /> Music for it{canMusic ? " (takes a few minutes)" : " (no song engine yet)"}
+          </label>
+          <p className="small faint">Sound effects are made for it either way. {changing ? "The change is a new version; the one before stays playable." : "It's a Mini App: change it again from its menu, edit it in XDC Studio, or share it."}</p>
+        </div>
+        {busy ? <p className="small">{busy}</p> : null}
+        <div className="actions">
+          <button className="btn" onClick={() => (busy ? stop.current?.abort() : onClose())}>
+            {busy ? "Stop" : "Cancel"}
+          </button>
+          <button className="btn primary" disabled={Boolean(busy) || !ask.trim() || !who} onClick={() => void go()}>
+            <Wand2 size={14} /> {changing ? "Change it" : "Make it"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -513,6 +620,19 @@ function cardMenu(it: Item, onOpen: (key: string) => void, onPlay: (it: Item, v?
     // a built-in game made into a Mini App of its own, to change in XDC Studio (the game here stays as it is)
     ...(it.kind === "game" && chosen.path
       ? [{ label: "Make a copy to edit in XDC Studio", run: () => void editGame(it.title, chosen.path!) } as MenuItem]
+      : []),
+    ...(!s.toddler && ((it.kind === "game" && chosen.path) || pkg)
+      ? [
+          {
+            label: "Change this game…",
+            run: () =>
+              window.dispatchEvent(
+                new CustomEvent<ImagineFor>("pdd-imagine", {
+                  detail: pkg ? { base: pkg, versions: it.versions.map((v) => v.label) } : { game: { title: it.title, path: chosen.path! } },
+                }),
+              ),
+          } as MenuItem,
+        ]
       : []),
     ...(pkg
       ? ([
