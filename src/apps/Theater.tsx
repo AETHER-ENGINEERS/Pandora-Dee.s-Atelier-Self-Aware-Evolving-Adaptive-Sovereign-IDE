@@ -101,18 +101,38 @@ const savedShelf = () => {
     return "";
   }
 };
+// what was open, so a reload carries on: the shelf, the video and the order it was playing in (each video's own
+// position is remembered already). Only for a while: opening the Theater tomorrow starts at the shelves.
+const PLACE_KEY = "pdd-theater-place";
+type Place = { shelf: string; playing: string | null; order: string[] | null; repeat: boolean; t: number };
+const savedPlace = (): Partial<Place> => {
+  try {
+    const p = JSON.parse(localStorage.getItem(PLACE_KEY) ?? "null") as Place | null;
+    return p && Date.now() - p.t < 12 * 3600_000 ? p : {};
+  } catch {
+    return {};
+  }
+};
 const month = (t: number) => new Date(t).toLocaleDateString(undefined, { month: "long", year: "numeric" });
 
 export function TheaterApp() {
   const { lib, error } = useLibrary();
   const toddler = useDesk((s) => s.toddler);
   const jobs = useJobs();
-  const [shelf, setShelf] = useState(ALL);
+  const [place] = useState(savedPlace);
+  const [shelf, setShelf] = useState(place.shelf ?? ALL);
   const [q, setQ] = useState("");
-  const [playing, setPlaying] = useState<string | null>(null);
+  const [playing, setPlaying] = useState<string | null>(place.playing ?? null);
   // a playlist played shuffled keeps its shuffled order until it's played again; repeat starts it over at the end
-  const [order, setOrder] = useState<string[] | null>(null);
-  const [repeat, setRepeat] = useState(false);
+  const [order, setOrder] = useState<string[] | null>(place.order ?? null);
+  const [repeat, setRepeat] = useState(place.repeat ?? false);
+  useEffect(() => {
+    try {
+      localStorage.setItem(PLACE_KEY, JSON.stringify({ shelf, playing, order, repeat, t: Date.now() } satisfies Place));
+    } catch {
+      /* it just won't carry on */
+    }
+  }, [shelf, playing, order, repeat]);
   const playlists = lib?.playlists ?? [];
   const playlist = shelf.startsWith(LIST) ? (playlists.find((p) => p.id === shelf.slice(LIST.length)) ?? null) : null;
   const [target, setTarget] = useState(savedShelf);

@@ -6,6 +6,7 @@ import { desk, useDesk } from "./store.ts";
 import { outbound } from "./outbound.ts";
 import { allowed, blockedBecause } from "./privacy.ts";
 import { speech } from "./voice.ts";
+import { pack, unpack } from "./musicPlace.ts";
 
 export type { MusicPlaylist, MusicPrefs, Station } from "./musicPrefs.ts";
 import type { Station } from "./musicPrefs.ts";
@@ -214,6 +215,7 @@ export async function loadLibrary() {
   const r = await fetch("/api/music/library");
   const j = (await r.json()) as { tracks: Track[]; own: string; folders?: string[] };
   useMusic.setState({ tracks: j.tracks.sort(byAlbum), own: j.own, folders: j.folders ?? [], loaded: true });
+  restorePlace();
 }
 
 /** Read the music folders again. The folders are the server's own list (the same on every device): pass `folders`
@@ -288,7 +290,7 @@ export function onStart(fn: (it: Item) => void) {
   return () => listeners.delete(fn);
 }
 
-async function start(i: number) {
+async function start(i: number, at = 0) {
   const it = mu().queue[i];
   if (!it) return;
   if (it.kind === "radio" && !allowed(desk().privacy, "web")) {
@@ -300,6 +302,8 @@ async function start(i: number) {
   const a = element();
   useMusic.setState({ index: i, position: 0, duration: it.kind === "track" ? it.duration : 0, error: "" });
   a.src = srcOf(it);
+  // carrying on after a reload: the same second of the same song
+  if (at > 0 && it.kind === "track") a.addEventListener("loadedmetadata", () => (a.currentTime = Math.min(at, Math.max(0, a.duration - 1))), { once: true });
   applyVolume();
   try {
     await a.play();
@@ -351,6 +355,8 @@ export function toggle() {
     if (all.length) playList(all, prefs().shuffle ? Math.floor(Math.random() * all.length) : 0);
     return;
   }
+  // the queue came back after a reload, but nothing is loaded yet: start that song where it was
+  if (!a.getAttribute("src")) return void start(mu().index, mu().position);
   chain();
   void ctx?.resume();
   if (a.paused) void a.play();
@@ -495,4 +501,59 @@ export function nowPlayingText(): string {
   const pos = `${Math.floor(st.position / 60)}:${String(Math.floor(st.position % 60)).padStart(2, "0")}`;
   if (it.kind === "radio") return `${st.playing ? "Playing" : "Paused"}: the radio station ${it.name}${it.country ? ` (${it.country})` : ""}${it.tags ? `, ${it.tags}` : ""}.`;
   return `${st.playing ? "Playing" : "Paused"}: "${it.title}"${it.artist ? ` by ${it.artist}` : ""}${it.album ? `, from ${it.album}` : ""}${it.year ? ` (${it.year})` : ""}${it.genre ? `, ${it.genre}` : ""}, at ${pos}${it.duration ? ` of ${Math.floor(it.duration / 60)}:${String(it.duration % 60).padStart(2, "0")}` : ""}.`;
+}
+
+// ---------- carrying on after a reload ----------
+// The queue, which song and how far in, kept on this device (musicPlace.ts). It comes back paused: browsers don't
+// let a page start sound by itself, so Play carries on from there.
+
+const PLACE_KEY = "pdd-music-place";
+let restored = false;
+
+function restorePlace() {
+  if (restored) return;
+  restored = true;
+  if (mu().queue.length) return;
+  let saved: unknown = null;
+  try {
+    saved = JSON.parse(localStorage.getItem(PLACE_KEY) ?? "null");
+  } catch {
+    return;
+  }
+  const back = unpack(saved, mu().tracks);
+  if (!back) return;
+  const it = back.queue[back.index];
+  useMusic.setState({ queue: back.queue, index: back.index, position: back.position, duration: it?.kind === "track" ? it.duration : 0, playing: false });
+}
+
+let lastSaved = 0;
+function savePlace() {
+  lastSaved = Date.now();
+  try {
+    // not over what was saved before it has been read back (a station tuned before the library is read is fine)
+    if (!restored) {
+      if (localStorage.getItem(PLACE_KEY)) return;
+      restored = true;
+    }
+    const { queue, index, position } = mu();
+    if (!queue.length || index < 0) localStorage.removeItem(PLACE_KEY);
+    else localStorage.setItem(PLACE_KEY, JSON.stringify(pack(queue, index, position)));
+  } catch {
+    /* full or blocked: it just won't carry on */
+  }
+}
+
+if (typeof window !== "undefined") {
+  useMusic.subscribe((now, was) => {
+    if (now.queue !== was.queue || now.index !== was.index) savePlace();
+    else if (now.position !== was.position && Date.now() - lastSaved > 5000) savePlace();
+  });
+  addEventListener("pagehide", savePlace);
+  document.addEventListener("visibilitychange", () => document.visibilityState === "hidden" && savePlace());
+  // something to carry on with: read the library (that puts the queue back) without waiting for the Music window
+  try {
+    if (localStorage.getItem(PLACE_KEY)) setTimeout(() => void loadLibrary().catch(() => undefined), 1500);
+  } catch {
+    /* no storage */
+  }
 }
