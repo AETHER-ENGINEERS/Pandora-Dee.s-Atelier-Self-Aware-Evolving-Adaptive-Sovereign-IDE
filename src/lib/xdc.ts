@@ -88,10 +88,10 @@ export const library = {
   },
   /** A web game made into a Mini App and opened as a draft: a .zip of it or its .html page from this device, or its
    *  folder (or .zip or page) on the desktop. `web`: fetch and keep what it loads from the internet. */
-  importWeb: (from: File | { path: string }, web: boolean) =>
+  importWeb: (from: File | { path: string } | { game: string }, web: boolean) =>
     api<WebImport>("xdc/import-web", from instanceof File
       ? { method: "POST", headers: { "x-filename": encodeURIComponent(from.name), "x-web": web ? "1" : "0" }, body: from }
-      : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: from.path, web }) }),
+      : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...from, web }) }),
   update: (id: string, patch: Partial<Pkg>) => api<Pkg>(`xdc/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   remove: (id: string) => api<{ ok: boolean }>(`xdc/${id}`, { method: "DELETE" }),
   fork: (id: string, version: string) => api<Pkg>(`xdc/${id}/fork`, { method: "POST", body: JSON.stringify({ version }) }),

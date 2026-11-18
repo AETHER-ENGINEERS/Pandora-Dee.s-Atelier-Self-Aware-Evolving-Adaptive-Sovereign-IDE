@@ -1151,7 +1151,10 @@ export function deskServer() {
           let web = true;
           if (String(req.headers["content-type"] || "").startsWith("application/json")) {
             const b = JSON.parse((await readBody(req, 100_000)).toString("utf8") || "{}");
-            const p = files().allowed(String(b.path || ""), onThisPc(req));
+            // one of the built-in games (Games' own folder), or a path Explorer reaches
+            const games = path.join(publicDir, "games");
+            const p = b.game ? path.resolve(games, String(b.game)) : files().allowed(String(b.path || ""), onThisPc(req));
+            if (b.game && !p.startsWith(games + path.sep)) return send(res, 403, { error: "That isn't one of the games." });
             web = b.web !== false;
             got = fs.statSync(p).isDirectory() ? WG.readFolder(p) : WG.fromUpload(fs.readFileSync(p), path.basename(p));
           } else {

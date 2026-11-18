@@ -22,7 +22,8 @@ import {
 import { desk, useDesk, type AppPrefs, type LibSection, type LibSort, type LibView } from "../lib/store.ts";
 import { gameScreen } from "../lib/bus.ts";
 import { gameTurn } from "../lib/agent.ts";
-import { appOrigin, bridge, groupApps, library, readScreen, type Pkg, type UpdateRow } from "../lib/xdc.ts";
+import { appOrigin, bridge, groupApps, library, readScreen, webImportSaid, type Pkg, type UpdateRow } from "../lib/xdc.ts";
+import { allowed } from "../lib/privacy.ts";
 import { slug } from "../lib/characters.ts";
 import { CharAvatar, Confirm } from "../ui/common.tsx";
 import { openMenu, type MenuItem } from "../ui/ContextMenu.tsx";
@@ -509,6 +510,10 @@ function cardMenu(it: Item, onOpen: (key: string) => void, onPlay: (it: Item, v?
     { sep: true },
     { label: "Details and versions", run: () => onOpen(it.key) },
     { label: p.fav ? "Remove from favourites" : "Add to favourites", checked: p.fav, run: () => s.setAppPrefs(it.key, { fav: !p.fav }) },
+    // a built-in game made into a Mini App of its own, to change in XDC Studio (the game here stays as it is)
+    ...(it.kind === "game" && chosen.path
+      ? [{ label: "Make a copy to edit in XDC Studio", run: () => void editGame(it.title, chosen.path!) } as MenuItem]
+      : []),
     ...(pkg
       ? ([
           { label: "Open in XDC Studio", run: () => (s.set({ studioPkg: pkg.id }), s.openApp("studio")) },
@@ -525,6 +530,22 @@ function cardMenu(it: Item, onOpen: (key: string) => void, onPlay: (it: Item, v?
         ] as MenuItem[])
       : []),
   ];
+}
+
+/** A built-in game as a Mini App draft in XDC Studio. */
+async function editGame(title: string, gamePath: string) {
+  const s = desk();
+  const web = allowed(s.privacy, "web");
+  s.say(`Making ${title} into a Mini App to edit…`);
+  try {
+    const r = await library.importWeb({ game: gamePath }, web);
+    libraryChanged();
+    s.set({ studioPkg: r.pkg.id });
+    s.openApp("studio");
+    s.say(webImportSaid(r, web));
+  } catch (e) {
+    s.say(e instanceof Error ? e.message : String(e));
+  }
 }
 
 function Details({ item, onClose, onPlay }: { item: Item; onClose: () => void; onPlay: (it: Item, v?: Version) => void }) {
