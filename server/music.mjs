@@ -353,23 +353,62 @@ export function createMusic(dataDir) {
     fs.createReadStream(file).pipe(res);
   }
 
-  async function cover(res, id) {
+  // Covers, kept: read out of the song once and stored in the data folder, named for the song as it is now (a changed
+  // file is read again). Reading a picture out of a song means opening it, slow on a network share and for a grid of
+  // hundreds of albums; after the first time it's one small file. The browser keeps it too, and asks again by its tag.
+  const coversDir = path.join(dataDir, "music-covers");
+  const coverTypes = { jpg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp", bmp: "image/bmp" };
+  async function cover(res, id, req) {
     const t = index.tracks[id];
-    if (!t?.cover) {
+    const none = () => {
       res.statusCode = 404;
+      res.end();
+    };
+    if (!t?.cover) return none();
+    let st;
+    try {
+      st = fs.statSync(t.path);
+    } catch {
+      return none();
+    }
+    const stamp = `${id}-${Math.floor(st.mtimeMs)}-${st.size}`;
+    const etag = `"${stamp}"`;
+    res.setHeader("Cache-Control", "max-age=604800");
+    res.setHeader("ETag", etag);
+    if ((req ?? res.req)?.headers["if-none-match"] === etag) {
+      res.statusCode = 304;
       return res.end();
+    }
+    let kept = null;
+    try {
+      kept = fs.readdirSync(coversDir).find((f) => f.startsWith(`${stamp}.`)) ?? null;
+    } catch {
+      /* nothing kept yet */
+    }
+    if (kept) {
+      res.setHeader("Content-Type", coverTypes[kept.split(".").pop()] ?? "image/jpeg");
+      return fs.createReadStream(path.join(coversDir, kept)).on("error", none).pipe(res);
     }
     try {
       const { parseFile, selectCover } = await import("music-metadata");
       const m = await parseFile(t.path, { duration: false });
       const pic = selectCover(m.common.picture);
       if (!pic) throw new Error("none");
-      res.setHeader("Content-Type", pic.format || "image/jpeg");
-      res.setHeader("Cache-Control", "max-age=86400");
+      const type = pic.format || "image/jpeg";
+      const ext = Object.keys(coverTypes).find((k) => coverTypes[k] === type) ?? "jpg";
+      try {
+        fs.mkdirSync(coversDir, { recursive: true });
+        for (const f of fs.readdirSync(coversDir)) if (f.startsWith(`${id}-`)) fs.rmSync(path.join(coversDir, f), { force: true });
+        fs.writeFileSync(path.join(coversDir, `${stamp}.${ext}`), Buffer.from(pic.data));
+      } catch {
+        /* served all the same, just not kept */
+      }
+      res.setHeader("Content-Type", type);
       res.end(Buffer.from(pic.data));
     } catch {
-      res.statusCode = 404;
-      res.end();
+      res.removeHeader("ETag");
+      res.removeHeader("Cache-Control");
+      none();
     }
   }
 

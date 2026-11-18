@@ -966,7 +966,7 @@ export function deskServer() {
         return send(res, 200, await M.scan(folders));
       }
       if (parts[1] === "file") return M.serve(req, res, String(url.searchParams.get("id") || ""));
-      if (parts[1] === "cover") return void (await M.cover(res, String(url.searchParams.get("id") || "")));
+      if (parts[1] === "cover") return void (await M.cover(res, String(url.searchParams.get("id") || ""), req));
       if (parts[1] === "info") {
         const i = await M.info(String(url.searchParams.get("id") || ""));
         return i ? send(res, 200, i) : send(res, 404, { error: "That song isn't in the library." });
