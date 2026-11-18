@@ -831,6 +831,8 @@ export function deskServer() {
           if (parts[1] === "playlist") return send(res, 200, b.drop ? theater.dropPlaylist(String(b.id || "")) : theater.savePlaylist(b));
           if (parts[1] === "collection") return send(res, 200, b.drop ? theater.dropCollection(String(b.id || "")) : theater.saveCollection(b));
           if (parts[1] === "move") return send(res, 200, { path: theater.moveTo(b.path, b.shelf) });
+          // a YouTube link onto a shelf (its title and thumbnail fetched once), or taken out
+          if (parts[1] === "link") return send(res, 200, b.drop ? theater.dropLink(String(b.id || "")) : await theater.addLink(String(b.url ?? ""), String(b.shelf ?? "")));
         }
       } catch (e) {
         return send(res, e?.status ?? 400, { error: e instanceof Error ? e.message : String(e) });

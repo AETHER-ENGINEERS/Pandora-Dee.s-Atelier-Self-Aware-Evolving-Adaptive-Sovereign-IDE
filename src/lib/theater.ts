@@ -7,7 +7,8 @@ import { rawUrl } from "./explorer.ts";
 import { deviceName } from "./devshare.ts";
 import { sendPieces, wholeUpload } from "./uploadCore.ts";
 
-export type Video = { id: string; path: string; name: string; ext: string; shelf: string; size: number; mtime: number; seconds: number; thumb: 1 | 0 | -1; fav: boolean; watched?: boolean; device?: boolean; folder?: string };
+export type Video = { id: string; path: string; name: string; ext: string; shelf: string; size: number; mtime: number; seconds: number; thumb: 1 | 0 | -1; fav: boolean; watched?: boolean; device?: boolean; folder?: string;
+  /** a YouTube link (played from YouTube; its title and thumbnail kept here) */ link?: "youtube"; yt?: string; start?: number; author?: string };
 export type Playlist = { id: string; name: string; items: string[]; made: number };
 /** Shows gathered under a name ("Kids"), in an order of one's own: each item is "<shelf>/<folder inside it>". */
 export type Collection = { id: string; name: string; items: string[]; kids?: boolean };
@@ -60,6 +61,8 @@ export function useLibrary(): { lib: Library | null; error: string } {
 export const theaterApi = {
   fav: (id: string, on: boolean) => call<{ fav: boolean }>("/api/theater/fav", { id, on }),
   move: (path: string, shelf: string) => call<{ path: string }>("/api/theater/move", { path, shelf }),
+  addLink: (url: string, shelf: string) => call<{ id: string; shelf: string; title: string; again: boolean }>("/api/theater/link", { url, shelf }),
+  dropLink: (id: string) => call<{ ok: true }>("/api/theater/link", { id, drop: true }),
   shelf: (name: string) => call<{ shelf: string }>("/api/theater/shelf", { name, device: deviceName() }),
   /** A shelf, or a show folder on one, added to another shelf (moved there as a folder of its own); to "" it
    *  becomes a shelf of its own. */

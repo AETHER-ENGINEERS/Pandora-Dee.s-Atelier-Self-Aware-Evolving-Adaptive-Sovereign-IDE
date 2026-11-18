@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, FileDown, FileUp, HardDrive, MonitorPlay, MonitorSmartphone, Library, Network, PanelLeft, Smartphone, Tv, Download, Film, Folder, FolderInput, FolderOpen, FolderPlus, ListMusic, ListPlus, MoreHorizontal, Pencil, Play, Plus, RefreshCw, Repeat, Search, Shuffle, Star, Trash2, Upload, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, FileDown, FileUp, HardDrive, MonitorPlay, MonitorSmartphone, Library, Network, PanelLeft, Smartphone, Tv, Download, Film, Copy, ExternalLink, Link2, Folder, FolderInput, FolderOpen, FolderPlus, ListMusic, ListPlus, MoreHorizontal, Pencil, Play, Plus, RefreshCw, Repeat, Search, Shuffle, Star, Trash2, Upload, X } from "lucide-react";
 import { desk, useDesk } from "../lib/store.ts";
 import { baseName, downloadToDevice, fileApi, pickInExplorer, rawUrl } from "../lib/explorer.ts";
 import { KINDS, kindOf, placeIn, type Kind } from "../lib/videoKinds.ts";
@@ -33,6 +33,8 @@ import { openMenu, openMenuAt, type MenuItem } from "../ui/ContextMenu.tsx";
 import { askText, askUser } from "../ui/Ask.tsx";
 import { inFolder, underFolder } from "../lib/episodes.ts";
 import { useWidth } from "../ui/hooks.ts";
+import { allowed, blockedBecause } from "../lib/privacy.ts";
+import { copyText } from "../lib/clipboard.ts";
 
 const ALL = "\u0000all", FAVS = "\u0000favs", LIST = "\u0000list:", DEV = "\u0000device:", COL = "\u0000col:", KIND = "\u0000kind:", SHARED = "\u0000shared";
 const KIND_ICON: Record<Kind, React.ReactNode> = { movie: <Clapperboard size={14} />, series: <Tv size={14} />, recording: <MonitorPlay size={14} />, unknown: <Film size={14} /> };
@@ -294,8 +296,7 @@ export function TheaterApp() {
     toddler || v.watched || v.device
       ? []
       : [
-          { sep: true },
-          { label: "Rename…", icon: <Pencil size={14} />, run: () => void renameVideo(v.path, v.name) },
+          ...(v.link ? linkItems(v) : [{ sep: true } as MenuItem, { label: "Rename…", icon: <Pencil size={14} />, run: () => void renameVideo(v.path, v.name) } as MenuItem]),
           { sep: true },
           { heading: "Add to shelf" },
           ...["", ...shelves]
@@ -308,6 +309,29 @@ export function TheaterApp() {
               }),
             ),
         ];
+
+  // ---- YouTube links ----
+  const addYouTube = async () => {
+    if (!allowed(desk().privacy, "web")) return desk().say(blockedBecause(desk().privacy, "web"));
+    const url = (await askText("A YouTube link", "", { placeholder: "https://youtu.be/…", yes: "Add it" }))?.trim();
+    if (!url) return;
+    // onto the shelf being looked at when it's one of the desktop's own, or a YouTube shelf
+    const own = shelves.includes(shelf) && !(lib?.folders ?? []).some((f) => f.name === shelf) && shelf !== "From devices" ? shelf : "";
+    try {
+      const r = await theaterApi.addLink(url, own);
+      await refreshLibrary();
+      desk().say(`${r.title || "That video"} is on ${r.shelf}${r.again ? " now (it was here already)" : ""}.`);
+    } catch (e) {
+      fail(e);
+    }
+  };
+  /** A link's own menu items: open it on YouTube, copy it, or take it out. */
+  const linkItems = (v: Video): MenuItem[] => [
+    { sep: true },
+    { label: "Open on YouTube", icon: <ExternalLink size={14} />, run: () => void window.open(v.path, "_blank", "noopener") },
+    { label: "Copy the link", icon: <Copy size={14} />, run: () => void copyText(v.path) },
+    { label: "Take it out of the Theater", icon: <Trash2 size={14} />, danger: true, run: () => void theaterApi.dropLink(v.id).then(() => (desk().say(`${v.name} is out of the Theater.`), refreshLibrary()), fail) },
+  ];
 
   // ---- playlist files (M3U / M3U8 / PLS) ----
   const openPlaylistFile = async (src: "device" | "desk") => {
@@ -465,7 +489,7 @@ export function TheaterApp() {
   // thumbnails for the ones still without, a few at a time as the list changes
   useEffect(() => {
     // (not a device's: those come over that device's connection, and are watched there)
-    if (shown.some((v) => v.thumb === 0 && !v.device)) void makeThumbs(shown.filter((v) => !v.device).slice(0, 200));
+    if (shown.some((v) => v.thumb === 0 && !v.device && !v.link)) void makeThumbs(shown.filter((v) => !v.device && !v.link).slice(0, 200));
   }, [shown]);
 
   const groups = useMemo(() => {
@@ -644,6 +668,9 @@ export function TheaterApp() {
         </div>
         <button className="btn primary" onClick={() => pick.current?.click()} title="Copies videos from this device onto the desktop, checked piece by piece">
           <Upload size={15} /> {narrow ? "Back up" : "Back up videos"}
+        </button>
+        <button className="btn" onClick={() => void addYouTube()} title="A YouTube video on a shelf here: its title and picture kept, played from YouTube">
+          <Link2 size={15} /> {narrow ? "YouTube" : "Add a YouTube link"}
         </button>
         <label className="theater-to small">
           <span className="faint">to</span>
@@ -1045,7 +1072,7 @@ function Card({ v, onPlay, menu }: { v: Video; onPlay: () => void; menu: () => M
         const items = menu();
         if (items.length) openMenu(e, items);
       }}
-      title={`${v.name} · ${sizeText(v.size)}${v.shelf ? ` · ${v.shelf}` : ""}`}>
+      title={`${v.name} · ${v.link ? `YouTube${v.author ? `, ${v.author}` : ""}` : sizeText(v.size)}${v.shelf ? ` · ${v.shelf}` : ""}`}>
       <span className="theater-thumb">
         {v.thumb === 1 ? <img src={thumbUrl(v.id)} alt="" loading="lazy" /> : <Film size={30} />}
         {v.seconds ? <span className="theater-len">{lengthText(v.seconds)}</span> : null}
@@ -1119,6 +1146,21 @@ function Player({
   };
 
   const menu = (): MenuItem[] => {
+    const said = (e: unknown) => desk().say(e instanceof Error ? e.message : String(e));
+    if (v.link)
+      return [
+        { label: "Open on YouTube", icon: <ExternalLink size={14} />, run: () => void window.open(v.path, "_blank", "noopener") },
+        { label: "Copy the link", icon: <Copy size={14} />, run: () => void copyText(v.path) },
+        ...(toddler
+          ? []
+          : [
+              ...addToPlaylistItems(v, playlists),
+              { heading: "Move to shelf" } as MenuItem,
+              ...["", ...shelves].filter((s) => s !== v.shelf).map((s): MenuItem => ({ label: s || "Videos (no shelf)", icon: <FolderInput size={14} />, run: () => void theaterApi.move(v.path, s).then(() => (desk().say(`Moved to ${s || "Videos"}.`), refreshLibrary()), said) })),
+              { sep: true } as MenuItem,
+              { label: "Take it out of the Theater", icon: <Trash2 size={14} />, danger: true, run: () => (onClose(), void theaterApi.dropLink(v.id).then(() => refreshLibrary(), said)) } as MenuItem,
+            ]),
+      ];
     const items: MenuItem[] = [{ label: "Save a copy to this device", icon: <Download size={14} />, run: () => downloadToDevice(v.path) }];
     if (toddler || v.device) return items;
     // a watched folder's video stays as it is there: no renaming, moving or deleting from here
@@ -1178,13 +1220,17 @@ function Player({
           <MoreHorizontal size={18} />
         </button>
       </div>
-      <video key={v.id} ref={vid} className="theater-video" src={videoUrl(v)} controls playsInline onEnded={() => next && onPick(next.id)} />
+      {v.link ? (
+        <YouTubePlayer v={v} onEnded={() => next && onPick(next.id)} />
+      ) : (
+        <video key={v.id} ref={vid} className="theater-video" src={videoUrl(v)} controls playsInline onEnded={() => next && onPick(next.id)} />
+      )}
       <div className="theater-nav">
         <button className="btn ghost" disabled={!prev} onClick={() => prev && onPick(prev.id)} aria-label="Previous video">
           <ChevronLeft size={18} /> {prev ? <span className="theater-nav-name">{prev.name}</span> : null}
         </button>
         <span className="small faint">
-          {i + 1} of {list.length} · {sizeText(v.size)}
+          {i + 1} of {list.length} · {v.link ? v.author || "YouTube" : sizeText(v.size)}
         </span>
         <button className="btn ghost" disabled={!next} onClick={() => next && onPick(next.id)} aria-label="Next video">
           {next ? <span className="theater-nav-name">{next.name}</span> : null} <ChevronRight size={18} />
@@ -1192,6 +1238,59 @@ function Player({
       </div>
     </div>
   );
+}
+
+/** A YouTube link playing: YouTube's no-cookie player, starting where it was left on this device (or where the link
+ *  said), remembering as it plays, and on to the next video when it ends. Its messages are only taken from its own
+ *  frame. With the web switched off in Privacy it says so instead. */
+function YouTubePlayer({ v, onEnded }: { v: Video; onEnded: () => void }) {
+  const frame = useRef<HTMLIFrameElement>(null);
+  const ended = useRef(onEnded);
+  ended.current = onEnded;
+  const privacy = useDesk((s) => s.privacy);
+  const web = allowed(privacy, "web");
+  const [from] = useState(() => Math.floor(leftOff(v.id) || v.start || 0));
+  useEffect(() => {
+    if (!web) return;
+    let at = 0;
+    let length = v.seconds;
+    const msg = (e: MessageEvent) => {
+      if (!frame.current || e.source !== frame.current.contentWindow) return;
+      let d: { info?: { currentTime?: number; duration?: number; playerState?: number } } | null = null;
+      try {
+        d = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
+      } catch {
+        return;
+      }
+      const info = d?.info;
+      if (!info) return;
+      if (typeof info.currentTime === "number") at = info.currentTime;
+      if (typeof info.duration === "number" && info.duration > 0) length = info.duration;
+      if (info.playerState === 0) ended.current();
+    };
+    window.addEventListener("message", msg);
+    // the player only reports its time once it's asked to (YouTube's own iframe API does the same)
+    const hello = () => frame.current?.contentWindow?.postMessage(JSON.stringify({ event: "listening", id: 1, channel: "widget" }), "*");
+    const f = frame.current;
+    const again = () => (hello(), window.setTimeout(hello, 1000));
+    f?.addEventListener("load", again);
+    const save = window.setInterval(() => at && rememberPosition(v.id, at, length), 4000);
+    return () => {
+      window.removeEventListener("message", msg);
+      f?.removeEventListener("load", again);
+      window.clearInterval(save);
+      if (at) rememberPosition(v.id, at, length);
+    };
+  }, [v.id, v.seconds, web]);
+  if (!web)
+    return (
+      <div className="theater-video theater-yt-off">
+        <p>{blockedBecause(privacy, "web")}</p>
+        <p className="faint small">YouTube links play from YouTube, so they need the web switched on in Privacy.</p>
+      </div>
+    );
+  const src = `https://www.youtube-nocookie.com/embed/${v.yt}?autoplay=1&enablejsapi=1&rel=0&playsinline=1&start=${from}&origin=${encodeURIComponent(location.origin)}`;
+  return <iframe key={v.id} ref={frame} className="theater-video" src={src} title={v.name} allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" />;
 }
 
 /** What this device is backing up, and what's safe to let go of. */

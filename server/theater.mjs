@@ -10,6 +10,7 @@ import crypto from "node:crypto";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { typedName } from "./names.mjs";
+import { parseYouTube, watchUrl, youTubeInfo, youTubeThumb } from "./youtube.mjs";
 
 export const VIDEO_EXT = new Set(["mp4", "m4v", "mov", "webm", "mkv", "3gp", "avi", "ogv"]);
 /** The most one upload piece may be; the desktop's page sends 8 MB. */
@@ -34,9 +35,9 @@ export function createTheater({ vaultDir }) {
   function readMeta() {
     try {
       const j = JSON.parse(fs.readFileSync(metaFile(), "utf8"));
-      return { favs: j.favs ?? {}, seconds: j.seconds ?? {}, playlists: Array.isArray(j.playlists) ? j.playlists : [], folders: Array.isArray(j.folders) ? j.folders.filter((f) => f && typeof f.path === "string") : [], collections: Array.isArray(j.collections) ? j.collections : [], from: j.from && typeof j.from === "object" ? j.from : {} };
+      return { favs: j.favs ?? {}, seconds: j.seconds ?? {}, playlists: Array.isArray(j.playlists) ? j.playlists : [], folders: Array.isArray(j.folders) ? j.folders.filter((f) => f && typeof f.path === "string") : [], collections: Array.isArray(j.collections) ? j.collections : [], from: j.from && typeof j.from === "object" ? j.from : {}, links: Array.isArray(j.links) ? j.links.filter((l) => l && typeof l.yt === "string") : [] };
     } catch {
-      return { favs: {}, seconds: {}, playlists: [], folders: [], collections: [], from: {} };
+      return { favs: {}, seconds: {}, playlists: [], folders: [], collections: [], from: {}, links: [] };
     }
   }
 
@@ -152,6 +153,11 @@ export function createTheater({ vaultDir }) {
       const before = out.length;
       walk(fromDevices(), "From devices", 1);
       if (out.length > before) shelves.push("From devices");
+    }
+    // YouTube links, each on its shelf (youtube.mjs): played from YouTube, with the title and thumbnail kept here
+    for (const l of m.links) {
+      out.push({ id: l.id, path: watchUrl(l.yt), name: l.title || "A YouTube video", ext: "youtube", shelf: l.shelf ?? "", folder: "", size: 0, mtime: l.added ?? 0, seconds: m.seconds[l.id] ?? 0, thumb: thumbOf(l.id), fav: Boolean(m.favs[l.id]), link: "youtube", yt: l.yt, start: l.start || 0, author: l.author || "" });
+      if (l.shelf && !shelves.includes(l.shelf)) shelves.push(l.shelf);
     }
     out.sort((a, b) => b.mtime - a.mtime);
     shelves.sort((a, b) => (a === "From devices") - (b === "From devices") || a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
@@ -309,6 +315,7 @@ export function createTheater({ vaultDir }) {
     fs.renameSync(from, target);
     const m = readMeta();
     rekey(m, shelf, n);
+    for (const l of m.links) if (l.shelf === shelf) l.shelf = n;
     for (const k of Object.keys(m.from))
       if (k === shelf || k.startsWith(`${shelf}/`)) {
         m.from[n + k.slice(shelf.length)] = m.from[k];
@@ -495,6 +502,41 @@ export function createTheater({ vaultDir }) {
   }
 
   /** May this request touch this file? Only videos inside the Theater's own folders. */
+  // ---- YouTube links ----
+  const linkId = (yt) => `yt-${crypto.createHash("sha1").update(yt).digest("hex").slice(0, 10)}`;
+  /** A YouTube link added to a shelf ("YouTube" unless another is chosen). Its title and thumbnail are fetched once
+   *  and kept; the same video added again just moves to that shelf. */
+  async function addLink(text, shelf, fetchFn = fetch) {
+    const p = parseYouTube(text);
+    if (!p) throw fail(400, "That isn't a YouTube video link.");
+    const to = safe(shelf, "YouTube");
+    const id = linkId(p.yt);
+    const m0 = readMeta();
+    const had = m0.links.find((l) => l.yt === p.yt);
+    const [info, thumb] = had ? [{}, null] : await Promise.all([youTubeInfo(p.yt, fetchFn), youTubeThumb(p.yt, fetchFn)]);
+    if (thumb) setThumb(id, thumb);
+    mkShelf(to);
+    const m = readMeta();
+    const l = m.links.find((x) => x.yt === p.yt);
+    if (l) l.shelf = to;
+    else m.links.push({ id, yt: p.yt, start: p.start, title: info.title || "", author: info.author || "", shelf: to, added: Date.now() });
+    writeMeta(m);
+    return { id, shelf: to, title: l?.title || info.title || "", again: Boolean(l) };
+  }
+  /** A link taken out of the Theater (its kept thumbnail, place and favourite go with it). */
+  function dropLink(id) {
+    const m = readMeta();
+    const l = m.links.find((x) => x.id === checkId(id));
+    if (!l) throw fail(404, "That link isn't in the Theater any more.");
+    m.links = m.links.filter((x) => x !== l);
+    delete m.favs[l.id];
+    delete m.seconds[l.id];
+    for (const pl of m.playlists) if (Array.isArray(pl.items)) pl.items = pl.items.filter((x) => x !== l.id);
+    writeMeta(m);
+    fs.rmSync(thumbFile(l.id), { force: true });
+    return { ok: true };
+  }
+
   function owns(p) {
     const full = path.resolve(String(p || ""));
     const inside = (r) => full.toLowerCase().startsWith(path.resolve(r).toLowerCase() + path.sep);
@@ -503,6 +545,16 @@ export function createTheater({ vaultDir }) {
 
   /** Onto another shelf ("" = straight in Videos). */
   function moveTo(p, shelf) {
+    const link = parseYouTube(p);
+    if (link && /^https:\/\//.test(String(p))) {
+      const m = readMeta();
+      const l = m.links.find((x) => x.yt === link.yt);
+      if (!l) throw fail(404, "That link isn't in the Theater any more.");
+      l.shelf = String(shelf ?? "") ? safe(shelf, "") : "";
+      if (l.shelf) mkShelf(l.shelf);
+      writeMeta(m);
+      return watchUrl(l.yt);
+    }
     const from = owns(p);
     if (!from || !fs.existsSync(from)) throw fail(404, "That video isn't there any more.");
     const dir = shelfDir(shelf);
@@ -515,5 +567,5 @@ export function createTheater({ vaultDir }) {
     return target;
   }
 
-  return { root, list, folders, addFolder, dropFolder, addToShelf, renameShelf, renameFolder, saveCollection, dropCollection, have, mkShelf, uploadState, uploadPiece, uploadWhole, dropUpload, sweep, thumbFile, setThumb, setFav, owns, moveTo, savePlaylist, dropPlaylist };
+  return { root, list, folders, addFolder, addLink, dropLink, dropFolder, addToShelf, renameShelf, renameFolder, saveCollection, dropCollection, have, mkShelf, uploadState, uploadPiece, uploadWhole, dropUpload, sweep, thumbFile, setThumb, setFav, owns, moveTo, savePlaylist, dropPlaylist };
 }

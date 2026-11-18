@@ -187,3 +187,34 @@ test("a whole video in one go is streamed in and filed, and a short one is kept 
   assert.deepEqual(T.uploadState({ ...job, name: "cut.mp4" }), { have: 700 });
   await assert.rejects(T.uploadWhole({ ...job, name: "big.mp4", size: 10 }, Readable.from([video])), /more than the whole video/);
 });
+
+test("YouTube links: on a shelf with their title and thumbnail, moved, followed through a rename, and taken out", async () => {
+  const v = fs.mkdtempSync(path.join(os.tmpdir(), "theater-yt-"));
+  const Y = createTheater({ vaultDir: () => v });
+  let asked = 0;
+  const fake = async (u) => {
+    asked++;
+    return /oembed/.test(u) ? { ok: true, json: async () => ({ title: "Tide song", author_name: "Reef" }) } : { ok: true, arrayBuffer: async () => new Uint8Array([0xff, 0xd8, 9]).buffer };
+  };
+  await assert.rejects(Y.addLink("https://vimeo.com/1", "", fake), /isn't a YouTube/);
+  const a = await Y.addLink("https://youtu.be/dQw4w9WgXcQ?t=42", "", fake);
+  assert.equal(a.shelf, "YouTube");
+  const one = Y.list().videos.find((x) => x.id === a.id);
+  assert.equal(one.name, "Tide song");
+  assert.equal(one.author, "Reef");
+  assert.equal(one.start, 42);
+  assert.equal(one.thumb, 1, "its thumbnail is kept");
+  assert.ok(Y.list().shelves.includes("YouTube"));
+  const again = await Y.addLink("https://www.youtube.com/watch?v=dQw4w9WgXcQ", "Music videos", fake);
+  assert.equal(again.again, true);
+  assert.equal(asked, 2, "added again: nothing asked of YouTube a second time");
+  assert.equal(Y.list().videos.find((x) => x.id === a.id).shelf, "Music videos");
+  Y.moveTo(one.path, "YouTube");
+  assert.equal(Y.list().videos.find((x) => x.id === a.id).shelf, "YouTube");
+  Y.renameShelf("YouTube", "Clips: best");
+  assert.equal(Y.list().videos.find((x) => x.id === a.id).shelf, "Clips꞉ best", "a renamed shelf keeps its links");
+  Y.setFav(a.id, true);
+  Y.dropLink(a.id);
+  assert.equal(Y.list().videos.length, 0);
+  assert.equal(fs.existsSync(Y.thumbFile(a.id)), false);
+});
