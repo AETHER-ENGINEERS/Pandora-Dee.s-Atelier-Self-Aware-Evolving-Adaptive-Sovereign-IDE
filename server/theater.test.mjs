@@ -165,3 +165,16 @@ test("a show folder renamed where it is; collections follow", () => {
   assert.deepEqual(R.renameFolder("Kids", "SpongeBob/Season 1", "Season 01"), { folder: "SpongeBob/Season 01" });
   assert.throws(() => R.renameFolder("Kids", "../x", "y"), /Which folder/);
 });
+
+test("a whole video in one go is streamed in and filed, and a short one is kept to carry on", async () => {
+  const { Readable } = await import("node:stream");
+  const whole = { ...job, name: "whole.mp4" };
+  const end = await T.uploadWhole(whole, Readable.from([video.subarray(0, 1200), video.subarray(1200)]));
+  assert.equal(end.done, true);
+  assert.deepEqual(fs.readFileSync(end.path), video);
+  // the connection dropped partway: what arrived stays, so pieces can carry on from there
+  const cut = await T.uploadWhole({ ...job, name: "cut.mp4" }, Readable.from([video.subarray(0, 700)]));
+  assert.deepEqual(cut, { have: 700, done: false, path: null });
+  assert.deepEqual(T.uploadState({ ...job, name: "cut.mp4" }), { have: 700 });
+  await assert.rejects(T.uploadWhole({ ...job, name: "big.mp4", size: 10 }, Readable.from([video])), /more than the whole video/);
+});

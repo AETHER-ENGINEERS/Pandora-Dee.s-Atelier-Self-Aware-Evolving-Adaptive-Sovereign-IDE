@@ -1183,3 +1183,4 @@ html { touch-action: pan-x pan-y; }
 .room-tab.on { background: var(--raise); border-color: var(--line); color: inherit; font-weight: 600; }
 .room-tab.going { opacity: .6; }
 .room-tab.add { padding: 4px 7px; }
+.explorer-uploading { position: sticky; top: 0; z-index: 2; padding: 8px 12px; background: var(--panel-solid); border-bottom: 1px solid var(--line); }

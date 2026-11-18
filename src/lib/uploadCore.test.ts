@@ -90,3 +90,26 @@ test("cancelling stops it", async () => {
   assert.equal(end.state, "cancelled");
   assert.ok(d.have < 3500);
 });
+
+test("a device that won't hand over pieces sends the whole file in one go instead", async () => {
+  const d = desk();
+  const notes: string[] = [];
+  let wholeUrl = "";
+  const end = await sendPieces(
+    opts(d, flaky(3500, 0), {
+      progress: (_s, note) => void (note && notes.push(note)),
+      whole: async (url, file, progress) => ((wholeUrl = url), progress(file.size), { status: 200, json: { have: 3500, done: true, path: "Videos/w.mp4" } }),
+    }),
+  );
+  assert.deepEqual(end, { state: "done", path: "Videos/w.mp4" });
+  assert.match(wholeUrl, /&whole=1$/);
+  assert.ok(notes.some((n) => /in one go.*100%/.test(n)), notes.join(" | "));
+});
+
+test("the one-go fallback failing says so, and can be tried again", async () => {
+  const d = desk();
+  const end = await sendPieces(opts(d, flaky(3500, 0), { whole: async () => ({ status: 0, json: {} }) }));
+  assert.equal(end.state, "failed");
+  assert.equal(end.state === "failed" && end.reread, undefined);
+  assert.match(end.state === "failed" ? end.error : "", /dropped while it went in one go/);
+});

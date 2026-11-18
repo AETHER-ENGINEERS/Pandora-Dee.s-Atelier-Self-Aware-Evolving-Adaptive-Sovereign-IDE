@@ -18,6 +18,8 @@ export type SendOpts = {
   progress: (sent: number, note?: string) => void;
   /** the wait between tries; it may end early when the connection comes back */
   pause: (ms: number) => Promise<void>;
+  /** the whole file in one request, for a device that won't let the page read it in pieces (see wholeUpload) */
+  whole?: (url: string, file: Blob, progress: (sent: number) => void) => Promise<{ status: number; json: { have?: number; done?: boolean; path?: string; error?: string } }>;
   piece?: number;
   maxTries?: number;
 };
@@ -39,8 +41,20 @@ export async function sendPieces(o: SendOpts): Promise<SendEnd> {
         try {
           bytes = await f.slice(at, Math.min(f.size, at + piece)).arrayBuffer();
         } catch {
-          // Not the network: phones stop letting a page read a chosen file after a while (in the background, or once
-          // the screen has locked), and every try after that fails the same way. Choosing it again carries on.
+          // Not the network: some phones won't let a page read a chosen file in pieces (or stop after a while in the
+          // background), and every try after that fails the same way. Sending the whole file in one request still
+          // works on those (it's how the Explorer uploads); it starts over, so it's the fallback, not the way.
+          if (o.whole) {
+            const note = "This device won't hand the video over in pieces, so it's going in one go (it starts over).";
+            o.progress(0, note);
+            try {
+              const r = await o.whole(`${o.url()}&whole=1`, f, (n) => o.progress(n, `${note} ${pct(n, f.size)}%`));
+              if (r.status >= 200 && r.status < 300 && r.json.done) return { state: "done", path: r.json.path };
+              return { state: "failed", error: r.json.error || (r.status ? `The desktop answered ${r.status}.` : "The connection dropped while it went in one go. Try again.") };
+            } catch (e) {
+              return { state: "failed", error: (e as Error).message || "The connection dropped while it went in one go. Try again." };
+            }
+          }
           return { state: "failed", reread: true, error: `This device stopped letting the page read the video. Choose it again and it carries on from ${pct(at, f.size)}%.` };
         }
         const sum = await o.sha256(bytes);
@@ -68,4 +82,27 @@ export async function sendPieces(o: SendOpts): Promise<SendEnd> {
       await o.pause(Math.min(20_000, 2000 * tries));
     }
   }
+}
+
+/** One request with the whole file, reporting how much has gone (fetch can't tell; XMLHttpRequest can). */
+export function wholeUpload(url: string, file: Blob, progress: (sent: number) => void, headers: Record<string, string> = {}) {
+  return new Promise<{ status: number; json: { have?: number; done?: boolean; path?: string; error?: string } }>((ok) => {
+    const x = new XMLHttpRequest();
+    x.open("POST", url);
+    for (const [k, v] of Object.entries(headers)) x.setRequestHeader(k, v);
+    x.upload.onprogress = (e) => progress(e.loaded);
+    const end = () => {
+      let json = {};
+      try {
+        json = JSON.parse(x.responseText || "{}");
+      } catch {
+        /* not JSON */
+      }
+      ok({ status: x.status, json });
+    };
+    x.onload = end;
+    x.onerror = end;
+    x.onabort = end;
+    x.send(file);
+  });
 }

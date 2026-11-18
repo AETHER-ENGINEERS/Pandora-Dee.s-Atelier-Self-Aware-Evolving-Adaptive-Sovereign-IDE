@@ -75,6 +75,7 @@ function FileBrowser({ mode, go, pick }: { mode: Mode; go?: { path: string; at: 
   const [view, setView] = useState<"list" | "grid">(() => (localStorage.getItem("pdd-explorer-view") === "grid" ? "grid" : "list"));
   const [saveName, setSaveName] = useState(pick?.defaultName ?? "");
   const [dropping, setDropping] = useState(false);
+  const [uploading, setUploading] = useState<{ name: string; i: number; n: number; sent: number; total: number } | null>(null);
   // pictures: only them (and folders) in the list, and one at a time across the whole window
   const [picsOnly, setPicsOnly] = useState(() => localStorage.getItem("pdd-explorer-pics") === "1");
   const [viewing, setViewing] = useState<string | null>(null);
@@ -268,13 +269,21 @@ function FileBrowser({ mode, go, pick }: { mode: Mode; go?: { path: string; at: 
   const newFolder = () => setEditing({ path: "", value: "New folder" });
   const upload = async (files: File[]) => {
     if (!files.length || !cwd) return;
+    const total = files.reduce((n, f) => n + f.size, 0);
+    let before = 0;
     try {
       let last = "";
-      for (const f of files) last = await fileApi.upload(cwd, f);
+      for (const [i, f] of files.entries()) {
+        setUploading({ name: f.name, i, n: files.length, sent: before, total });
+        last = await fileApi.upload(cwd, f, (sent) => setUploading({ name: f.name, i, n: files.length, sent: before + Math.min(sent, f.size), total }));
+        before += f.size;
+      }
       await open(cwd, baseName(last), false);
       desk().say(`${files.length === 1 ? files[0].name : `${files.length} files`} uploaded here.`);
     } catch (err) {
       fail(err);
+    } finally {
+      setUploading(null);
     }
   };
 
@@ -457,6 +466,17 @@ function FileBrowser({ mode, go, pick }: { mode: Mode; go?: { path: string; at: 
         void upload([...ev.dataTransfer.files]);
       }}
     >
+      {uploading ? (
+        <div className="explorer-uploading" role="status">
+          <span className="small">
+            Uploading {uploading.n > 1 ? `${uploading.i + 1} of ${uploading.n}: ` : ""}
+            <b>{uploading.name}</b> · {sizeOf(uploading.sent)} of {sizeOf(uploading.total)} ({uploading.total ? Math.floor((uploading.sent / uploading.total) * 100) : 0}%)
+          </span>
+          <div className="theater-bar-total">
+            <span style={{ width: `${uploading.total ? (uploading.sent / uploading.total) * 100 : 0}%` }} />
+          </div>
+        </div>
+      ) : null}
       {error ? <p className="danger-text" style={{ padding: 12 }}>{error}</p> : null}
       {!error && !entries.length ? <p className="muted" style={{ padding: 12 }}>Nothing here{filterExts ? " of the kinds asked for" : ""}. Drop files here to upload them.</p> : null}
       {editing && !editing.path ? (

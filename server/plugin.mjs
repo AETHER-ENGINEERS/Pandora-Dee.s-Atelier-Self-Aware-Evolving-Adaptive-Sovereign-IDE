@@ -816,6 +816,7 @@ export function deskServer() {
         if (parts[1] === "upload") {
           if (m === "GET") return send(res, 200, theater.uploadState(p));
           if (m === "DELETE") return send(res, 200, (theater.dropUpload(p), { ok: true }));
+          if (m === "POST" && p.whole) return send(res, 200, await theater.uploadWhole(p, req));
           if (m === "POST") return send(res, 200, theater.uploadPiece({ ...p, sha256: req.headers["x-sha256"] }, await readBody(req, PIECE_MAX)));
         }
         if (m === "POST") {

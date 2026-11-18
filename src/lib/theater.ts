@@ -5,7 +5,7 @@
 import { useSyncExternalStore } from "react";
 import { rawUrl } from "./explorer.ts";
 import { deviceName } from "./devshare.ts";
-import { sendPieces } from "./uploadCore.ts";
+import { sendPieces, wholeUpload } from "./uploadCore.ts";
 
 export type Video = { id: string; path: string; name: string; ext: string; shelf: string; size: number; mtime: number; seconds: number; thumb: 1 | 0 | -1; fav: boolean; watched?: boolean; device?: boolean; folder?: string };
 export type Playlist = { id: string; name: string; items: string[]; made: number };
@@ -339,6 +339,7 @@ async function send(j: Job) {
     alive: () => jobs.includes(j),
     progress: (sent, note) => setJob(j, { sent, error: note }),
     pause,
+    whole: (url, file, progress) => wholeUpload(url, file, progress),
   });
   if (end.state === "done") setJob(j, { state: "done", error: undefined, path: end.path });
   else if (end.state === "failed") setJob(j, { state: "failed", error: end.error, reread: !!end.reread });

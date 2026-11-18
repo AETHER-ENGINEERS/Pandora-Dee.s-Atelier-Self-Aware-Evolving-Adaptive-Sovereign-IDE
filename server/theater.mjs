@@ -7,6 +7,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 
 export const VIDEO_EXT = new Set(["mp4", "m4v", "mov", "webm", "mkv", "3gp", "avi", "ogv"]);
 /** The most one upload piece may be; the desktop's page sends 8 MB. */
@@ -332,6 +334,31 @@ export function createTheater({ vaultDir }) {
     fs.appendFileSync(p, bytes);
     const now = have + bytes.length;
     if (now < total) return { have: now, done: false, path: null };
+    return fileUpload(p, { shelf, n, total, modified, device });
+  }
+
+  /** The whole video in one go, streamed to disk: for a phone that won't let the page read a chosen file in pieces
+   *  (the way the Explorer uploads, which such phones still allow). It starts over rather than carrying on. */
+  async function uploadWhole({ shelf, name, size, modified, device }, stream) {
+    const total = Number(size);
+    if (!Number.isFinite(total) || total <= 0) throw fail(400, "How big is it?");
+    const n = safe(name, "video.mp4");
+    if (!VIDEO_EXT.has(path.extname(n).slice(1).toLowerCase())) throw fail(400, `${n} isn't a video the Theater keeps (mp4, mov, webm, mkv…).`);
+    fs.mkdirSync(parts(), { recursive: true });
+    const p = partFile(shelf, n, total);
+    let got = 0;
+    const count = new Transform({
+      transform(chunk, _e, done) {
+        got += chunk.length;
+        done(got > total ? fail(400, "That's more than the whole video.") : null, chunk);
+      },
+    });
+    await pipeline(stream, count, fs.createWriteStream(p));
+    if (got !== total) return { have: got, done: false, path: null };
+    return fileUpload(p, { shelf, n, total, modified, device });
+  }
+
+  function fileUpload(p, { shelf, n, total, modified, device }) {
     // all here: into its shelf, under a free name, with the phone's own date so it sorts where it belongs
     const dir = shelfDir(shelf);
     fs.mkdirSync(dir, { recursive: true });
@@ -476,5 +503,5 @@ export function createTheater({ vaultDir }) {
     return target;
   }
 
-  return { root, list, folders, addFolder, dropFolder, addToShelf, renameShelf, renameFolder, saveCollection, dropCollection, have, mkShelf, uploadState, uploadPiece, dropUpload, sweep, thumbFile, setThumb, setFav, owns, moveTo, savePlaylist, dropPlaylist };
+  return { root, list, folders, addFolder, dropFolder, addToShelf, renameShelf, renameFolder, saveCollection, dropCollection, have, mkShelf, uploadState, uploadPiece, uploadWhole, dropUpload, sweep, thumbFile, setThumb, setFav, owns, moveTo, savePlaylist, dropPlaylist };
 }
