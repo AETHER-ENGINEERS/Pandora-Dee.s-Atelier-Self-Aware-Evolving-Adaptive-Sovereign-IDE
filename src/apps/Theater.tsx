@@ -1184,7 +1184,7 @@ function Uploads() {
       {busy.length ? <div className="theater-bar-total"><span style={{ width: `${total ? (sent / total) * 100 : 0}%` }} /></div> : null}
       {open ? (
         <>
-          {busy.length ? <p className="small faint" style={{ margin: "4px 0" }}>Keep this page open until it's done. If the Wi-Fi drops, it carries on from where it got to.</p> : null}
+          {busy.length ? <p className="small faint" style={{ margin: "4px 0" }}>Keep this page open until it's done. If the Wi-Fi drops, it carries on from where it got to. If it stops anyway, choose the same video again and it picks up from there.</p> : null}
           {safe.length && !busy.length ? (
             <p className="small muted" style={{ margin: "4px 0" }}>
               Each one arrived whole{crypto.subtle ? ", checked piece by piece" : ""}. To free the space, delete them in this phone's Gallery or Photos app (and
@@ -1210,7 +1210,21 @@ function Uploads() {
                             ? "✓ Already on the desktop"
                             : j.error}
                 </span>
-                {j.state === "failed" ? (
+                {j.state === "failed" && j.reread ? (
+                  <label className="btn small" title="Choose the same video again; it carries on from where it stopped">
+                    Choose it again
+                    <input
+                      type="file"
+                      accept="video/*"
+                      hidden
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        e.target.value = "";
+                        if (f) void backUp([f], j.shelf);
+                      }}
+                    />
+                  </label>
+                ) : j.state === "failed" ? (
                   <button className="btn small" onClick={() => retryJob(j)}>
                     Try again
                   </button>
