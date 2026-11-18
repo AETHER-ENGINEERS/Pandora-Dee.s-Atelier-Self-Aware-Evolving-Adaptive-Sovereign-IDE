@@ -52,6 +52,18 @@ export type UpdateRow = {
   asset?: { name: string; url: string; size: number };
 };
 
+/** What a web game import made, and what it did on the way. */
+export type WebImport = { pkg: Pkg; base: string; name: string; done: string[]; fetched: { kept: number; bytes: number }; still: { loads: string[]; mentioned: string[] } };
+
+/** What a web game import did, in a few plain sentences. */
+export function webImportSaid(r: WebImport, web: boolean): string {
+  const parts = [`${r.name} is a Mini App now, open as a draft to edit.`, ...r.done];
+  if (r.fetched.kept) parts.push(`${r.fetched.kept} file${r.fetched.kept === 1 ? "" : "s"} it loaded from the internet ${r.fetched.kept === 1 ? "is" : "are"} kept inside it now.`);
+  if (r.still.loads.length) parts.push(`Still on the internet, so ${r.still.loads.length === 1 ? "it" : "they"} won't load in a Mini App${web ? "" : " (the web is off in Privacy, so nothing was fetched)"}: ${r.still.loads.slice(0, 4).join(", ")}${r.still.loads.length > 4 ? "…" : ""}.`);
+  if (r.still.mentioned.length) parts.push(`Its code also reaches for ${r.still.mentioned.slice(0, 4).join(", ")}${r.still.mentioned.length > 4 ? "…" : ""}; Mini Apps can't, so that part (scores, sign-ins, ads) won't work.`);
+  return parts.join(" ");
+}
+
 export const library = {
   available: async () => {
     try {
@@ -74,6 +86,12 @@ export const library = {
       body: file,
     });
   },
+  /** A web game made into a Mini App and opened as a draft: a .zip of it or its .html page from this device, or its
+   *  folder (or .zip or page) on the desktop. `web`: fetch and keep what it loads from the internet. */
+  importWeb: (from: File | { path: string }, web: boolean) =>
+    api<WebImport>("xdc/import-web", from instanceof File
+      ? { method: "POST", headers: { "x-filename": encodeURIComponent(from.name), "x-web": web ? "1" : "0" }, body: from }
+      : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: from.path, web }) }),
   update: (id: string, patch: Partial<Pkg>) => api<Pkg>(`xdc/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   remove: (id: string) => api<{ ok: boolean }>(`xdc/${id}`, { method: "DELETE" }),
   fork: (id: string, version: string) => api<Pkg>(`xdc/${id}/fork`, { method: "POST", body: JSON.stringify({ version }) }),

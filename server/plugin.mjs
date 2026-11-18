@@ -4,6 +4,8 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import * as WG from "./webgame.mjs";
+import { zipSync } from "fflate";
 import { createLibrary } from "./xdc.mjs";
 import { classicRelayScript, helperScript, webxdcScript } from "./inject.mjs";
 import { sshOp } from "./ssh.mjs";
@@ -1140,6 +1142,30 @@ export function deskServer() {
           return send(res, 200, L.importAny(f.bytes, f.name));
         } catch (e) {
           return send(res, 400, { error: e instanceof Error ? e.message : String(e) });
+        }
+      }
+      // a web game (its folder or .zip or page, sent or on the desktop) made into a Mini App, opened as a draft to edit
+      if (id === "import-web" && m === "POST") {
+        try {
+          let got;
+          let web = true;
+          if (String(req.headers["content-type"] || "").startsWith("application/json")) {
+            const b = JSON.parse((await readBody(req, 100_000)).toString("utf8") || "{}");
+            const p = files().allowed(String(b.path || ""), onThisPc(req));
+            web = b.web !== false;
+            got = fs.statSync(p).isDirectory() ? WG.readFolder(p) : WG.fromUpload(fs.readFileSync(p), path.basename(p));
+          } else {
+            web = req.headers["x-web"] !== "0";
+            got = WG.fromUpload(await readBody(req), decodeURIComponent(String(req.headers["x-filename"] || "game.zip")));
+          }
+          const made = WG.makeMiniApp(got.files, got.stem);
+          const fetched = web ? await WG.fetchLinked(made.files) : { kept: 0, bytes: 0 };
+          const still = WG.remoteRefs(made.files);
+          const r = L.importXdc(Buffer.from(zipSync(made.files, { level: 6 })), `${made.name}.xdc`);
+          const draft = L.fork(r.pkg.id, "0.1.0-draft");
+          return send(res, 200, { pkg: draft, base: r.pkg.id, name: made.name, done: made.done, fetched, still });
+        } catch (e) {
+          return send(res, e?.status || 400, { error: e instanceof Error ? e.message : String(e) });
         }
       }
       if (id === "import" && m === "POST") {

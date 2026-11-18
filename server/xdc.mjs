@@ -198,6 +198,7 @@ export function createLibrary(dataDir) {
     list: () => pkgs,
     get: (id) => pkgs.find((p) => p.id === id),
     importAny,
+    importXdc,
     remove,
     update,
     fork,
