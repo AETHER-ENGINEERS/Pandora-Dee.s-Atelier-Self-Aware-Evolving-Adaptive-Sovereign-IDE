@@ -90,6 +90,8 @@ async function whyNot(t: Track, code: number) {
         ? "the desktop isn't allowed to read it (its folder may have been taken out of Music)"
         : status === -1
           ? "the desktop didn't answer (is it still running, and is this device still connected?)"
+          : status === 415
+          ? "no browser plays it, and the desktop couldn't convert it (on Windows it uses Windows' own converter; elsewhere it needs ffmpeg)"
           : code === 3
             ? "it looks damaged partway through (it may not have finished copying or downloading)"
             : code === 2

@@ -138,6 +138,28 @@ export function rememberPlace(file, place) {
 }
 
 const AUDIO = /\.(mp3|m4a|m4b|aac|flac|ogg|oga|opus|wav|wma|webm|mka|aiff?|caf|alac)$/i;
+const lastLine = (t) => t.trim().split(/\r?\n/).pop() || t;
+/** Kinds no browser plays, served converted (see converted() below). */
+const CONVERT = /\.wma$/i;
+// Windows' own converter, from Windows PowerShell: WMA (anything Media Foundation reads) in, AAC in .m4a out.
+const WINDOWS_CONVERT = `param([string]$In, [string]$Out)
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+$ext = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 }
+$op = ($ext | Where-Object { $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation\`1' })[0]
+$prog = ($ext | Where-Object { $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncActionWithProgress\`1' })[0]
+function Await($o, [Type]$t) { $k = $op.MakeGenericMethod($t).Invoke($null, @($o)); $k.Wait(-1) | Out-Null; $k.Result }
+[Windows.Storage.StorageFile, Windows.Storage, ContentType = WindowsRuntime] | Out-Null
+[Windows.Media.Transcoding.MediaTranscoder, Windows.Media.Transcoding, ContentType = WindowsRuntime] | Out-Null
+[Windows.Media.MediaProperties.MediaEncodingProfile, Windows.Media.MediaProperties, ContentType = WindowsRuntime] | Out-Null
+$src = Await ([Windows.Storage.StorageFile]::GetFileFromPathAsync($In)) ([Windows.Storage.StorageFile])
+$dir = Await ([Windows.Storage.StorageFolder]::GetFolderFromPathAsync([IO.Path]::GetDirectoryName($Out))) ([Windows.Storage.StorageFolder])
+$dst = Await ($dir.CreateFileAsync([IO.Path]::GetFileName($Out), [Windows.Storage.CreationCollisionOption]::ReplaceExisting)) ([Windows.Storage.StorageFile])
+$profile = [Windows.Media.MediaProperties.MediaEncodingProfile]::CreateM4a([Windows.Media.MediaProperties.AudioEncodingQuality]::High)
+$prep = Await ((New-Object Windows.Media.Transcoding.MediaTranscoder).PrepareFileTranscodeAsync($src, $dst, $profile)) ([Windows.Media.Transcoding.PrepareTranscodeResult])
+if (-not $prep.CanTranscode) { throw "Windows can't convert it: $($prep.FailureReason)" }
+$k = $prog.MakeGenericMethod([double]).Invoke($null, @($prep.TranscodeAsync())); $k.Wait(-1) | Out-Null
+`;
 const MIME = { mp3: "audio/mpeg", m4a: "audio/mp4", aac: "audio/aac", flac: "audio/flac", ogg: "audio/ogg", oga: "audio/ogg", opus: "audio/ogg", wav: "audio/wav", webm: "audio/webm", mka: "audio/x-matroska", aif: "audio/aiff", aiff: "audio/aiff", wma: "audio/x-ms-wma" };
 const MAX_FILES = 50_000;
 
@@ -255,15 +277,60 @@ export function createMusic(dataDir) {
   // (the file's own name goes along, for saying which file when one won't play; its full path stays here)
   const list = () => ({ folders: index.folders, own: ownDir, tracks: Object.values(index.tracks).map(({ path: p, mtime: _m, ...t }) => ({ ...t, file: path.basename(p), rel: path.relative(t.folder, p) })) });
 
-  /** Stream a track, with byte ranges so seeking works. */
-  function serve(req, res, id) {
+  // ---- songs browsers can't play (WMA), converted once on the desktop and kept ----
+  // ffmpeg when it's installed; otherwise, on Windows, Windows' own converter (Media Foundation, which reads WMA).
+  // The copy is kept in the desktop's data folder, named for the song as it is now, so a changed file converts again.
+  const convertedDir = path.join(dataDir, "music-converted");
+  const converting = new Map();
+  let hasFfmpeg = null;
+  const ffmpegHere = () =>
+    hasFfmpeg ?? (hasFfmpeg = new Promise((ok) => execFile("ffmpeg", ["-version"], { windowsHide: true, timeout: 10_000 }, (e) => ok(!e))));
+  function converted(id, t) {
+    const st = fs.statSync(t.path);
+    const out = path.join(convertedDir, `${id}-${Math.floor(st.mtimeMs)}-${st.size}.m4a`);
+    if (fs.existsSync(out)) return Promise.resolve(out);
+    if (converting.has(out)) return converting.get(out);
+    const job = (async () => {
+      fs.mkdirSync(convertedDir, { recursive: true });
+      for (const f of fs.readdirSync(convertedDir)) if (f.startsWith(`${id}-`) && f.endsWith(".m4a")) fs.rmSync(path.join(convertedDir, f), { force: true });
+      const tmp = `${out}.part.m4a`;
+      const run = (cmd, args) =>
+        new Promise((ok, no) =>
+          execFile(cmd, args, { windowsHide: true, timeout: 10 * 60_000, maxBuffer: 4 << 20 }, (e, _o, err) => (e ? no(new Error(lastLine(String(err || e.message)))) : ok())),
+        );
+      if (await ffmpegHere()) await run("ffmpeg", ["-v", "error", "-y", "-i", t.path, "-vn", "-c:a", "aac", "-b:a", "256k", tmp]);
+      else if (process.platform === "win32") {
+        const script = path.join(dataDir, "convert-audio.ps1");
+        if (!fs.existsSync(script) || fs.readFileSync(script, "utf8") !== WINDOWS_CONVERT) fs.writeFileSync(script, WINDOWS_CONVERT);
+        await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script, "-In", t.path, "-Out", tmp]);
+      } else throw new Error("converting it needs ffmpeg on this computer");
+      if (!fs.existsSync(tmp) || !fs.statSync(tmp).size) throw new Error("the converter made nothing");
+      fs.renameSync(tmp, out);
+      return out;
+    })().finally(() => converting.delete(out));
+    converting.set(out, job);
+    return job;
+  }
+
+  /** Stream a track, with byte ranges so seeking works. A WMA goes as the converted copy. */
+  async function serve(req, res, id) {
     const t = index.tracks[id];
     if (!t || !fs.existsSync(t.path)) {
       res.statusCode = 404;
       return res.end();
     }
-    const size = fs.statSync(t.path).size;
-    const type = MIME[path.extname(t.path).slice(1).toLowerCase()] || "application/octet-stream";
+    let file = t.path;
+    if (CONVERT.test(t.path)) {
+      try {
+        file = await converted(id, t);
+      } catch (e) {
+        res.statusCode = 415;
+        res.setHeader("Content-Type", "application/json");
+        return res.end(JSON.stringify({ error: `couldn't convert it for the browser (${e.message})` }));
+      }
+    }
+    const size = fs.statSync(file).size;
+    const type = MIME[path.extname(file).slice(1).toLowerCase()] || "application/octet-stream";
     const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || ""));
     res.setHeader("Accept-Ranges", "bytes");
     res.setHeader("Content-Type", type);
@@ -279,11 +346,11 @@ export function createMusic(dataDir) {
       res.statusCode = 206;
       res.setHeader("Content-Range", `bytes ${start}-${end}/${size}`);
       res.setHeader("Content-Length", end - start + 1);
-      return fs.createReadStream(t.path, { start, end }).pipe(res);
+      return fs.createReadStream(file, { start, end }).pipe(res);
     }
     res.statusCode = 200;
     res.setHeader("Content-Length", size);
-    fs.createReadStream(t.path).pipe(res);
+    fs.createReadStream(file).pipe(res);
   }
 
   async function cover(res, id) {
