@@ -9,6 +9,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { typedName } from "./names.mjs";
 
 export const VIDEO_EXT = new Set(["mp4", "m4v", "mov", "webm", "mkv", "3gp", "avi", "ogv"]);
 /** The most one upload piece may be; the desktop's page sends 8 MB. */
@@ -23,7 +24,10 @@ export function createTheater({ vaultDir }) {
   const parts = () => path.join(meta(), "parts");
 
   const fail = (status, message) => Object.assign(new Error(message), { status });
-  const safe = (n, fallback) => path.basename(String(n || "")).replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").replace(/^\.+/, "").trim().slice(0, 120) || fallback;
+  // shelf and folder names read the way they were typed (names.mjs)
+  const safe = typedName;
+  /** A file sent from a device: its own name, and only that (a path that came with it counts for nothing). */
+  const fileName = (n) => safe(path.basename(String(n || "").replace(/\\/g, "/")), "video.mp4");
   /** A video's id: its size and modified time, which stay the same through a rename or a move. */
   const idOf = (st) => `${st.size.toString(36)}-${Math.round(st.mtimeMs / 1000).toString(36)}`;
 
@@ -74,6 +78,14 @@ export function createTheater({ vaultDir }) {
   function list(fresh = false) {
     fs.mkdirSync(root(), { recursive: true });
     const m = readMeta();
+    // which thumbnails there are, read once (not two looks per video: thousands on a big library)
+    let have = new Set();
+    try {
+      have = new Set(fs.readdirSync(thumbs()));
+    } catch {
+      /* none made yet */
+    }
+    const thumbOf = (id) => (have.has(`${id}.jpg`) ? 1 : have.has(`${id}.none`) ? -1 : 0);
     const out = [];
     const shelves = [];
     // (rel: the folder inside the shelf a video is in, "Show/Season 1", so shelves can be browsed show by show)
@@ -111,7 +123,7 @@ export function createTheater({ vaultDir }) {
           size: st.size,
           mtime: st.mtimeMs,
           seconds: m.seconds[id] ?? 0,
-          thumb: fs.existsSync(path.join(thumbs(), `${id}.jpg`)) ? 1 : fs.existsSync(path.join(thumbs(), `${id}.none`)) ? -1 : 0,
+          thumb: thumbOf(id),
           fav: Boolean(m.favs[id]),
         });
       }
@@ -131,7 +143,7 @@ export function createTheater({ vaultDir }) {
           ...v,
           shelf: f.name,
           seconds: m.seconds[v.id] ?? 0,
-          thumb: fs.existsSync(path.join(thumbs(), `${v.id}.jpg`)) ? 1 : fs.existsSync(path.join(thumbs(), `${v.id}.none`)) ? -1 : 0,
+          thumb: thumbOf(v.id),
           fav: Boolean(m.favs[v.id]),
           watched: true,
         });
@@ -312,7 +324,7 @@ export function createTheater({ vaultDir }) {
 
   /** How much of this upload is here already (to carry on after a dropped connection). */
   function uploadState({ shelf, name, size }) {
-    const n = safe(name, "video.mp4");
+    const n = fileName(name);
     const p = partFile(shelf, n, Number(size));
     return { have: fs.existsSync(p) ? fs.statSync(p).size : 0 };
   }
@@ -323,7 +335,7 @@ export function createTheater({ vaultDir }) {
     if (!Number.isFinite(total) || total <= 0) throw fail(400, "How big is it?");
     if (!Number.isFinite(at) || at < 0) throw fail(400, "Where does this piece go?");
     if (bytes.length > PIECE_MAX) throw fail(413, "That piece is too big.");
-    const n = safe(name, "video.mp4");
+    const n = fileName(name);
     if (!VIDEO_EXT.has(path.extname(n).slice(1).toLowerCase())) throw fail(400, `${n} isn't a video the Theater keeps (mp4, mov, webm, mkv…).`);
     if (sha256 && crypto.createHash("sha256").update(bytes).digest("hex") !== String(sha256).toLowerCase()) throw fail(422, "That piece arrived damaged; sending it again.");
     fs.mkdirSync(parts(), { recursive: true });
@@ -342,7 +354,7 @@ export function createTheater({ vaultDir }) {
   async function uploadWhole({ shelf, name, size, modified, device }, stream) {
     const total = Number(size);
     if (!Number.isFinite(total) || total <= 0) throw fail(400, "How big is it?");
-    const n = safe(name, "video.mp4");
+    const n = fileName(name);
     if (!VIDEO_EXT.has(path.extname(n).slice(1).toLowerCase())) throw fail(400, `${n} isn't a video the Theater keeps (mp4, mov, webm, mkv…).`);
     fs.mkdirSync(parts(), { recursive: true });
     const p = partFile(shelf, n, total);
@@ -375,7 +387,7 @@ export function createTheater({ vaultDir }) {
 
   /** Throw away an unfinished upload. */
   function dropUpload({ shelf, name, size }) {
-    fs.rmSync(partFile(shelf, safe(name, "video.mp4"), Number(size)), { force: true });
+    fs.rmSync(partFile(shelf, fileName(name), Number(size)), { force: true });
   }
 
   /** Unfinished uploads nobody came back to for a week. */

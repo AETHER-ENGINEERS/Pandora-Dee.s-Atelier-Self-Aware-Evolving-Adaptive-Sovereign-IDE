@@ -40,7 +40,7 @@ test("the list has shelves, the phone's share-menu videos, and knows what's kept
   fs.writeFileSync(path.join(vault, "From devices", "shared.MOV"), "1234567");
   fs.writeFileSync(path.join(vault, "From devices", "photo.jpg"), "not a video");
   const l = T.list();
-  assert.deepEqual(l.shelves, ["escape", "Kai's films", "From devices"]);
+  assert.deepEqual(l.shelves, ["∕..∕escape", "Kai's films", "From devices"]);  // the climb-out attempt: one folder inside Videos, its slashes kept as look-alikes
   assert.deepEqual(l.videos.map((v) => v.name).sort(), ["shared", "skate", "x"]);
   const skate = l.videos.find((v) => v.name === "skate");
   assert.equal(skate.shelf, "Kai's films");
@@ -151,6 +151,15 @@ test("a shelf, or a show on one, added to another shelf; shelves renamed; where 
   assert.deepEqual(S.list().videos.map((x) => [x.shelf, x.folder]), [["Frozen", "Songs"]]);
   assert.throws(() => S.renameShelf("Frozen", "Kids"), /already/);
   assert.throws(() => S.addToShelf("Frozen", "../..", "Kids"), /Which folder/);
+  // characters Windows won't have in a folder name read the same, and a slash doesn't cut the name short
+  const odd = S.renameShelf("Frozen", 'Kids: "Frozen" & AC/DC?*');
+  assert.equal(odd.shelf, "Kids꞉ ＂Frozen＂ & AC∕DC？＊");
+  assert.ok(fs.existsSync(path.join(v, "Videos", odd.shelf)));
+  assert.deepEqual(S.list().videos.map((x) => x.shelf), [odd.shelf]);
+  assert.deepEqual(S.list().from, { [odd.shelf]: "Mia's Android phone" }, "where it came from follows the new name");
+  assert.deepEqual(S.renameShelf(odd.shelf, "Frozen"), { shelf: "Frozen" }, "and it can be renamed again by the name it shows");
+  assert.equal(S.mkShelf("con"), "con_", "a name Windows keeps for itself gets a mark");
+  assert.equal(S.mkShelf("Odds and ends. "), "Odds and ends", "a name can't end in a dot");
 });
 
 test("a show folder renamed where it is; collections follow", () => {
