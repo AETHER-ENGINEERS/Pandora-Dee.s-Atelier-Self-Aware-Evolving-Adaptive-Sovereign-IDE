@@ -7,6 +7,7 @@ import { outbound } from "./outbound.ts";
 import { allowed, blockedBecause } from "./privacy.ts";
 import { speech } from "./voice.ts";
 import { pack, unpack } from "./musicPlace.ts";
+import { previousRun, runKey } from "./musicRuns.ts";
 
 export type { MusicPlaylist, MusicPrefs, Station } from "./musicPrefs.ts";
 import type { Station } from "./musicPrefs.ts";
@@ -389,7 +390,7 @@ export function skipBy(by: "album" | "artist"): string {
     return "Next.";
   }
   // songs with no album (or artist) count as their own
-  const key = (it: Item) => (it.kind !== "track" ? `\u0001${it.url}` : by === "album" ? (it.album ? it.album.trim().toLowerCase() : `\u0002${it.id}`) : it.artist ? it.artist.trim().toLowerCase() : `\u0002${it.id}`);
+  const key = (it: Item) => runKey(it, by);
   const here = key(cur);
   const after = queue.slice(index + 1).findIndex((it) => key(it) !== here);
   if (after >= 0) {
@@ -404,6 +405,17 @@ export function skipBy(by: "album" | "artist"): string {
     }
   }
   return by === "album" ? "That's the last album in the list." : "That's the last artist in the list.";
+}
+
+/** Back to the first song of the album (or artist) before this one in the queue. With repeat on it wraps round. */
+export function backBy(by: "album" | "artist"): string {
+  const { queue, index } = mu();
+  const at = previousRun(queue, index, by, prefs().repeat !== "off");
+  if (at >= 0) {
+    void start(at);
+    return "";
+  }
+  return by === "album" ? "That's the first album in the list." : "That's the first artist in the list.";
 }
 
 export function previous() {

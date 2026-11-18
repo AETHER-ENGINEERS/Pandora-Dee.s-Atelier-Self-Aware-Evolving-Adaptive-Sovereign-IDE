@@ -1228,10 +1228,10 @@ const CATS_TOOL: Tool = {
 const MUSIC_TOOL: Tool = {
   name: "music",
   description:
-    "The desktop's music player. now: what's playing; play / pause / next / previous; skip_album / skip_artist: past the rest of this album or artist in the list; search: songs in the library (title, artist, album, genre); play_song: play matching songs (query); queue: add matching songs after the current one; stations: saved radio stations; play_station: a saved station by name. Only when {{PERSON_NAME}} asks, or clearly would like it.",
+    "The desktop's music player. now: what's playing; play / pause / next / previous; skip_album / skip_artist: past the rest of this album or artist in the list; back_album / back_artist: back to the start of the album or artist before this one; search: songs in the library (title, artist, album, genre); play_song: play matching songs (query); queue: add matching songs after the current one; stations: saved radio stations; play_station: a saved station by name. Only when {{PERSON_NAME}} asks, or clearly would like it.",
   parameters: obj(
     {
-      action: { type: "string", description: "now, play, pause, next, previous, skip_album, skip_artist, search, play_song, queue, stations or play_station" },
+      action: { type: "string", description: "now, play, pause, next, previous, skip_album, skip_artist, back_album, back_artist, search, play_song, queue, stations or play_station" },
       query: { type: "string", description: "search / play_song / queue: words from the title, artist, album or genre · play_station: the station's name" },
     },
     ["action"],
@@ -1246,6 +1246,11 @@ const MUSIC_TOOL: Tool = {
       const playing = m.useMusic.getState().playing;
       if ((act === "play") !== playing) m.toggle();
       return act === "play" ? `Playing. ${m.nowPlayingText()}` : "Paused.";
+    }
+    if (act === "back_album" || act === "back_artist") {
+      const said = m.backBy(act === "back_album" ? "album" : "artist");
+      await new Promise((r) => setTimeout(r, 300));
+      return said || m.nowPlayingText();
     }
     if (act === "skip_album" || act === "skip_artist") {
       const said = m.skipBy(act === "skip_album" ? "album" : "artist");

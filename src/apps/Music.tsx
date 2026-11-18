@@ -1,6 +1,6 @@
 import { toCss } from "../lib/zoom.ts";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, FileDown, FileUp, FolderInput, ListPlus, Pencil, Plus, X, AudioWaveform, ChevronUp, ChevronsRight, Disc3, Folder, FolderOpen, FolderPlus, Globe2, ListMusic, Maximize2, Mic2, MonitorSmartphone, Pause, Play, Radio, Repeat, Repeat1, Search, Shuffle, SkipBack, Sparkles, SkipForward, Star, Trash2, Upload, Users, Volume2 } from "lucide-react";
+import { ArrowDown, ArrowUp, FileDown, FileUp, FolderInput, ListPlus, Pencil, Plus, X, AudioWaveform, ChevronUp, ChevronsLeft, ChevronsRight, Disc3, Folder, FolderOpen, FolderPlus, Globe2, ListMusic, Maximize2, Mic2, MonitorSmartphone, Pause, Play, Radio, Repeat, Repeat1, Search, Shuffle, SkipBack, Sparkles, SkipForward, Star, Trash2, Upload, Users, Volume2 } from "lucide-react";
 import { desk, useDesk } from "../lib/store.ts";
 import {
   addFiles,
@@ -26,6 +26,7 @@ import {
   shuffled,
   albumOrder,
   skipBy,
+  backBy,
 } from "../lib/music.ts";
 import { Num } from "../ui/Num.tsx";
 import { copyToServer, shareMusicFiles, shareMusicFolder, thisDevice, useServerName, useSharedLibraries, AUDIO } from "../lib/musicShare.ts";
@@ -55,6 +56,15 @@ const skip = (by: "album" | "artist") => {
 const skipMenu = (): MenuItem[] => [
   { label: "Skip to the next album", run: () => skip("album") },
   { label: "Skip to the next artist", run: () => skip("artist") },
+];
+/** Back to the start of the album, or artist, before this one in the queue. */
+const back = (by: "album" | "artist") => {
+  const said = backBy(by);
+  if (said) desk().say(said);
+};
+const backMenu = (): MenuItem[] => [
+  { label: "Back to the previous album", run: () => back("album") },
+  { label: "Back to the previous artist", run: () => back("artist") },
 ];
 
 export function MusicApp() {
@@ -358,7 +368,17 @@ export function MusicApp() {
           <button className={`icon-btn${prefs.shuffle ? " on" : ""}`} aria-pressed={prefs.shuffle} aria-label="Shuffle" data-tip-up="" data-tip="Shuffle" onClick={() => setPrefs({ shuffle: !prefs.shuffle })}>
             <Shuffle size={15} />
           </button>
-          <button className="icon-btn" aria-label="Previous" onClick={previous}>
+          <button
+            className="icon-btn"
+            aria-label="Back to the previous album or artist"
+            data-tip-up=""
+            data-tip="Previous album or artist"
+            disabled={cur?.kind !== "track"}
+            onClick={(e) => openMenuAt(e.currentTarget, backMenu())}
+          >
+            <ChevronsLeft size={16} />
+          </button>
+          <button className="icon-btn" aria-label="Previous" onClick={previous} onContextMenu={(e) => (e.preventDefault(), openMenuAt(e.currentTarget, backMenu()))}>
             <SkipBack size={16} />
           </button>
           <button className="icon-btn np-play" aria-label={m.playing ? "Pause" : "Play"} onClick={toggle}>
