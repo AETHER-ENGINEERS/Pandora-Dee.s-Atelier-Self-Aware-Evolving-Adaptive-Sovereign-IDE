@@ -8,6 +8,7 @@ import { allowed, blockedBecause } from "./privacy.ts";
 import { speech } from "./voice.ts";
 import { pack, unpack } from "./musicPlace.ts";
 import { previousRun, runKey } from "./musicRuns.ts";
+import { albumHome } from "./albumGroups.ts";
 
 export type { MusicPlaylist, MusicPrefs, Station } from "./musicPrefs.ts";
 import type { Station } from "./musicPrefs.ts";
@@ -246,7 +247,7 @@ export async function addFiles(files: File[]) {
 }
 
 function byAlbum(a: Track, b: Track) {
-  return (a.artist || "~").localeCompare(b.artist || "~") || (a.album || "~").localeCompare(b.album || "~") || a.track - b.track || a.title.localeCompare(b.title);
+  return (a.artist || "~").localeCompare(b.artist || "~") || (a.album || "~").localeCompare(b.album || "~") || albumHome(a).localeCompare(albumHome(b)) || a.track - b.track || a.title.localeCompare(b.title);
 }
 
 export function searchLibrary(q: string, limit = 200): Track[] {
@@ -342,7 +343,7 @@ export function shuffled<T>(xs: T[]): T[] {
 
 /** An artist's songs album by album (oldest first), each album in track order. */
 export function albumOrder(ts: Track[]): Track[] {
-  return [...ts].sort((a, b) => (a.year || 9999) - (b.year || 9999) || (a.album || "~").localeCompare(b.album || "~") || a.track - b.track || a.title.localeCompare(b.title));
+  return [...ts].sort((a, b) => (a.year || 9999) - (b.year || 9999) || (a.album || "~").localeCompare(b.album || "~") || albumHome(a).localeCompare(albumHome(b)) || a.track - b.track || a.title.localeCompare(b.title));
 }
 
 export function enqueue(items: Item[]) {

@@ -3,10 +3,11 @@
 // before it. No DOM here (musicRuns.test.ts).
 
 import type { Item } from "./music.ts";
+import { albumHome } from "./albumGroups.ts";
 
 /** What a song counts as for skipping: its album or artist. Songs with neither, and stations, count as their own. */
 export const runKey = (it: Item, by: "album" | "artist") =>
-  it.kind !== "track" ? `\u0001${it.url}` : by === "album" ? (it.album ? it.album.trim().toLowerCase() : `\u0002${it.id}`) : it.artist ? it.artist.trim().toLowerCase() : `\u0002${it.id}`;
+  it.kind !== "track" ? `\u0001${it.url}` : by === "album" ? (it.album ? `${it.album.trim().toLowerCase()}\u0000${albumHome(it)}` : `\u0002${it.id}`) : it.artist ? it.artist.trim().toLowerCase() : `\u0002${it.id}`;
 
 /** Where this run starts. */
 function runStart(queue: Item[], i: number, by: "album" | "artist") {

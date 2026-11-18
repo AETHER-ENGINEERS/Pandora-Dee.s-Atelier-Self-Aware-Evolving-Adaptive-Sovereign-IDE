@@ -715,6 +715,7 @@ body.dragging-window iframe, body.dragging-window webview { pointer-events: none
 .album img, .album .no-cover { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; }
 .no-cover { display: grid; place-items: center; background: var(--raise); color: var(--faint); border-radius: 8px; }
 .album b { font-size: .9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.album .album-copy { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .album-view { padding: 12px; }
 .album-head { display: flex; gap: 14px; align-items: flex-end; margin-bottom: 10px; }
 .album-head img, .album-head .no-cover { width: 120px; height: 120px; object-fit: cover; border-radius: 10px; }

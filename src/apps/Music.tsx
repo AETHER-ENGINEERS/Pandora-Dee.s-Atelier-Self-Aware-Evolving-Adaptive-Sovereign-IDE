@@ -1,3 +1,4 @@
+import { groupAlbums } from "../lib/albumGroups.ts";
 import { toCss } from "../lib/zoom.ts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, FileDown, FileUp, FolderInput, ListPlus, Pencil, Plus, X, AudioWaveform, ChevronUp, ChevronsLeft, ChevronsRight, Disc3, Folder, FolderOpen, FolderPlus, Globe2, ListMusic, Maximize2, Mic2, MonitorSmartphone, Pause, Play, Radio, Repeat, Repeat1, Search, Shuffle, SkipBack, Sparkles, SkipForward, Star, Trash2, Upload, Users, Volume2 } from "lucide-react";
@@ -98,14 +99,7 @@ export function MusicApp() {
     io.observe(el);
     return () => io.disconnect();
   }, [shown, songs, view]);
-  const albums = useMemo(() => {
-    const map = new Map<string, Track[]>();
-    for (const t of songs) {
-      const k = `${t.album || "Singles"}\u0000${t.album ? t.artist : ""}`;
-      map.set(k, [...(map.get(k) ?? []), t]);
-    }
-    return [...map.entries()].map(([k, ts]) => ({ key: k, name: k.split("\u0000")[0], artist: k.split("\u0000")[1] || ts[0]?.artist || "", tracks: ts.sort((a, b) => a.track - b.track), cover: ts.find((t) => t.cover) }));
-  }, [songs]);
+  const albums = useMemo(() => groupAlbums(songs), [songs]);
   const artists = useMemo(() => {
     const map = new Map<string, Track[]>();
     for (const t of songs) map.set(t.artist || "Unknown artist", [...(map.get(t.artist || "Unknown artist") ?? []), t]);
@@ -307,7 +301,7 @@ export function MusicApp() {
                         {a.cover ? <img src={`/api/music/cover?id=${a.cover.id}`} alt="" /> : <div className="no-cover"><Disc3 size={40} /></div>}
                         <div>
                           <h3 style={{ margin: 0 }}>{a.name}</h3>
-                          <div className="muted">{a.artist}</div>
+                          <div className="muted">{[a.artist, a.label].filter(Boolean).join(" · ")}</div>
                           <button className="btn primary small" style={{ marginTop: 8 }} onClick={() => playList(asItems(a.tracks))}>
                             <Play size={13} /> Play
                           </button>
@@ -328,6 +322,7 @@ export function MusicApp() {
                       {a.cover ? <img src={`/api/music/cover?id=${a.cover.id}`} alt="" loading="lazy" /> : <div className="no-cover"><Disc3 size={34} /></div>}
                       <b>{a.name}</b>
                       <span className="faint small">{a.artist}</span>
+                      {a.label ? <span className="faint small album-copy" title={a.label}>{a.label}</span> : null}
                     </button>
                   ))}
                 </div>

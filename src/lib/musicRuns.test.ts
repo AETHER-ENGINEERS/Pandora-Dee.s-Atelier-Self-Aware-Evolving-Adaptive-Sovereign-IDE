@@ -18,6 +18,13 @@ test("on the first album: nothing, or round to the last with repeat on", () => {
   assert.equal(previousRun(q, 1, "album", true), 5);
 });
 
+test("two copies of one album in a row are two runs (one per folder)", () => {
+  const c = (id: string, rel: string): Item => ({ ...s(id, "A"), folder: "/m", rel });
+  const two = [c("x1", "128/A/1.mp3"), c("x2", "128/A/2.mp3"), c("y1", "320/A/1.mp3"), c("y2", "320/A/2.mp3")];
+  assert.equal(previousRun(two, 3, "album", false), 0);
+  assert.equal(previousRun(two, 1, "album", false), -1);
+});
+
 test("by artist, a run spans albums", () => {
   assert.equal(previousRun(q, 6, "artist", false), 0);
   assert.equal(previousRun(q, 2, "artist", true), 5);
