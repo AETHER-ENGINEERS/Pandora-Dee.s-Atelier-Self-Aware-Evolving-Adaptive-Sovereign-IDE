@@ -9,6 +9,7 @@ import { speech } from "./voice.ts";
 import { pack, unpack } from "./musicPlace.ts";
 import { previousRun, runKey } from "./musicRuns.ts";
 import { albumHome } from "./albumGroups.ts";
+import { LEAD, QUIET, TAIL, peakOf, quietEnding, upcoming } from "./gapless.ts";
 
 export type { MusicPlaylist, MusicPrefs, Station } from "./musicPrefs.ts";
 import type { Station } from "./musicPrefs.ts";
@@ -48,23 +49,117 @@ let gain: GainNode | null = null;
 let analyser: AnalyserNode | null = null;
 let ducked = false;
 
-function element(): HTMLAudioElement {
-  if (audio) return audio;
-  audio = new Audio();
-  audio.preload = "auto";
-  audio.crossOrigin = "anonymous";
-  audio.addEventListener("timeupdate", () => useMusic.setState({ position: audio!.currentTime, duration: Number.isFinite(audio!.duration) ? audio!.duration : 0 }));
-  audio.addEventListener("play", () => useMusic.setState({ playing: true, error: "" }));
-  audio.addEventListener("pause", () => useMusic.setState({ playing: false }));
-  audio.addEventListener("ended", () => void next(true));
-  audio.addEventListener("error", () => {
+/** A player for one song. There are two: the one playing and, with gapless on, the next song waiting beside it;
+ *  only the one playing speaks for Music (its time, play and pause, its end, its errors). */
+function makePlayer(): HTMLAudioElement {
+  const el = new Audio();
+  el.preload = "auto";
+  el.crossOrigin = "anonymous";
+  const mine = () => el === audio;
+  el.addEventListener("timeupdate", () => {
+    if (!mine()) return;
+    useMusic.setState({ position: el.currentTime, duration: Number.isFinite(el.duration) ? el.duration : 0 });
+    watchEnd();
+  });
+  el.addEventListener("play", () => mine() && useMusic.setState({ playing: true, error: "" }));
+  el.addEventListener("pause", () => mine() && useMusic.setState({ playing: false }));
+  el.addEventListener("ended", () => mine() && void next(true));
+  el.addEventListener("error", () => {
+    if (!mine()) return;
     const cur = current();
-    const code = audio?.error?.code ?? 0;
+    const code = el.error?.code ?? 0;
     if (cur?.kind === "radio") return useMusic.setState({ playing: false, error: `${cur.name} isn't answering.` });
     useMusic.setState({ playing: false, error: "That file couldn't be played." });
     if (cur?.kind === "track") void whyNot(cur, code).then((error) => current() === cur && useMusic.setState({ error }));
   });
-  return audio;
+  wire(el);
+  return el;
+}
+
+function element(): HTMLAudioElement {
+  return (audio ??= makePlayer());
+}
+
+/** Into the sound chain (volume, visualizers), once Web Audio is running. */
+const wired = new WeakSet<HTMLAudioElement>();
+function wire(el: HTMLAudioElement | null) {
+  if (!el || !ctx || !gain || wired.has(el)) return;
+  ctx.createMediaElementSource(el).connect(gain);
+  wired.add(el);
+}
+
+// ---------- gapless (gapless.ts) ----------
+
+let spare: HTMLAudioElement | null = null;
+/** What the spare player has loaded: the queue position and its file. */
+let ready: { at: number; src: string } | null = null;
+let handTimer = 0;
+let quietSince: number | null = null;
+const wave = new Uint8Array(2048);
+
+/** The song that comes next on its own, when both it and this one are songs (stations don't end). */
+function nextSong() {
+  const { queue, index } = mu();
+  const at = upcoming(queue.length, index, prefs().repeat);
+  const it = queue[at];
+  return at >= 0 && it?.kind === "track" && queue[index]?.kind === "track" ? { at, it } : null;
+}
+
+/** On each tick of the song playing: load the next one near the end, and start it the moment this one ends. */
+function watchEnd() {
+  const a = audio;
+  if (!prefs().gapless || !a || a.paused || !Number.isFinite(a.duration)) return;
+  const n = nextSong();
+  if (!n) return;
+  const left = a.duration - a.currentTime;
+  const src = srcOf(n.it);
+  if (left < 30 && ready?.src !== src) {
+    spare ??= makePlayer();
+    spare.src = src;
+    spare.load();
+    ready = { at: n.at, src };
+  }
+  // the analyser hears the music after the volume, so its level is scaled back; turned right down, nothing is judged
+  const level = gain?.gain.value ?? 1;
+  if (analyser && level > 0.02 && left <= TAIL) {
+    analyser.getByteTimeDomainData(wave);
+    const now = performance.now() / 1000;
+    if (peakOf(wave) / level > QUIET) quietSince = null;
+    else quietSince ??= now;
+    if (quietEnding(left, quietSince, now)) return handOff();
+  }
+  if (left <= 1 && !handTimer) handTimer = window.setTimeout(handOff, Math.max(0, (left - LEAD) / (a.playbackRate || 1)) * 1000);
+}
+
+/** The next song starts and becomes the one playing; this one stops a moment later. If the queue changed since the
+ *  next song was loaded, nothing happens here and the song's own end carries on as usual. */
+function handOff() {
+  window.clearTimeout(handTimer);
+  handTimer = 0;
+  quietSince = null;
+  const n = nextSong();
+  const old = audio;
+  if (!n || !spare || !old || ready?.src !== srcOf(n.it)) return;
+  const sp = spare;
+  spare = old;
+  audio = sp;
+  ready = null;
+  sp.currentTime = 0;
+  applyVolume();
+  void sp.play().catch(() => {});
+  window.setTimeout(() => old.pause(), 300);
+  useMusic.setState({ index: n.at, position: 0, duration: n.it.duration, error: "", playing: true });
+  mediaSession(n.it);
+  for (const fn of listeners) fn(n.it);
+}
+
+/** Starting a song by hand: the waiting one is set aside. */
+function dropSpare() {
+  window.clearTimeout(handTimer);
+  handTimer = 0;
+  quietSince = null;
+  ready = null;
+  spare?.pause();
 }
 
 const KIND_OF: Record<string, string> = { mp3: "audio/mpeg", ogg: "audio/ogg", oga: "audio/ogg", opus: "audio/ogg; codecs=opus", wav: "audio/wav", flac: "audio/flac", m4a: "audio/mp4", aac: "audio/aac", webm: "audio/webm" };
@@ -108,14 +203,14 @@ async function whyNot(t: Track, code: number) {
 function chain() {
   if (ctx) return;
   ctx = new AudioContext();
-  const src = ctx.createMediaElementSource(element());
   gain = ctx.createGain();
   analyser = ctx.createAnalyser();
   analyser.fftSize = 2048;
   analyser.smoothingTimeConstant = 0.8;
-  src.connect(gain);
   gain.connect(analyser);
   analyser.connect(ctx.destination);
+  wire(element());
+  wire(spare);
   applyVolume();
 }
 
@@ -198,7 +293,7 @@ export function tune(st: Station) {
 function applyVolume() {
   const v = prefs().volume * (ducked && prefs().duck ? 0.3 : 1);
   if (gain && ctx) gain.gain.setTargetAtTime(v, ctx.currentTime, 0.25);
-  else if (audio) audio.volume = v;
+  else for (const el of [audio, spare]) if (el) el.volume = v;
 }
 
 // lower the music while a character speaks; follow the volume setting
@@ -303,6 +398,7 @@ async function start(i: number, at = 0) {
   }
   chain();
   await ctx?.resume();
+  dropSpare();
   const a = element();
   useMusic.setState({ index: i, position: 0, duration: it.kind === "track" ? it.duration : 0, error: "" });
   a.src = srcOf(it);
@@ -435,6 +531,7 @@ export function seek(seconds: number) {
 }
 
 export function stop() {
+  dropSpare();
   if (!audio) return;
   audio.pause();
   audio.removeAttribute("src");

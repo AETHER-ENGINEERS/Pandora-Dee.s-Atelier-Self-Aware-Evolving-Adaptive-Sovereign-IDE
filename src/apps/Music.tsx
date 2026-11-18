@@ -1,7 +1,7 @@
 import { groupAlbums } from "../lib/albumGroups.ts";
 import { toCss } from "../lib/zoom.ts";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, FileDown, FileUp, FolderInput, ListPlus, Pencil, Plus, X, AudioWaveform, ChevronUp, ChevronsLeft, ChevronsRight, Disc3, Folder, FolderOpen, FolderPlus, Globe2, ListMusic, Maximize2, Mic2, MonitorSmartphone, Pause, Play, Radio, Repeat, Repeat1, Search, Shuffle, SkipBack, Sparkles, SkipForward, Star, Trash2, Upload, Users, Volume2 } from "lucide-react";
+import { Link2, ArrowDown, ArrowUp, FileDown, FileUp, FolderInput, ListPlus, Pencil, Plus, X, AudioWaveform, ChevronUp, ChevronsLeft, ChevronsRight, Disc3, Folder, FolderOpen, FolderPlus, Globe2, ListMusic, Maximize2, Mic2, MonitorSmartphone, Pause, Play, Radio, Repeat, Repeat1, Search, Shuffle, SkipBack, Sparkles, SkipForward, Star, Trash2, Upload, Users, Volume2 } from "lucide-react";
 import { desk, useDesk } from "../lib/store.ts";
 import {
   addFiles,
@@ -400,6 +400,16 @@ export function MusicApp() {
             onClick={() => setPrefs({ repeat: prefs.repeat === "off" ? "all" : prefs.repeat === "all" ? "one" : "off" })}
           >
             {prefs.repeat === "one" ? <Repeat1 size={15} /> : <Repeat size={15} />}
+          </button>
+          <button
+            className={`icon-btn${prefs.gapless ? " on" : ""}`}
+            aria-label="Gapless"
+            aria-pressed={Boolean(prefs.gapless)}
+            data-tip-up=""
+            data-tip={prefs.gapless ? "Gapless: songs run straight into each other" : "Gapless is off: a moment between songs"}
+            onClick={() => setPrefs({ gapless: !prefs.gapless })}
+          >
+            <Link2 size={15} />
           </button>
         </div>
         <div className="np-seek">
