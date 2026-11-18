@@ -358,3 +358,17 @@ export async function changeCollection(c: { id?: string; name?: string; items?: 
   await refreshLibrary();
   return saved;
 }
+
+// ── a video handed over from Explorer ("Open in… → Theater") ─────────────────────────────────────────────
+let asked: string | null = null;
+/** Play this file in the Theater: the library's copy when it's on a shelf, or just the file when it isn't. */
+export function askTheater(path: string) {
+  asked = path;
+  window.dispatchEvent(new Event("pdd-theater-ask"));
+}
+/** The file asked for, once (the Theater takes it when it opens, or straight away if it's open). */
+export function takeTheaterAsk(): string | null {
+  const p = asked;
+  asked = null;
+  return p;
+}

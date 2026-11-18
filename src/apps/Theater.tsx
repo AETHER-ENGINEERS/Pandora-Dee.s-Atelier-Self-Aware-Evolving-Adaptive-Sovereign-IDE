@@ -21,6 +21,7 @@ import {
   sizeText,
   theaterApi,
   thumbUrl,
+  takeTheaterAsk,
   useJobs,
   useLibrary,
   videoUrl,
@@ -133,6 +134,27 @@ export function TheaterApp() {
       /* it just won't carry on */
     }
   }, [shelf, playing, order, repeat]);
+  // a file handed over from Explorer: its shelf copy when it has one, or played as it is
+  const [asked, setAsked] = useState<string | null>(takeTheaterAsk);
+  const [loose, setLoose] = useState<Video | null>(null);
+  useEffect(() => {
+    const take = () => setAsked(takeTheaterAsk());
+    window.addEventListener("pdd-theater-ask", take);
+    return () => window.removeEventListener("pdd-theater-ask", take);
+  }, []);
+  useEffect(() => {
+    if (!asked || (!lib && !error)) return;
+    const want = asked.replace(/\\/g, "/").toLowerCase();
+    const have = lib?.videos.find((v) => v.path.replace(/\\/g, "/").toLowerCase() === want);
+    if (have) setLoose(null);
+    else {
+      const name = asked.split(/[\\/]/).pop() ?? asked;
+      setLoose({ id: `file:${asked}`, path: asked, name: name.replace(/\.[^.]+$/, ""), ext: (/\.([^.]+)$/.exec(name)?.[1] ?? "").toLowerCase(), shelf: "", size: 0, mtime: 0, seconds: 0, thumb: -1, fav: false, device: true });
+    }
+    setOrder(null);
+    setPlaying(have?.id ?? `file:${asked}`);
+    setAsked(null);
+  }, [asked, lib, error]);
   const playlists = lib?.playlists ?? [];
   const playlist = shelf.startsWith(LIST) ? (playlists.find((p) => p.id === shelf.slice(LIST.length)) ?? null) : null;
   const [target, setTarget] = useState(savedShelf);
@@ -482,7 +504,7 @@ export function TheaterApp() {
     if (!n) desk().say("Those aren't videos the Theater keeps (mp4, mov, webm, mkv…).");
   };
 
-  const current = playing ? (lib?.videos.find((v) => v.id === playing) ?? devVideos?.videos.find((v) => v.id === playing) ?? null) : null;
+  const current = playing ? (lib?.videos.find((v) => v.id === playing) ?? devVideos?.videos.find((v) => v.id === playing) ?? (loose?.id === playing ? loose : null)) : null;
 
   // ---- the sidebar: kinds, collections, playlists, shelves (by the device they came from), folders, devices ----
   const counts = new Map<string, number>();

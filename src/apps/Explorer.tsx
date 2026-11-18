@@ -4,6 +4,8 @@ import {
   ArrowLeft, ChevronLeft, ChevronRight, Copy, Download, ExternalLink, File as FileIcon, FileText, Folder, FolderPlus, FolderUp, Gamepad2, HardDrive, Image as ImageIcon,
   LayoutGrid, LayoutList, Link2, Link2Off, Monitor, RefreshCw, Music2, Network, PackageOpen, RotateCcw, Share2, Smartphone, Trash2, Upload, Video,
 } from "lucide-react";
+import { Film, ListPlus, Music as MusicIcon } from "lucide-react";
+import { openInMusic, openInTab, openInTheater } from "../lib/openIn.ts";
 import { desk } from "../lib/store.ts";
 import { Markdown } from "../ui/common.tsx";
 import { openMenu, openMenuAt, type MenuItem } from "../ui/ContextMenu.tsx";
@@ -293,6 +295,7 @@ function FileBrowser({ mode, go, pick }: { mode: Mode; go?: { path: string; at: 
     const k = kindOf(e);
     return [
       ...(!many ? [{ label: e.dir ? "Open" : k === "xdc" ? "Open in Games & Apps" : "Preview", run: () => (k === "xdc" || e.dir ? activate(e) : setSel([e.path])) }] : []),
+      ...(!many && !e.dir && mode === "browse" ? openInItems(e, k) : []),
       ...(!many && !e.dir ? [{ label: "Download to this device", icon: <Download size={14} />, run: () => downloadToDevice(e.path) }] : []),
       ...(!many && e.ext === "zip" && !e.path.startsWith("device:") ? [{ label: "Unpack here", icon: <PackageOpen size={14} />, hint: "into a new folder", run: () => void unpack(e) }] : []),
       { sep: true },
@@ -809,4 +812,20 @@ function Computers({ cwd, known, onOpen }: { cwd: string; known: string[]; onOpe
       </button>
     </>
   );
+}
+
+/** "Open in…": the apps made for this kind of file, and a new tab for anything this device's browser can show. */
+function openInItems(e: Entry, k: string): MenuItem[] {
+  const audio = k === "audio" || e.ext === "wma";
+  const items: MenuItem[] = [];
+  if (audio) {
+    items.push(
+      { label: "Music", icon: <MusicIcon size={14} />, hint: "play it now", run: () => void openInMusic(e.path) },
+      { label: "Music: play next", icon: <ListPlus size={14} />, run: () => void openInMusic(e.path, "next") },
+      { label: "Music: add to the queue", icon: <ListPlus size={14} />, run: () => void openInMusic(e.path, "queue") },
+    );
+  }
+  if (k === "video") items.push({ label: "Theater", icon: <Film size={14} />, run: () => openInTheater(e.path) });
+  items.push({ label: "A new tab", icon: <ExternalLink size={14} />, hint: k === "pdf" || k === "image" || k === "text" || audio || k === "video" ? "in this device's browser" : "it may download instead", run: () => openInTab(e.path) });
+  return [{ heading: "Open in…" }, ...items, { sep: true }];
 }
