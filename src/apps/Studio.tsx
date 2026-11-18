@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { zipSync, strToU8 } from "fflate";
-import { Copy, Download, FilePlus, GitBranch, Gamepad2, Play, Save, Sparkles, Trash2 } from "lucide-react";
+import { Copy, Download, FilePlus, GitBranch, Gamepad2, Play, Save, Sparkles, Trash2, Wand2 } from "lucide-react";
+import { StudioMake } from "./StudioMake.tsx";
 import { desk, useDesk } from "../lib/store.ts";
 import { groupApps, library, webImportSaid, type Pkg } from "../lib/xdc.ts";
 import { openMenuAt } from "../ui/ContextMenu.tsx";
@@ -65,6 +66,7 @@ export function StudioApp() {
   const [dirty, setDirty] = useState(false);
   const [dir, setDir] = useState("");
   const [ask, setAsk] = useState<"delete" | null>(null);
+  const [making, setMaking] = useState(false);
   const editable = Boolean(pkg?.parent);
   const groups = useMemo(() => groupApps(pkgs), [pkgs]);
 
@@ -260,6 +262,11 @@ export function StudioApp() {
                   <Save size={14} /> Save
                 </button>
               ) : null}
+              {editable ? (
+                <button className="btn small" onClick={() => setMaking(true)} title="A picture, music or a sound effect, made and put in the app">
+                  <Wand2 size={14} /> Make…
+                </button>
+              ) : null}
               <button className="btn small" onClick={() => void fork()} title="Copy this version into a new one you can edit">
                 <GitBranch size={14} /> New version
               </button>
@@ -334,6 +341,18 @@ export function StudioApp() {
           </>
         )}
       </section>
+      {making && pkg ? (
+        <StudioMake
+          pkgId={pkg.id}
+          onClose={() => setMaking(false)}
+          onSaved={(p, use) => {
+            setMaking(false);
+            void library.files(pkg.id).then((list) => (setFiles(list), setPath(/\.(png|jpe?g|webp|gif)$/i.test(p) ? p : (cur) => cur)));
+            void copyText(use);
+            desk().say(`${p} is in the app. To use it (copied, ready to paste): ${use}`);
+          }}
+        />
+      ) : null}
       {ask && pkg ? (
         <Confirm
           title={`Delete ${path}?`}
