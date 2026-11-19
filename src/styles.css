@@ -1187,3 +1187,11 @@ html { touch-action: pan-x pan-y; }
 .room-tab.going { opacity: .6; }
 .room-tab.add { padding: 4px 7px; }
 .explorer-uploading { position: sticky; top: 0; z-index: 2; padding: 8px 12px; background: var(--panel-solid); border-bottom: 1px solid var(--line); }
+.music-queue { border-top: 1px solid var(--line); background: rgba(0,0,0,.2); max-height: 38%; min-height: 120px; display: flex; flex-direction: column; }
+.music-queue-head { display: flex; gap: 8px; align-items: center; padding: 6px 12px; }
+.music-queue-list { overflow: auto; padding: 0 8px 8px; display: flex; flex-direction: column; gap: 1px; }
+.music-queue-row { display: flex; gap: 10px; align-items: baseline; text-align: left; border: 0; background: transparent; color: var(--text); padding: 4px 8px; border-radius: 6px; font: inherit; cursor: default; }
+.music-queue-row:hover { background: rgba(255,255,255,.05); }
+.music-queue-row.on { background: rgba(185,164,255,.16); font-weight: 600; }
+.music-queue-row.past { opacity: .6; }
+.music-queue-row .grow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

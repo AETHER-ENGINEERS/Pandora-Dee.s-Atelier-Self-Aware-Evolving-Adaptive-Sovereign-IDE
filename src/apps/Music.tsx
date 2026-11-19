@@ -28,6 +28,8 @@ import {
   albumOrder,
   skipBy,
   backBy,
+  playAt,
+  removeAt,
 } from "../lib/music.ts";
 import { Num } from "../ui/Num.tsx";
 import { copyToServer, shareMusicFiles, shareMusicFolder, thisDevice, useServerName, useSharedLibraries, AUDIO } from "../lib/musicShare.ts";
@@ -90,7 +92,9 @@ export function MusicApp() {
   const songs = useMemo(() => searchLibrary(q, Infinity), [q, m.tracks]); // eslint-disable-line react-hooks/exhaustive-deps
   // the songs list draws a few hundred at a time and adds more as you scroll near the end
   const [shown, setShown] = useState(PAGE);
-  useEffect(() => setShown(PAGE), [q]);
+  useEffect(() => {
+    setShown(PAGE);
+  }, [q]);
   const more = useRef<HTMLTableRowElement>(null);
   useEffect(() => {
     const el = more.current;
@@ -107,6 +111,29 @@ export function MusicApp() {
   }, [songs]);
 
   const cur = current();
+  /** A song's Properties (with the made-song details when it was made here). */
+  const infoOf = (t: Track) => openSongInfo({ track: t, made: desk().media.made.find((s) => s.file.replace(/\.[^.]+$/, "") === t.title || s.title === t.title) });
+  /** The song playing, from the player: no need to find it in the library. */
+  const nowMenu = (): MenuItem[] => {
+    const it = current();
+    if (!it) return [];
+    if (it.kind !== "track")
+      return [
+        { heading: it.name },
+        { label: "Copy the station's name", run: () => void copyText(it.name) },
+        { label: prefs.showQueue ? "Hide the queue" : "Show the queue", run: () => setPrefs({ showQueue: !prefs.showQueue }) },
+      ];
+    const key = groupAlbums(m.tracks).find((a) => a.tracks.some((t) => t.id === it.id))?.key;
+    return [
+      { heading: it.title },
+      { label: "Properties…", run: () => infoOf(it) },
+      ...(key ? [{ label: "Show its album", run: () => (setView("albums"), setAlbum(key)) } as MenuItem] : []),
+      { label: "Copy title and artist", run: () => void copyText(`${it.title}${it.artist ? ` · ${it.artist}` : ""}`) },
+      ...addToPlaylistItems(it, openList),
+      { sep: true },
+      { label: prefs.showQueue ? "Hide the queue" : "Show the queue", run: () => setPrefs({ showQueue: !prefs.showQueue }) },
+    ];
+  };
   const trackMenu = (list: Track[], i: number): MenuItem[] => [
     { label: "Play", run: () => playList(asItems(list), i) },
     { label: "Play next", run: () => useMusic.setState((s) => ({ queue: [...s.queue.slice(0, s.index + 1), { kind: "track", ...list[i] }, ...s.queue.slice(s.index + 1)] })) },
@@ -116,7 +143,7 @@ export function MusicApp() {
     ...(list[i].src ? [] : [{ sep: true } as MenuItem, { label: "Rename…", icon: <Pencil size={14} />, run: () => void renameSong(list[i]) } as MenuItem]),
     ...addToPlaylistItems(list[i], openList),
     { sep: true },
-    { label: "Properties…", run: () => openSongInfo({ track: list[i], made: desk().media.made.find((s) => s.file.replace(/\.[^.]+$/, "") === list[i].title || s.title === list[i].title) }) },
+    { label: "Properties…", run: () => infoOf(list[i]) },
   ];
 
   // the visualizer's choices: from the player's footer, and from the sidebar (where phones can reach them)
@@ -353,9 +380,10 @@ export function MusicApp() {
       </div>
 
       <SongInfoHost />
+      {prefs.showQueue ? <QueueView onClose={() => setPrefs({ showQueue: false })} infoOf={infoOf} /> : null}
       <footer className="now-playing">
-        <div className="np-art">{cur && coverOf(cur) ? <img src={coverOf(cur)} alt="" /> : <Disc3 size={28} className="faint" />}</div>
-        <div className="np-meta">
+        <div className="np-art" onContextMenu={(e) => cur && openMenu(e, nowMenu())}>{cur && coverOf(cur) ? <img src={coverOf(cur)} alt="" /> : <Disc3 size={28} className="faint" />}</div>
+        <div className="np-meta" onContextMenu={(e) => cur && openMenu(e, nowMenu())}>
           <b>{cur ? (cur.kind === "track" ? cur.title : cur.name) : "Nothing playing"}</b>
           <span className="muted small">{cur ? (cur.kind === "track" ? [cur.artist, cur.album].filter(Boolean).join(" · ") : `Radio${cur.country ? ` · ${cur.country}` : ""}`) : "Pick a song, an album or a station"}</span>
         </div>
@@ -431,6 +459,16 @@ export function MusicApp() {
             onClick={vizMenu}
           >
             <Maximize2 size={15} />
+          </button>
+          <button
+            className={`icon-btn${prefs.showQueue ? " on" : ""}`}
+            aria-label="The queue"
+            aria-pressed={Boolean(prefs.showQueue)}
+            data-tip-up=""
+            data-tip="The queue: what played, what's playing, what's next"
+            onClick={() => setPrefs({ showQueue: !prefs.showQueue })}
+          >
+            <ListMusic size={15} />
           </button>
         </div>
       </footer>
@@ -676,7 +714,9 @@ function FolderPicker({ onPick, onClose }: { onPick: (path: string) => void; onC
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setBusy(false));
   };
-  useEffect(() => go(""), []);
+  useEffect(() => {
+    void go("");
+  }, []);
   return (
     <div className="scrim" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="dialog folder-picker" role="dialog" aria-modal="true" aria-label="Choose a music folder">
@@ -1047,5 +1087,69 @@ function PlaylistView({ id, trackMenu, onGone }: { id: string; trackMenu: (list:
         </p>
       )}
     </div>
+  );
+}
+
+/** The queue beside the player: the songs that played, the one playing, and what's next. A shuffled library is
+ *  thousands of songs, so only the ones around the song playing are drawn, with more on asking. */
+function QueueView({ onClose, infoOf }: { onClose: () => void; infoOf: (t: Track) => void }) {
+  const queue = useMusic((s) => s.queue);
+  const index = useMusic((s) => s.index);
+  const [before, setBefore] = useState(20);
+  const [after, setAfter] = useState(50);
+  const nowRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    nowRef.current?.scrollIntoView({ block: "nearest" });
+  }, [index]);
+  const from = Math.max(0, index - before);
+  const to = Math.min(queue.length, index + 1 + after);
+  const rows = queue.slice(from, to);
+  const menu = (it: Item, i: number): MenuItem[] => [
+    { label: i === index ? "Playing" : "Play this", disabled: i === index, run: () => playAt(i) },
+    ...(it.kind === "track" ? [{ label: "Properties…", run: () => infoOf(it) } as MenuItem] : []),
+    { label: "Take it out of the queue", disabled: i === index, run: () => removeAt(i) },
+  ];
+  return (
+    <section className="music-queue" aria-label="The queue">
+      <div className="music-queue-head">
+        <b>The queue</b>
+        <span className="faint small">{index >= 0 ? `${index + 1} of ${queue.length}` : `${queue.length} songs`}</span>
+        <span className="grow" />
+        <button className="icon-btn" aria-label="Hide the queue" onClick={onClose}>
+          <X size={14} />
+        </button>
+      </div>
+      <div className="music-queue-list">
+        {from > 0 ? (
+          <button className="btn small ghost" onClick={() => setBefore((n) => n + 100)}>
+            {from} earlier…
+          </button>
+        ) : null}
+        {rows.map((it, k) => {
+          const i = from + k;
+          const on = i === index;
+          return (
+            <button
+              key={i}
+              ref={on ? nowRef : undefined}
+              className={`music-queue-row${on ? " on" : ""}${i < index ? " past" : ""}`}
+              onDoubleClick={() => playAt(i)}
+              onContextMenu={(e) => openMenu(e, menu(it, i))}
+              title={on ? "Playing" : "Double-click to play; right-click for more"}
+            >
+              <span className="faint small">{i + 1}</span>
+              <span className="grow">{it.kind === "track" ? it.title : it.name}</span>
+              <span className="faint small">{it.kind === "track" ? it.artist : "Radio"}</span>
+            </button>
+          );
+        })}
+        {to < queue.length ? (
+          <button className="btn small ghost" onClick={() => setAfter((n) => n + 100)}>
+            {queue.length - to} more…
+          </button>
+        ) : null}
+        {!queue.length ? <p className="faint small">Nothing queued yet.</p> : null}
+      </div>
+    </section>
   );
 }
