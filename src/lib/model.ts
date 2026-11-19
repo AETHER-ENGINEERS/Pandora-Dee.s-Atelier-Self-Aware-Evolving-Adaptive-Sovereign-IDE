@@ -304,6 +304,7 @@ export function textToolCalls(text: string, names: string[]): { calls: { name: s
         let j = i + 1;
         let body = "";
         let args: Record<string, unknown> | null = null;
+        let after = "";
         for (; j < lines.length && j < i + 40; j++) {
           body += `${lines[j]}\n`;
           try {
@@ -313,12 +314,19 @@ export function textToolCalls(text: string, names: string[]): { calls: { name: s
               break;
             }
           } catch {
-            /* the arguments go on */
+            // GLM sometimes carries on talking on the JSON's last line: `{"type": "bed"} Time to move on!`
+            const lead = leadingJson(body);
+            if (lead) {
+              args = lead.value;
+              after = lead.after.trim();
+              break;
+            }
           }
         }
         if (args) {
           calls.push({ name, args });
           if (said) kept.push(said);
+          if (after) kept.push(after);
           i = j;
           continue;
         }
@@ -328,6 +336,31 @@ export function textToolCalls(text: string, names: string[]): { calls: { name: s
     if (calls.length) rest = kept.join("\n");
   }
   return { calls, rest: rest.trim() };
+}
+
+/** A JSON object at the start of a text, followed by anything else: the object and what comes after it. */
+function leadingJson(text: string): { value: Record<string, unknown>; after: string } | null {
+  const start = text.search(/\S/);
+  if (start < 0 || text[start] !== "{") return null;
+  let depth = 0;
+  let inString = false;
+  for (let k = start; k < text.length; k++) {
+    const ch = text[k];
+    if (inString) {
+      if (ch === "\\") k++;
+      else if (ch === '"') inString = false;
+    } else if (ch === '"') inString = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}" && --depth === 0) {
+      try {
+        const v = JSON.parse(text.slice(start, k + 1)) as unknown;
+        return v && typeof v === "object" && !Array.isArray(v) ? { value: v as Record<string, unknown>, after: text.slice(k + 1) } : null;
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
 }
 
 function parseArgs(raw: unknown): Record<string, unknown> {

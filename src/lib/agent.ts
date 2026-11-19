@@ -91,6 +91,7 @@ const shownOut = (text: string) => {
 };
 
 const UNSAID_NOTE = "[Desk note] Your answer stayed in your thinking, so nobody saw it. Say it here if you meant to.";
+const SILENT_NOTE = "[Desk note] Your tools ran, but you haven't said anything, so the room only sees the tool rows. Say a short line about what you did (no need to run them again).";
 const SEEN = "[Your browser tab, as it looks now]";
 const SEEN_BEFORE = "[An earlier picture of your browser tab]";
 const REST_MS = 3 * 60_000;
@@ -360,6 +361,18 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
             patch({ tools: [...used] });
             turns.push({ role: "assistant", content: result.text });
             turns.push({ role: "user", content: UNSAID_NOTE });
+            continue;
+          }
+          // tools ran (a move sent, say) and then she stopped with nothing said at all, thinking included: the room only
+          // sees a row of tools. The desk asks once for a line about it (k2.7-code in Logic Garden, 2026-11-19)
+          const silent =
+            !missed && playing && !heardGiven && !opts.nudge && step < ai.maxSteps && !parts.text.trim() && !shown.trim() && used.some((u) => !u.desk);
+          if (silent) {
+            heardGiven = true;
+            used.push({ name: "reply", ok: false, note: "acted without a word", out: SILENT_NOTE, desk: true });
+            patch({ tools: [...used] });
+            turns.push({ role: "assistant", content: result.text });
+            turns.push({ role: "user", content: SILENT_NOTE });
             continue;
           }
           // she describes using a tool, and none ran in this reply: the desk says so, once, and her words stay shown

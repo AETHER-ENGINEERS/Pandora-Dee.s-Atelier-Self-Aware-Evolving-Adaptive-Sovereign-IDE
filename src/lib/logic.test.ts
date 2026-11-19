@@ -55,6 +55,9 @@ test("loop breaker catches repeats and long streaks", () => {
 test("replies lose their own name prefix and anything written for others", () => {
   assert.equal(tidyReply(dee, "Dee: hello there\nJade: hi Dee", room), "hello there");
   assert.equal(tidyReply(dee, "**Pandora Dee:** fine", room), "fine");
+  // GLM's transcript label for the speaker: "You:" (Jade, 2026-11-19); the words after it are still hers
+  assert.equal(tidyReply(dee, "You: Ah, apologies for the mix-up.", room), "Ah, apologies for the mix-up.");
+  assert.equal(tidyReply(dee, "Your move, Claude.", room), "Your move, Claude.");
   // any word of their own name counts at the start (Test Fae, short "Test", wrote "Fae:")
   const fae = { ...dee, id: "test-fae", name: "Test Fae", short: "Test" };
   assert.equal(tidyReply(fae, "Fae: Hello, everyone.", room), "Hello, everyone.");
@@ -404,6 +407,13 @@ test("tool calls a model wrote as text are found (GLM, <tool_call>, bare JSON), 
   r = textToolCalls("I'll answer at r8, c8.app_send_update\n{\"action\": \"MOVE\", \"r\": 8, \"c\": 8, \"player\": 2}", names);
   assert.deepEqual(r.calls, [{ name: "app_send_update", args: { action: "MOVE", r: 8, c: 8, player: 2 } }]);
   assert.equal(r.rest, "I'll answer at r8, c8.");
+  // GLM carrying on talking after the JSON, on the same line (Jade in Logic Garden); braces in strings don't fool it
+  r = textToolCalls('app_send_update\n{"type": "bed", "level": 2, "name": "J}ade"} Let\'s explore the next bed!', names);
+  assert.deepEqual(r.calls, [{ name: "app_send_update", args: { type: "bed", level: 2, name: "J}ade" } }]);
+  assert.equal(r.rest, "Let's explore the next bed!");
+  r = textToolCalls('app_send_update\n{"payload": {"type": "sun",\n "sun": 1}} Waking the first sun.', names);
+  assert.deepEqual(r.calls, [{ name: "app_send_update", args: { payload: { type: "sun", sun: 1 } } }]);
+  assert.equal(r.rest, "Waking the first sun.");
   // a name inside a word isn't a call
   assert.equal(textToolCalls("see my_app_updates\n{}", names).calls.length, 0);
   // Qwen / Hermes
