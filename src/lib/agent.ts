@@ -59,7 +59,11 @@ export function stopAll() {
   stopSpeaking();
 }
 
+/** How often streamed text reaches the room while a reply is being written. */
+const STREAM_MS = 150;
+
 function setBusy(id: string, what: string | null) {
+  if ((desk().busy[id] ?? null) === what) return; // unchanged: every store change re-saves the desk, so skip it
   const busy = { ...desk().busy };
   if (what) busy[id] = what;
   else delete busy[id];
@@ -265,7 +269,22 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
   }
 
   const msgId = opts.silent ? "" : s.post({ kind: "character", who: me.id, name: me.short, text: "", source: opts.replyTo?.source ?? "desk", bridge: opts.replyTo?.bridge });
-  const patch = (p: Partial<Message>) => msgId && desk().patchMessage(msgId, p);
+  // Streaming pieces arrive a token at a time, and every message change re-saves the whole desk and redraws the chat:
+  // over a long think that froze the window until it crashed. So streamed text lands at most every STREAM_MS; any
+  // other patch (the reply's final text, its tools) takes what's waiting first, so nothing lands out of order.
+  let waiting: Partial<Message> | null = null;
+  let waitTimer = 0;
+  const patch = (p: Partial<Message>) => {
+    if (waitTimer) window.clearTimeout(waitTimer);
+    waitTimer = 0;
+    const all = waiting ? { ...waiting, ...p } : p;
+    waiting = null;
+    if (msgId) desk().patchMessage(msgId, all);
+  };
+  const streamPatch = (p: Partial<Message>) => {
+    waiting = { ...(waiting ?? {}), ...p };
+    if (!waitTimer) waitTimer = window.setTimeout(() => patch({}), STREAM_MS);
+  };
   setBusy(me.id, "thinking");
   let lastErr = "";
 
@@ -299,14 +318,14 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
             streamed += piece;
             const parts = splitThink(shown + streamed);
             setBusy(me.id, parts.text.trim() ? "typing" : "thinking");
-            patch({ text: tidyReply(me, shown + streamed, room), thinking: [thought, reasoning, parts.thinking].filter(Boolean).join("\n\n") || undefined });
+            streamPatch({ text: tidyReply(me, shown + streamed, room), thinking: [thought, reasoning, parts.thinking].filter(Boolean).join("\n\n") || undefined });
           }, signal, {
             numCtx: s.chat.numCtx || undefined,
             think: (s.charPrefs[me.id]?.think ?? s.chat.askThink) && conn.kind === "ollama",
             onThink: (piece) => {
               reasoning += piece;
               setBusy(me.id, "thinking");
-              patch({ thinking: [thought, reasoning].filter(Boolean).join("\n\n") });
+              streamPatch({ thinking: [thought, reasoning].filter(Boolean).join("\n\n") });
             },
           });
         } catch (e) {
