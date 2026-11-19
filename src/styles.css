@@ -1195,3 +1195,6 @@ html { touch-action: pan-x pan-y; }
 .music-queue-row.on { background: rgba(185,164,255,.16); font-weight: 600; }
 .music-queue-row.past { opacity: .6; }
 .music-queue-row .grow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.visualizer:focus { outline: none; }
+.viz-overlay { position: absolute; left: 12px; top: 10px; max-width: calc(100% - 24px); padding: 6px 10px; border-radius: 8px; background: rgba(0,0,0,.55); color: #fff; text-shadow: 0 1px 3px #000; pointer-events: none; font-size: .9em; white-space: pre-wrap; }
+.viz-overlay.help { font-family: ui-monospace, Consolas, monospace; font-size: .82em; line-height: 1.6; }
