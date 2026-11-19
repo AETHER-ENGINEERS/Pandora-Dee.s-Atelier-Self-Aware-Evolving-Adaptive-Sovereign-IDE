@@ -9,6 +9,8 @@ import {
   List,
   Maximize,
   MessageCircle,
+  MessagesSquare,
+  Send,
   Minimize,
   Play,
   RefreshCw,
@@ -23,7 +25,7 @@ import {
 } from "lucide-react";
 import { desk, useDesk, type AppPrefs, type LibSection, type LibSort, type LibView } from "../lib/store.ts";
 import { gameScreen } from "../lib/bus.ts";
-import { gameTurn } from "../lib/agent.ts";
+import { gameTurn, sayToPlayers } from "../lib/agent.ts";
 import { appOrigin, bridge, groupApps, library, readScreen, webImportSaid, type Pkg, type UpdateRow } from "../lib/xdc.ts";
 import { allowed } from "../lib/privacy.ts";
 import { imagineGame } from "../lib/gameMaker.ts";
@@ -861,6 +863,7 @@ export function GameBack() {
 /** Controls that sit in the Games window's own title bar while something is open. */
 export function GameBar() {
   const [full, setFull] = useState(false);
+  const [chat, setChat] = useGameChat();
   useEffect(() => {
     const on = () => setFull(Boolean(document.fullscreenElement));
     document.addEventListener("fullscreenchange", on);
@@ -875,6 +878,9 @@ export function GameBar() {
       <button className="icon-btn" onClick={() => void gameTurn()} data-tip="Ask the players what they'd do" aria-label="Ask the players">
         <MessageCircle size={15} />
       </button>
+      <button className={`icon-btn${chat ? " on" : ""}`} onClick={() => setChat(!chat)} aria-pressed={chat} data-tip={chat ? "Hide the room's chat" : "The room's chat, beside the game"} aria-label="The room's chat">
+        <MessagesSquare size={15} />
+      </button>
       <button className="icon-btn" onClick={() => void toggleFull()} data-tip={full ? "Leave full screen" : "Full screen"} aria-label="Full screen">
         {full ? <Minimize size={15} /> : <Maximize size={15} />}
       </button>
@@ -882,8 +888,75 @@ export function GameBar() {
   );
 }
 
+/** Whether the room's chat shows beside the game (kept on this device; the title bar and the game share it). */
+const CHAT_KEY = "pdd-game-chat";
+function useGameChat(): [boolean, (on: boolean) => void] {
+  const read = () => {
+    try {
+      return localStorage.getItem(CHAT_KEY) === "1";
+    } catch {
+      return false;
+    }
+  };
+  const [on, setOn] = useState(read);
+  useEffect(() => {
+    const sync = () => setOn(read());
+    window.addEventListener("pdd-game-chat", sync);
+    return () => window.removeEventListener("pdd-game-chat", sync);
+  }, []);
+  const set = (v: boolean) => {
+    try {
+      localStorage.setItem(CHAT_KEY, v ? "1" : "0");
+    } catch {
+      /* it just won't be remembered */
+    }
+    window.dispatchEvent(new Event("pdd-game-chat"));
+  };
+  return [on, set];
+}
+
+/** The room's conversation beside the game: what the players say about their moves, and a box to talk to them. */
+function GameChat() {
+  const messages = useDesk((s) => s.messages);
+  const character = useDesk((s) => s.character);
+  const [draft, setDraft] = useState("");
+  const list = useRef<HTMLDivElement>(null);
+  const shown = messages.filter((m) => (m.kind === "human" || m.kind === "character") && String(m.text ?? "").trim()).slice(-40);
+  useEffect(() => {
+    list.current?.scrollTo({ top: list.current.scrollHeight });
+  }, [shown.length, shown.at(-1)?.text]);
+  const send = () => {
+    const text = draft.trim();
+    if (!text) return;
+    setDraft("");
+    void sayToPlayers(text);
+  };
+  return (
+    <aside className="game-chat" aria-label="The room's chat">
+      <div className="game-chat-list" ref={list}>
+        {shown.length ? (
+          shown.map((m) => (
+            <div key={m.id} className={`game-chat-line${m.kind === "human" ? " me" : ""}`}>
+              <b>{m.kind === "character" ? (character(m.who)?.short ?? m.name ?? m.who) : (m.name ?? "You")}</b> {String(m.text).replace(/\n{3,}/g, "\n\n")}
+            </div>
+          ))
+        ) : (
+          <p className="small faint">Nothing said yet. Talk to the players here, or press Ask the players.</p>
+        )}
+      </div>
+      <div className="game-chat-say">
+        <input className="input" value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), send())} placeholder="Say something to the players" aria-label="Say something to the players" />
+        <button className="icon-btn" onClick={send} disabled={!draft.trim()} aria-label="Send">
+          <Send size={15} />
+        </button>
+      </div>
+    </aside>
+  );
+}
+
 function Playing() {
   const g = useDesk((s) => s.game)!;
+  const [chat] = useGameChat();
   const session = useDesk((s) => s.session);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [full, setFull] = useState(false);
@@ -950,18 +1023,21 @@ function Playing() {
           <X size={14} /> Leave full screen
         </button>
       ) : null}
-      {src ? (
-        <iframe
-          ref={frameRef}
-          key={`${src}#${nonce}`}
-          className="game-frame"
-          src={src}
-          title={g.title}
-          allow="fullscreen; autoplay; clipboard-write; gamepad"
-        />
-      ) : (
-        <div className="empty">{g.kind === "xdc" ? "Opening…" : "This game couldn't be found."}</div>
-      )}
+      <div className="game-body">
+        {src ? (
+          <iframe
+            ref={frameRef}
+            key={`${src}#${nonce}`}
+            className="game-frame"
+            src={src}
+            title={g.title}
+            allow="fullscreen; autoplay; clipboard-write; gamepad"
+          />
+        ) : (
+          <div className="empty">{g.kind === "xdc" ? "Opening…" : "This game couldn't be found."}</div>
+        )}
+        {chat ? <GameChat /> : null}
+      </div>
     </div>
   );
 }

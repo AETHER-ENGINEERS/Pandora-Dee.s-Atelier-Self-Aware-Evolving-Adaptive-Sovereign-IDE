@@ -1198,3 +1198,12 @@ html { touch-action: pan-x pan-y; }
 .visualizer:focus { outline: none; }
 .viz-overlay { position: absolute; left: 12px; top: 10px; max-width: calc(100% - 24px); padding: 6px 10px; border-radius: 8px; background: rgba(0,0,0,.55); color: #fff; text-shadow: 0 1px 3px #000; pointer-events: none; font-size: .9em; white-space: pre-wrap; }
 .viz-overlay.help { font-family: ui-monospace, Consolas, monospace; font-size: .82em; line-height: 1.6; }
+.game-body { flex: 1; min-height: 0; display: flex; }
+.game-body .game-frame { flex: 1; min-width: 0; }
+.game-chat { width: min(300px, 40%); display: flex; flex-direction: column; border-left: 1px solid var(--line); background: var(--panel-solid); }
+.game-chat-list { flex: 1; overflow: auto; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; font-size: .9em; }
+.game-chat-line { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.35; }
+.game-chat-line b { color: var(--accent); }
+.game-chat-line.me b { color: var(--text); }
+.game-chat-say { display: flex; gap: 6px; padding: 6px; border-top: 1px solid var(--line); }
+.game-chat-say .input { flex: 1; min-width: 0; }

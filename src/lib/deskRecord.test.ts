@@ -47,3 +47,11 @@ test("a reply with no words after tools ran is caught; one that said something, 
   assert.equal(saidNothing("", "I should open the game first", 3), false, "thinking out loud is the unsaid note's job");
   assert.equal(saidNothing("", "", 0), false, "no tools: an empty reply is a pass, not this");
 });
+
+test("a move told in words, not sent, is caught; plain talk isn't", async () => {
+  const { claimsMove } = await import("./deskRecord.ts");
+  for (const t of ["Black star, begone — same shape, now in proper cyan.", "I'll place my white stone at r8, c8.", "My stone goes to the corner.", "Repainted it over the black.", "I'll take e5."])
+    assert.equal(claimsMove(t), true, t);
+  for (const t of ["Good game, Claude!", "That was a clever opening.", "Your move, Jade!", "The board is quiet today."])
+    assert.equal(claimsMove(t), false, t);
+});

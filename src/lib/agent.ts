@@ -33,7 +33,7 @@ import { currentChat } from "./chats.ts";
 import { compact, shouldCompact } from "./context.ts";
 import { fitTurns, isCtxError, learnLimit, learnedLimit, sizeOf } from "./ctxfit.ts";
 import { missedNote, missedTool } from "./missedTool.ts";
-import { CLAIM_NOTE, SAY_NOTE, claimsTool, saidNothing } from "./deskRecord.ts";
+import { CLAIM_NOTE, MOVE_NOTE, SAY_NOTE, claimsMove, claimsTool, saidNothing } from "./deskRecord.ts";
 import { bookFor, bookHeader, parseScene, redactKeys, sceneText } from "./storybook.ts";
 import { allKeyValues, envFor } from "./residentKeys.ts";
 import { isLimitError, recordLimit, recordUsage } from "./meter.ts";
@@ -287,6 +287,7 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
       let heardGiven = false;
       let claimGiven = false;
       let sayGiven = false;
+      let moveGiven = false;
       let final = "";
       let thought = "";
       for (let step = 0; step <= ai.maxSteps; step++) {
@@ -353,6 +354,19 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
             patch({ tools: [...used] });
             turns.push({ role: "assistant", content: result.text });
             turns.push({ role: "user", content: CLAIM_NOTE });
+            continue;
+          }
+          // a move in the open game told in words, with none sent: the desk says the game hasn't changed, once, and she
+          // can send it (her words stay shown)
+          const toldMove =
+            !moveGiven && playing && g?.kind === "xdc" && step < ai.maxSteps && tools.some((t) => t.name === "app_send_update") && !used.some((u) => u.name === "app_send_update") && claimsMove(parts.text);
+          if (!missed && toldMove) {
+            moveGiven = true;
+            used.push({ name: "reply", ok: false, note: "told a move, sent none", out: MOVE_NOTE, desk: true });
+            if (parts.text.trim()) shown += `${parts.text.trim()}\n\n`;
+            patch({ tools: [...used] });
+            turns.push({ role: "assistant", content: result.text });
+            turns.push({ role: "user", content: MOVE_NOTE });
             continue;
           }
           if (missed) {
@@ -587,6 +601,20 @@ export async function say(text: string, from?: string, extra: { files?: Attachme
   }
   const msg = desk().messages.find((m) => m.id === id);
   if (msg) await respond(msg, extra.instruction);
+}
+
+/** Words for the players of the open game (the game window's chat): posted in the room like anything said, and
+ *  answered as a game turn, so the players have the game's tools and guide in hand and make their moves rather than
+ *  telling them. With no game open it's an ordinary message. */
+export async function sayToPlayers(text: string) {
+  const s = desk();
+  const clean = text.trim();
+  if (!clean) return;
+  if (!s.game?.players.length) return say(clean);
+  const blocked = s.weigh(clean, "desk", s.role());
+  s.post({ kind: "human", who: s.session ?? "you", name: s.session ?? "You", text: clean, source: "desk" });
+  if (blocked) return s.notice(blocked);
+  await gameTurn();
 }
 
 /** The latest reply again: drop what the characters said since your last message and ask once more. */

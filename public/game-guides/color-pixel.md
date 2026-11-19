@@ -6,17 +6,17 @@ A shared 30 × 30 canvas. Everyone paints on the same one, in any colour, a pixe
 `r × 30 + c`: the top left is 0, the top right 29, the middle about 465 (r 15, c 15), the bottom right 899.
 
 **To see the canvas:** use `app_updates`. Each update's payload lists `offsets` (pixel numbers), the `value` they were
-painted (a colour as `"red,green,blue"`, or `"EMPTY"` for rubbed out) and a `lamportTimestamp`. Later updates paint over
+painted (a CSS colour such as `"#ff69b4"`, or `"EMPTY"` for rubbed out) and a `lamportTimestamp`. Later updates paint over
 earlier ones.
 
 **To paint:** use `app_send_update` with a payload shaped exactly like this:
 
 ```json
-{ "offsets": [435, 436, 437, 465, 466, 467], "value": "255,105,180", "lamportTimestamp": 12 }
+{ "offsets": [435, 436, 437, 465, 466, 467], "value": "#ff69b4", "lamportTimestamp": 12 }
 ```
 
 - `offsets`: every pixel to paint this time, all in the one colour.
-- `value`: the colour as three numbers 0–255, red, green and blue, with commas and no spaces. `"EMPTY"` rubs pixels out.
+- `value`: a CSS colour, best as `#rrggbb` (`"#ff69b4"` is pink, `"#00ffff"` cyan) or `"rgb(255, 105, 180)"`. Bare numbers like `"255,105,180"` aren't a colour and paint black. `"EMPTY"` rubs pixels out.
 - `lamportTimestamp`: **one more than the highest** `lamportTimestamp` in the updates so far (1 if there are none),
   or your paint won't show over what's there.
 
