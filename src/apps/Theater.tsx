@@ -934,7 +934,7 @@ export function TheaterApp() {
               <div className="theater-grid" style={{ marginTop: 10 }}>
                 {here.here.map((v) => (
                   <Card
-                    key={v.id}
+                    key={v.path}
                     v={v}
                     // on from this one: through the rest of the show (its seasons in order), or what's loose here
                     onPlay={() => playOn(where ? underFolder(shown, where.split("/")[0]) : here.here, v)}
@@ -951,7 +951,7 @@ export function TheaterApp() {
             <div className="theater-grid">
               {g.videos.map((v, i) => (
                 <Card
-                  key={v.id}
+                  key={v.path}
                   v={v}
                   onPlay={() => (setOrder(null), setPlaying(v.id))}
                   menu={() => {
