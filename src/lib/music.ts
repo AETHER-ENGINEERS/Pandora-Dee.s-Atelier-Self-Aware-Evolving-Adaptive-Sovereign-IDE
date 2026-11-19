@@ -442,6 +442,18 @@ export function albumOrder(ts: Track[]): Track[] {
   return [...ts].sort((a, b) => (a.year || 9999) - (b.year || 9999) || (a.album || "~").localeCompare(b.album || "~") || albumHome(a).localeCompare(albumHome(b)) || a.track - b.track || a.title.localeCompare(b.title));
 }
 
+/** Play the song at this place in the queue (the queue view). */
+export function playAt(i: number) {
+  if (i >= 0 && i < mu().queue.length) void start(i);
+}
+
+/** Take a song out of the queue; the one playing keeps playing. */
+export function removeAt(i: number) {
+  const { queue, index } = mu();
+  if (i < 0 || i >= queue.length || i === index) return;
+  useMusic.setState({ queue: [...queue.slice(0, i), ...queue.slice(i + 1)], index: i < index ? index - 1 : index });
+}
+
 export function enqueue(items: Item[]) {
   const q = mu().queue;
   useMusic.setState({ queue: [...q, ...items] });
@@ -620,6 +632,9 @@ export function nowPlayingText(): string {
 // let a page start sound by itself, so Play carries on from there.
 
 const PLACE_KEY = "pdd-music-place";
+// The queue is kept apart from the place in it: a shuffled library is thousands of songs, written only when the queue
+// itself changes (and when the page is idle), while which song and how far in (a few bytes) is kept every few seconds.
+const QUEUE_KEY = "pdd-music-queue";
 let restored = false;
 
 function restorePlace() {
@@ -628,7 +643,12 @@ function restorePlace() {
   if (mu().queue.length) return;
   let saved: unknown = null;
   try {
-    saved = JSON.parse(localStorage.getItem(PLACE_KEY) ?? "null");
+    const place = JSON.parse(localStorage.getItem(PLACE_KEY) ?? "null") as { v?: number; i?: number; at?: number } | null;
+    // older pages kept the queue in the place itself (v1); now it's beside it (v2)
+    if (place?.v === 2) {
+      const q = JSON.parse(localStorage.getItem(QUEUE_KEY) ?? "null") as { q?: unknown[] } | null;
+      saved = q?.q ? { v: 1, q: q.q, i: place.i, at: place.at } : null;
+    } else saved = place;
   } catch {
     return;
   }
@@ -636,10 +656,40 @@ function restorePlace() {
   if (!back) return;
   const it = back.queue[back.index];
   useMusic.setState({ queue: back.queue, index: back.index, position: back.position, duration: it?.kind === "track" ? it.duration : 0, playing: false });
+  savedQueue = mu().queue; // as it was read back: nothing to write again
 }
 
 let lastSaved = 0;
-function savePlace() {
+let savedQueue: Item[] | null = null;
+let queueTimer = 0;
+const idle = (fn: () => void): number => {
+  const w = window as unknown as { requestIdleCallback?: (f: () => void, o: { timeout: number }) => number };
+  return w.requestIdleCallback ? w.requestIdleCallback(fn, { timeout: 3000 }) : window.setTimeout(fn, 300);
+};
+
+/** The queue itself, written when it has changed, when the page has a moment (or straight away when it's closing). */
+function saveQueue(now = false) {
+  const { queue } = mu();
+  // on the way out, a queue whose copy has gone missing (cleared, or another tab's) is written again
+  if (now && queue.length && queue === savedQueue && localStorage.getItem(QUEUE_KEY) === null) savedQueue = null;
+  if (queue === savedQueue) return;
+  const write = () => {
+    queueTimer = 0;
+    const q = mu().queue;
+    if (q === savedQueue) return;
+    try {
+      if (!q.length) localStorage.removeItem(QUEUE_KEY);
+      else localStorage.setItem(QUEUE_KEY, JSON.stringify({ v: 2, q: pack(q, 0, 0).q }));
+      savedQueue = q;
+    } catch {
+      /* full or blocked: it just won't carry on */
+    }
+  };
+  if (now) return write();
+  if (!queueTimer) queueTimer = idle(write);
+}
+
+function savePlace(closing = false) {
   lastSaved = Date.now();
   try {
     // not over what was saved before it has been read back (a station tuned before the library is read is fine)
@@ -648,8 +698,16 @@ function savePlace() {
       restored = true;
     }
     const { queue, index, position } = mu();
-    if (!queue.length || index < 0) localStorage.removeItem(PLACE_KEY);
-    else localStorage.setItem(PLACE_KEY, JSON.stringify(pack(queue, index, position)));
+    if (!queue.length) {
+      localStorage.removeItem(PLACE_KEY);
+      localStorage.removeItem(QUEUE_KEY);
+      savedQueue = queue;
+      return;
+    }
+    // a new queue is set a moment before its song is chosen: wait for that
+    if (index < 0) return;
+    localStorage.setItem(PLACE_KEY, JSON.stringify({ v: 2, i: index, at: Math.max(0, Math.floor(position)), n: queue.length }));
+    saveQueue(closing);
   } catch {
     /* full or blocked: it just won't carry on */
   }
@@ -660,8 +718,8 @@ if (typeof window !== "undefined") {
     if (now.queue !== was.queue || now.index !== was.index) savePlace();
     else if (now.position !== was.position && Date.now() - lastSaved > 5000) savePlace();
   });
-  addEventListener("pagehide", savePlace);
-  document.addEventListener("visibilitychange", () => document.visibilityState === "hidden" && savePlace());
+  addEventListener("pagehide", () => savePlace(true));
+  document.addEventListener("visibilitychange", () => document.visibilityState === "hidden" && savePlace(true));
   // something to carry on with: read the library (that puts the queue back) without waiting for the Music window
   try {
     if (localStorage.getItem(PLACE_KEY)) setTimeout(() => void loadLibrary().catch(() => undefined), 1500);
