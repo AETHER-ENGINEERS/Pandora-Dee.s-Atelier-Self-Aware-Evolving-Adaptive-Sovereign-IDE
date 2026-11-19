@@ -19,12 +19,18 @@ export function moveDigest(rows: Row[]) {
   for (const r of rows) {
     const p = r.update.payload as Record<string, unknown> | null;
     if (!p || typeof p !== "object") continue;
-    const mv = typeof p.uci === "string" ? p.uci : typeof p.move === "string" ? p.move : "";
-    if (!mv || typeof p.ply !== "number") continue;
+    // { uci } or { move }, or { from, to, promo } (Aurum Chess); the ply as `ply`, or `n`
+    const mv =
+      typeof p.uci === "string" ? p.uci
+      : typeof p.move === "string" ? p.move
+      : typeof p.from === "string" && typeof p.to === "string" && /^[a-h][1-8]$/.test(p.from) ? `${p.from}${p.to}${typeof p.promo === "string" ? p.promo : ""}`
+      : "";
+    const ply = typeof p.ply === "number" ? p.ply : typeof p.n === "number" ? p.n : null;
+    if (!mv || ply === null) continue;
     const id = String(p.gameId ?? p.game ?? "game");
     if (!games.has(id)) games.set(id, new Map());
     const plies = games.get(id)!;
-    if (!plies.has(p.ply)) plies.set(p.ply, mv); // the first move sent for a ply is the one that counts
+    if (!plies.has(ply)) plies.set(ply, mv); // the first move sent for a ply is the one that counts
   }
   return [...games].map(([id, plies]) => {
     const list = [...plies].sort((a, b) => a[0] - b[0]);

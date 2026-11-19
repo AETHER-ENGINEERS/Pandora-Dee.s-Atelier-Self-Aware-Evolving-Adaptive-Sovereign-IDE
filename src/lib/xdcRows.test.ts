@@ -28,4 +28,9 @@ test("moveDigest lists every move of every game in ply order", () => {
   assert.match(d, /g1: 0:e2e4 1:e7e5 \(next is ply 2, white/);
   assert.match(d, /g2: 0:d2d4 \(next is ply 1, black/);
   assert.equal(moveDigest([row(1, { hi: 1 })]), "");
+  // Aurum Chess: from/to with the ply as n, in a numbered game
+  const aurum = moveDigest([row(1, { t: "move", game: 2, n: 0, from: "e2", to: "e4" }), row(2, { t: "move", game: 2, n: 1, from: "e7", to: "e8", promo: "q" })]);
+  assert.match(aurum, /^2: 0:e2e4 1:e7e8q/);
+  // Pixel-style from/to that aren't squares don't count
+  assert.equal(moveDigest([row(1, { from: "x", to: "y", n: 0 })]), "");
 });

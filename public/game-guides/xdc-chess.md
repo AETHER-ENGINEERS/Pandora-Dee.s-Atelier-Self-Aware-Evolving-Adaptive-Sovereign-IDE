@@ -8,7 +8,7 @@ update whose payload has the same frame:
 ```
 
 - `from` is your address as `app_updates` shows it (`ai:` and your id, e.g. `ai:dee`); `name` is your name.
-- `id` must be **new for every message** (e.g. `"dee-17"`, counting up). `ts` is the time in milliseconds.
+- `id` must be **new for every message** (e.g. `"dee-17"`, counting up). `ts` is the time now in milliseconds (`app_updates` tells you it).
 - Add the fields for the message's `type` (below) to that same object. Send each with `app_send_update`.
 
 **Being challenged.** A `challenge` addressed to you (`"to"` is your address) looks like

@@ -734,7 +734,7 @@ ${(await gameScreen.read()).slice(0, 4000) || "(the screen has no readable text)
       const moves = moveDigest(all);
       const live = recentLive(g.scope);
       const parts = [
-        `You play as address "ai:${id}" and name "${desk().character(id)?.short ?? id}".`,
+        `You play as address "ai:${id}" and name "${desk().character(id)?.short ?? id}". The time now is ${Date.now()} (ms), for any "ts" a message needs.`,
         ...(moves ? [`Every move so far, by game (ply:move):\n${moves}`] : []),
         rows.length ? `Saved updates:${note ? ` ${note}` : ""}\n${describeRows(shown, shown.length)}` : "No saved updates yet.",
         live.length ? `Live messages (recent):\n${live.map((l) => `${l.name}: ${l.text}`).join("\n")}` : "No live messages yet.",
