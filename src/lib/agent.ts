@@ -198,6 +198,8 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
   const g = s.game;
   const playing = Boolean(g && g.players.includes(me.id));
   const screen = playing ? await gameScreen.read() : "";
+  // a game turn has the guide in its instruction; any other turn while she's playing gets it here
+  const guide = playing && !opts.game && g ? await gameGuide(g.slug) : "";
   const bridge = opts.replyTo?.bridge && opts.replyTo.source !== "desk" ? { ...opts.replyTo.bridge, source: opts.replyTo.source as "discord" | "vector" } : undefined;
   const ctx: TurnCtx = {
     charId: me.id,
@@ -227,7 +229,7 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
     files: s.filesOf(me.id),
     room: room.some((c) => c.id === me.id) ? room : [...room, me],
     people,
-    game: g && playing ? { title: g.title, players: g.players.map((p) => s.character(p)?.short ?? p), screen, xdc: g.kind === "xdc" } : undefined,
+    game: g && playing ? { title: g.title, players: g.players.map((p) => s.character(p)?.short ?? p), screen, xdc: g.kind === "xdc", guide } : undefined,
     now: new Date(),
     length: aiFor(me.id).length,
     summary: meta?.summary,
@@ -699,8 +701,8 @@ export async function gameTurn() {
   await withRun(async () => {
     for (const c of players) {
       if (controller?.signal.aborted) return;
-      // each player knows their own seat: first in the list plays first
-      const seat = `\nYou're player ${players.indexOf(c) + 1} of ${players.length}: ${players.map((p, i) => `${i + 1} ${p.short}`).join(", ")}.`;
+      // who's playing, in order; a seat is the game's to give: the person at the board may already hold one
+      const seat = `\nThe characters playing, in order: ${players.map((p, i) => `${i + 1} ${p.short}`).join(", ")}. In a game with seats, take a free one: the person at the board may already hold one (often the first), so check the state before you claim yours.`;
       await takeTurn(c, {
         scope: "locksmith",
         game: true,

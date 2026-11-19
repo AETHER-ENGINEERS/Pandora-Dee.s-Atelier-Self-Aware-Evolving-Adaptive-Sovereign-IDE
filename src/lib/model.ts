@@ -289,7 +289,17 @@ export function textToolCalls(text: string, names: string[]): { calls: { name: s
     const lines = rest.split("\n");
     const kept: string[] = [];
     for (let i = 0; i < lines.length; i++) {
-      const name = lines[i].trim();
+      // the name on a line of its own, or (GLM again) glued to the end of a sentence: "…from the centre.app_send_update",
+      // with the JSON starting on the next line; the sentence stays said
+      let name = lines[i].trim();
+      let said = "";
+      if (!known.has(name) && /^\s*[{[]/.test(lines[i + 1] ?? "")) {
+        const glued = [...known].find((n) => name.endsWith(n) && /[^\w]$/.test(name.slice(0, -n.length)));
+        if (glued) {
+          said = name.slice(0, -glued.length).trim();
+          name = glued;
+        }
+      }
       if (known.has(name)) {
         let j = i + 1;
         let body = "";
@@ -308,6 +318,7 @@ export function textToolCalls(text: string, names: string[]): { calls: { name: s
         }
         if (args) {
           calls.push({ name, args });
+          if (said) kept.push(said);
           i = j;
           continue;
         }

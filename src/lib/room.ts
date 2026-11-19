@@ -135,7 +135,7 @@ export type PromptContext = {
   files: Record<string, string>;
   room: Character[];
   people: string[];
-  game?: { title: string; players: string[]; screen?: string; xdc?: boolean };
+  game?: { title: string; players: string[]; screen?: string; xdc?: boolean; guide?: string };
   now: Date;
   length?: "short" | "normal" | "long";
   /** Summary of the earlier part of a compacted conversation. */
@@ -236,6 +236,9 @@ export function systemPrompt(ctx: PromptContext): string {
   if (ctx.game) {
     lines.push(`A game is open: "${ctx.game.title}". Playing together: ${ctx.game.players.join(", ")}.`);
     if (ctx.game.screen) lines.push(`What the game screen shows right now:\n"""\n${ctx.game.screen.slice(0, 1500)}\n"""`);
+    // a Vector app is played for real: its moves go through the tools, so a move only described in words isn't made
+    if (ctx.game.xdc) lines.push(`You're a real player in it: app_updates shows the game's state, and app_send_update makes your move. A move you only describe in words isn't made, so when it's your turn, send it, then say a line about it.`);
+    if (ctx.game.guide) lines.push(`How to play it (the game's guide):\n${ctx.game.guide}`);
   }
   if (!own) lines.push(
     `Messages from others arrive as "Name: text". Speak only as yourself: never write lines for anyone else, and don't start your reply with your own name.`,

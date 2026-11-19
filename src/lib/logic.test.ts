@@ -400,6 +400,12 @@ test("tool calls a model wrote as text are found (GLM, <tool_call>, bare JSON), 
   assert.equal(r.rest, "The game state is unknown.");
   r = textToolCalls('app_send_update\n{\n  "payload": {"x": 7, "y": 7}\n}', names);
   assert.deepEqual(r.calls, [{ name: "app_send_update", args: { payload: { x: 7, y: 7 } } }]);
+  // GLM again: the name glued to the end of a sentence, the arguments on the next line; the sentence stays
+  r = textToolCalls("I'll answer at r8, c8.app_send_update\n{\"action\": \"MOVE\", \"r\": 8, \"c\": 8, \"player\": 2}", names);
+  assert.deepEqual(r.calls, [{ name: "app_send_update", args: { action: "MOVE", r: 8, c: 8, player: 2 } }]);
+  assert.equal(r.rest, "I'll answer at r8, c8.");
+  // a name inside a word isn't a call
+  assert.equal(textToolCalls("see my_app_updates\n{}", names).calls.length, 0);
   // Qwen / Hermes
   r = textToolCalls('Let me look. <tool_call>{"name": "app_updates", "arguments": {"since": 3}}</tool_call>', names);
   assert.deepEqual(r.calls, [{ name: "app_updates", args: { since: 3 } }]);
