@@ -33,7 +33,7 @@ import { currentChat } from "./chats.ts";
 import { compact, shouldCompact } from "./context.ts";
 import { fitTurns, isCtxError, learnLimit, learnedLimit, sizeOf } from "./ctxfit.ts";
 import { missedNote, missedTool } from "./missedTool.ts";
-import { CLAIM_NOTE, claimsTool } from "./deskRecord.ts";
+import { CLAIM_NOTE, SAY_NOTE, claimsTool, saidNothing } from "./deskRecord.ts";
 import { bookFor, bookHeader, parseScene, redactKeys, sceneText } from "./storybook.ts";
 import { allKeyValues, envFor } from "./residentKeys.ts";
 import { isLimitError, recordLimit, recordUsage } from "./meter.ts";
@@ -284,6 +284,7 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
       let noteGiven = false;
       let heardGiven = false;
       let claimGiven = false;
+      let sayGiven = false;
       let final = "";
       let thought = "";
       for (let step = 0; step <= ai.maxSteps; step++) {
@@ -360,6 +361,18 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
             patch({ tools: [...used] });
             turns.push({ role: "assistant", content: result.text });
             turns.push({ role: "user", content: missedNote(missed) });
+            continue;
+          }
+          // tools ran and then she said nothing at all (some models do, once the tools are put away): the desk asks her,
+          // once, to say it in words, and she gets one more step without tools to do it
+          if (!sayGiven && !signal.aborted && saidNothing(parts.text, `${result.thinking}${parts.thinking}`, used.filter((u) => !u.desk).length)) {
+            sayGiven = true;
+            used.push({ name: "reply", ok: false, note: "tools ran, then no words", out: SAY_NOTE, desk: true });
+            patch({ tools: [...used] });
+            turns.push({ role: "assistant", content: result.text });
+            turns.push({ role: "user", content: SAY_NOTE });
+            tools = [];
+            if (step >= ai.maxSteps) step--; // the last step was this one: she still gets hers
             continue;
           }
           final = shown + result.text;

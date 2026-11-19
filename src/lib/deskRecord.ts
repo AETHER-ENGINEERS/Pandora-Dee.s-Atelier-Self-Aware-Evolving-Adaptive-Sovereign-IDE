@@ -35,3 +35,8 @@ export function recordLine(tools: Use[] | undefined, text: string): string {
 export const stripRecords = (text: string) => text.replace(/\n*\[desk (?:record|note)[^\]\n]*\]\s*/gi, "\n").replace(/\n{3,}/g, "\n\n");
 
 export const CLAIM_NOTE = "[Desk note] No tool ran in this reply, so what you described didn't come from one.";
+/** After tools ran, a reply with no words at all: nobody in the room heard anything. */
+export const SAY_NOTE = "[Desk note] Your tools ran, but your reply had no words, so nobody heard anything. Say now, in words, what you found and what you'll do next (no more tools this reply).";
+
+/** Whether a reply said nothing after tools had run: no words, no thinking, nothing asked for. */
+export const saidNothing = (text: string, thinking: string, toolsRan: number) => toolsRan > 0 && !text.trim() && !thinking.trim();

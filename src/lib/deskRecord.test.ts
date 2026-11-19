@@ -38,3 +38,12 @@ test("the record for a reread reply", () => {
   );
   assert.equal(recordLine(undefined, "Hi Claude! Good luck."), "");
 });
+
+test("a reply with no words after tools ran is caught; one that said something, or used no tools, isn't", async () => {
+  const { saidNothing } = await import("./deskRecord.ts");
+  assert.equal(saidNothing("", "", 8), true);
+  assert.equal(saidNothing("  \n", "", 2), true);
+  assert.equal(saidNothing("Black to the centre.", "", 8), false);
+  assert.equal(saidNothing("", "I should open the game first", 3), false, "thinking out loud is the unsaid note's job");
+  assert.equal(saidNothing("", "", 0), false, "no tools: an empty reply is a pass, not this");
+});
