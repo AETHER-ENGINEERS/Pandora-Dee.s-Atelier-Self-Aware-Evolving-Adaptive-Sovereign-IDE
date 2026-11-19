@@ -1466,6 +1466,22 @@ export function deskServer() {
       // web pages for the Browser, on the apps' address (and in a sandboxed frame there)
       // (when shared on the network there's no separate apps' address; the page's own sandbox policy still holds)
       if (url.pathname === "/browse" && (isAppHost(req) || lan() || viaTailnet(req))) return void (await browser.serve(req, res, url));
+      // An app built to sit at the root of its own address (Vite's "/assets/…", as most Vector apps are) asks for root
+      // paths. Here every app shares one address under /run/<id>/, so those come from the app whose page asked (its
+      // Referer), and only ever from that app's own files; anything else on the apps' address stays as it was.
+      if (isAppHost(req) && !url.pathname.startsWith("/run/") && !url.pathname.startsWith("/games/") && url.pathname !== "/browse") {
+        // the folder the asking page lives in: "/run/<id>/", or a built-in game's "/games/<set>/<slug>/"
+        let home = "";
+        try {
+          const from = new URL(String(req.headers.referer || "")).pathname;
+          const app = /^\/run\/([^/]+)\//.exec(from);
+          const game = /^\/games\/([^/]+)\/([^/]+)\//.exec(from);
+          home = app ? `/run/${app[1]}/` : game ? `/games/${game[1]}/${game[2]}/` : "";
+        } catch {
+          /* no page, or not an address */
+        }
+        if (home && run(req, res, new URL(home + url.pathname.slice(1) + url.search, url)) !== null) return;
+      }
       if (url.pathname.startsWith("/run/") || (url.pathname.startsWith("/games/") && isAppHost(req))) {
         if (isDeskHost(req) && !lan()) return send(res, 403, "Apps run on their own address.", "text/plain");
         if (run(req, res, url) !== null) return;
