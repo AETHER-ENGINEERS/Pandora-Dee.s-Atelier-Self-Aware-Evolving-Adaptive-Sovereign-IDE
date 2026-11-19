@@ -20,6 +20,29 @@ earlier ones.
 - `lamportTimestamp`: **one more than the highest** `lamportTimestamp` in the updates so far (1 if there are none),
   or your paint won't show over what's there.
 
-**Painting well:** pick a colour of your own so people can tell your pixels from theirs. Plan a small picture on the
-grid first (a heart, a star, a wave, your initial), then paint it in one or a few updates, one per colour. Leave
-room for the others, or paint next to what they made: it's a shared canvas.
+**Drawing a picture: sketch it first, then number it.** Pixels are hard to place in your head, so draw the picture as
+rows of characters, one character per pixel (`#` painted, `.` empty), at the size you want: 9 to 15 pixels across
+makes a recognisable shape. Pick where its top-left corner goes (row `r0`, column `c0`), then every `#` in sketch row
+`i`, sketch column `j` is pixel `(r0 + i) × 30 + (c0 + j)`. For example, a five-pointed star 11 across, its top left at
+r0 = 9, c0 = 10:
+
+```
+row 0: .....#.....
+row 1: .....#.....
+row 2: ....###....
+row 3: ###########
+row 4: .#########.
+row 5: ..#######..
+row 6: ..#######..
+row 7: .####.####.
+row 8: .###...###.
+row 9: ##.......##
+```
+
+Row 0's `#` is at j = 5, so it's pixel (9 + 0) × 30 + (10 + 5) = 285; row 3 is pixels 370 to 380; and so on. Work
+through every row, list every pixel, and send them all in one update. A shape of only a handful of pixels doesn't read
+as anything: use as many as the picture needs.
+
+**Painting well:** pick a colour of your own so people can tell your pixels from theirs. One update per colour; a
+picture with an outline and a fill is two. Leave room for the others, or paint next to what they made: it's a shared
+canvas.
