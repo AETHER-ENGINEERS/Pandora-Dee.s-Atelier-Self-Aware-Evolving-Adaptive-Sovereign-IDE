@@ -16,6 +16,7 @@ import {
   RefreshCw,
   Sparkles,
   Wand2,
+  Armchair,
   Rows3,
   Search,
   Square,
@@ -864,6 +865,8 @@ export function GameBack() {
 export function GameBar() {
   const [full, setFull] = useState(false);
   const [chat, setChat] = useGameChat();
+  const g = useDesk((s) => s.game);
+  const seatsOn = useDesk((s) => (g?.kind === "xdc" ? seatsWanted(s.appPrefs, g.slug) : false));
   useEffect(() => {
     const on = () => setFull(Boolean(document.fullscreenElement));
     document.addEventListener("fullscreenchange", on);
@@ -872,6 +875,17 @@ export function GameBar() {
   return (
     <>
       <span className="grow" />
+      {g?.kind === "xdc" ? (
+        <button
+          className={`icon-btn${seatsOn ? " on" : ""}`}
+          onClick={() => desk().setAppPrefs(`xdc:${g.slug}`, { seats: !seatsOn })}
+          aria-pressed={seatsOn}
+          data-tip={seatsOn ? "The characters each have their own seat (a hidden copy running as them): tap to stop" : "Give each playing character her own seat: a hidden copy of the app running as her"}
+          aria-label="The characters' seats"
+        >
+          <Armchair size={15} />
+        </button>
+      ) : null}
       <button className="icon-btn" onClick={() => window.dispatchEvent(new Event("pdd-game-reload"))} data-tip="Reload" aria-label="Reload">
         <RefreshCw size={14} />
       </button>
@@ -1038,7 +1052,49 @@ function Playing() {
         )}
         {chat ? <GameChat /> : null}
       </div>
+      {g.kind === "xdc" && pkg && g.scope ? <Seats pkg={pkg} scope={g.scope} slug={g.slug} players={g.players} nonce={nonce} /> : null}
     </div>
   );
+}
+
+/** Seats are on unless turned off for this app. */
+const seatsWanted = (prefs: Record<string, AppPrefs>, slug: string) => prefs[`xdc:${slug}`]?.seats ?? true;
+
+/** Each playing character's own seat: a hidden copy of the app running as her (selfAddr "ai:<id>"), the way her own
+ *  device would. The app does for her what it does for any player (deals her tiles, keeps her board, answers its own
+ *  handshakes), and game_screen reads her copy instead of the person's. Silent, and out of sight. */
+function Seats({ pkg, scope, slug, players, nonce }: { pkg: Pkg; scope: string; slug: string; players: string[]; nonce: number }) {
+  const on = useDesk((s) => seatsWanted(s.appPrefs, slug));
+  // names as one string, so the selector gives the same value until something really changes
+  const names = useDesk((s) => players.map((id) => (s.roomCharacters().some((c) => c.id === id) ? (s.character(id)?.short ?? "") : "")).join("\n")).split("\n");
+  if (!on) return null;
+  return (
+    <div className="game-seats" aria-hidden="true">
+      {players.map((id, i) => (names[i] ? <Seat key={`${id}#${nonce}`} pkg={pkg} scope={scope} id={id} name={names[i]} /> : null))}
+    </div>
+  );
+}
+
+function Seat({ pkg, scope, id, name }: { pkg: Pkg; scope: string; id: string; name: string }) {
+  const ref = useRef<HTMLIFrameElement>(null);
+  // attach before the app's scripts run, as the person's frame does: they ask for their state at once
+  useEffect(() => {
+    const win = ref.current?.contentWindow;
+    if (!win) return;
+    return bridge.attach(win, scope, `ai:${id}`, name);
+  });
+  useEffect(() => {
+    gameScreen.registerSeat(id, () => readScreen(ref.current?.contentWindow));
+    // a seat makes no sound: the person hears their own copy
+    const hush = (e: MessageEvent) => {
+      if (e.source === ref.current?.contentWindow && (e.data as { __pdd?: string })?.__pdd === "volume-ready") ref.current?.contentWindow?.postMessage({ __pdd: "volume", volume: 0 }, "*");
+    };
+    window.addEventListener("message", hush);
+    return () => {
+      gameScreen.registerSeat(id, null);
+      window.removeEventListener("message", hush);
+    };
+  }, [id]);
+  return <iframe ref={ref} className="game-seat" src={library.runUrl(pkg, scope, `ai:${id}`, name)} title={`${name}'s seat`} tabIndex={-1} allow="autoplay; gamepad" />;
 }
 

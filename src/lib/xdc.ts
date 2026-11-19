@@ -197,6 +197,25 @@ export const bridge = {
   },
 };
 
+// What each copy of an app warned about lately (its console warnings and errors), by scope and player: a game that
+// refuses a move often says why only there.
+type Said = { at: number; level: string; text: string };
+const consoleLog = new Map<string, Said[]>();
+
+/** The warnings a player's own copy of an app gave since a moment (e.g. since that player sent a move). */
+export function appSaid(scope: string, addr: string, since: number) {
+  return (consoleLog.get(`${scope}\n${addr}`) ?? []).filter((l) => l.at >= since);
+}
+
+window.addEventListener("message", (e) => {
+  const c = e.data as { __pdd?: string; level?: string; text?: string } | null;
+  if (!c || c.__pdd !== "console") return;
+  const frame = [...frames].find((f) => f.win === e.source);
+  if (!frame) return;
+  const key = `${frame.scope}\n${frame.addr}`;
+  consoleLog.set(key, [...(consoleLog.get(key) ?? []), { at: Date.now(), level: String(c.level ?? "warn"), text: String(c.text ?? "").slice(0, 400) }].slice(-30));
+});
+
 window.addEventListener("message", (e) => {
   const m = e.data as { __pdd?: string; type?: string; rid?: number; [k: string]: unknown } | null;
   if (!m || m.__pdd !== "xdc") return;

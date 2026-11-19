@@ -477,7 +477,7 @@ export type LibSection = "all" | "games" | "xdc" | "favourites" | "recent";
 
 /** Per app (keyed by game slug or webxdc app key). */
 /** wake: the characters playing answer when a person makes a move (default on for Jade Link). */
-export type AppPrefs = { fav?: boolean; version?: string; separate?: boolean; played?: number; plays?: number; wake?: boolean };
+export type AppPrefs = { fav?: boolean; version?: string; separate?: boolean; played?: number; plays?: number; wake?: boolean; seats?: boolean };
 
 export type State = {
   // desktop

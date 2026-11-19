@@ -8,6 +8,20 @@ export function helperScript() {
 function helper() {
   if (window.__pddHelper) return;
   window.__pddHelper = true;
+  // An app's warnings and errors go to the desktop too: a game that refuses a move often says why only there
+  // ("rejected place: word must connect"), and a character who sent it needs to hear it.
+  ["warn", "error"].forEach((level) => {
+    const original = console[level];
+    console[level] = function (...args) {
+      try {
+        const text = args.map((a) => (typeof a === "string" ? a : (() => { try { return JSON.stringify(a); } catch (err) { return String(a); } })())).join(" ");
+        window.parent.postMessage({ __pdd: "console", level, text: text.slice(0, 400) }, "*");
+      } catch (err) {
+        /* nothing to tell */
+      }
+      return original.apply(this, args);
+    };
+  });
   window.addEventListener("message", (e) => {
     if (e.source !== window.parent || !e.data || e.data.__pdd !== "screen") return;
     let text = "";
@@ -16,7 +30,47 @@ function helper() {
     } catch (err) {
       text = "";
     }
-    window.parent.postMessage({ __pdd: "screen-reply", rid: e.data.rid, text: text.slice(0, 6000), title: document.title }, "*");
+    // A board made of cells that know their place (data-row and data-col): its text alone loses where each piece
+    // is, so draw it as rows first, with the column numbers on top. "." is an empty cell.
+    let grid = "";
+    try {
+      const cells = document.querySelectorAll("[data-row][data-col]");
+      if (cells.length >= 4) {
+        const at = new Map();
+        let rows = 0;
+        let cols = 0;
+        // what a cell holds: its first word ("O" from a tile "O 1", "TW" from a bonus square), shown or not
+        const label = (el) => {
+          const shown = String(el.innerText || "").trim().split(/\s+/)[0] || "";
+          if (shown) return shown;
+          const raw = String(el.textContent || "").trim();
+          return (/^[^\d\s]+/.exec(raw) || [""])[0];
+        };
+        cells.forEach((el) => {
+          rows = Math.max(rows, parseInt(el.getAttribute("data-row"), 10) + 1 || 0);
+          cols = Math.max(cols, parseInt(el.getAttribute("data-col"), 10) + 1 || 0);
+        });
+        // a filled cell often loses its coordinates (it's drawn as a piece instead); when the board's container holds
+        // exactly rows × cols children, place every child by its order instead
+        const box = cells[0].parentElement;
+        const kids = box ? Array.from(box.children) : [];
+        const byOrder = rows > 0 && cols > 0 && rows < 100 && cols < 100 && kids.length === rows * cols;
+        (byOrder ? kids : Array.from(cells)).forEach((el, i) => {
+          const r = byOrder ? Math.floor(i / cols) : parseInt(el.getAttribute("data-row"), 10);
+          const c = byOrder ? i % cols : parseInt(el.getAttribute("data-col"), 10);
+          if (!(r >= 0 && c >= 0 && r < 100 && c < 100)) return;
+          const first = label(el);
+          if (!at.has(r * 100 + c) || first) at.set(r * 100 + c, first.slice(0, 2));
+        });
+        const pad = (s) => (s + "   ").slice(0, 3);
+        const lines = [`   ${Array.from({ length: cols }, (_, c) => pad(String(c))).join("")}`];
+        for (let r = 0; r < rows; r++) lines.push(pad(String(r)) + Array.from({ length: cols }, (_, c) => pad(at.get(r * 100 + c) || ".")).join(""));
+        grid = `The board, row by row (rows down the side, columns along the top, both from 0; "." is empty):\n${lines.join("\n")}\n\n`;
+      }
+    } catch (err) {
+      grid = "";
+    }
+    window.parent.postMessage({ __pdd: "screen-reply", rid: e.data.rid, text: (grid + text).slice(0, 6000), title: document.title }, "*");
   });
   // Sound from games follows the desktop's app volume (audio and video elements, and Web Audio).
   let volume = 1;

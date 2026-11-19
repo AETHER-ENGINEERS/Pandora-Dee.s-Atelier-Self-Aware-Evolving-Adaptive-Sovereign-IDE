@@ -13,7 +13,7 @@ import { run } from "./shell.ts";
 import { mcpCommand } from "./mcpshell.ts";
 import { backupTool } from "./serverBackup.ts";
 import { gameScreen } from "./bus.ts";
-import { describeRows, library, recentLive, sendLive, sendUpdate } from "./xdc.ts";
+import { appSaid, describeRows, library, recentLive, sendLive, sendUpdate } from "./xdc.ts";
 import { moveDigest, pageRows } from "./xdcRows.ts";
 import { findSkill, searchSkills, skillsOf } from "./skills.ts";
 import { allTasks, baseOf, cleanVaultPath, isNote, loadNotes, noteName, noteTags, resolveNote, searchNotes, tasksIn, toggleTaskText, useNotes, vaultIndex, writeNote } from "./notes.ts";
@@ -711,13 +711,14 @@ const BASE: Tool[] = [
   },
   {
     name: "game_screen",
-    description: "Read the text currently showing in the open game or app, so you can play along.",
+    description: "Read the text currently showing in the open game or app, so you can play along: your own seat's view when you have one (the app running as you), else the person's screen.",
     parameters: obj({}),
-    run: async () => {
+    run: async (id) => {
       const g = desk().game;
       if (!g) return "No game or app is open.";
-      return `${g.title}:
-${(await gameScreen.read()).slice(0, 4000) || "(the screen has no readable text)"}`;
+      const own = gameScreen.hasSeat(id);
+      return `${g.title}, ${own ? "as it shows for you (your own seat)" : "as it shows on the person's screen"}:
+${(await gameScreen.read(id)).slice(0, 4000) || "(the screen has no readable text)"}`;
     },
   },
   {
@@ -777,8 +778,15 @@ ${(await gameScreen.read()).slice(0, 4000) || "(the screen has no readable text)
       void _info;
       const payload = given === undefined ? fields : typeof given === "string" ? JSON.parse(given) : given;
       if (!payload || typeof payload !== "object" || !Object.keys(payload).length) return "Send the update's payload: the same shape as the app's own updates (see app_updates and the game's guide).";
+      const sentAt = Date.now();
       const row = await sendUpdate(g.scope, `ai:${id}`, c?.short ?? id, { payload, ...(a.info ? { info: str(a.info) } : {}) });
-      return `Sent as update #${row.serial}.`;
+      // with a seat, her own copy of the game takes the update in too: give it a moment, and pass on any objection
+      if (!gameScreen.hasSeat(id)) return `Sent as update #${row.serial}.`;
+      await new Promise((r) => setTimeout(r, 900));
+      const said = appSaid(g.scope, `ai:${id}`, sentAt).map((l) => l.text);
+      return said.length
+        ? `Sent as update #${row.serial}, but the game objected (from your own seat):\n${said.slice(-5).join("\n")}\nIf it refused your move, it didn't happen: fix it and send it again.`
+        : `Sent as update #${row.serial}. Your seat raised no objection; game_screen shows the result.`;
     },
   },
 ];

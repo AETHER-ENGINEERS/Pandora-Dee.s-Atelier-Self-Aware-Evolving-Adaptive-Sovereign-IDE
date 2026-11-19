@@ -1207,3 +1207,7 @@ html { touch-action: pan-x pan-y; }
 .game-chat-line.me b { color: var(--text); }
 .game-chat-say { display: flex; gap: 6px; padding: 6px; border-top: 1px solid var(--line); }
 .game-chat-say .input { flex: 1; min-width: 0; }
+
+/* the characters' seats: real, laid-out copies of the app (so canvases have a size), kept out of sight */
+.game-seats { position: fixed; left: -20000px; top: 0; width: 960px; height: 640px; overflow: hidden; pointer-events: none; }
+.game-seat { width: 960px; height: 640px; border: 0; display: block; }

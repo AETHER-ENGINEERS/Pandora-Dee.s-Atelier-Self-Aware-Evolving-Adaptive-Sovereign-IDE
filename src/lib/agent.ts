@@ -201,7 +201,7 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
   const people = [s.session ?? (s.accounts.length ? "a guest" : "")].filter(Boolean);
   const g = s.game;
   const playing = Boolean(g && g.players.includes(me.id));
-  const screen = playing ? await gameScreen.read() : "";
+  const screen = playing ? await gameScreen.read(me.id) : "";
   // a game turn has the guide in its instruction; any other turn while she's playing gets it here
   const guide = playing && !opts.game && g ? await gameGuide(g.slug, g.kind === "xdc" ? g.pkgId : undefined) : "";
   const bridge = opts.replyTo?.bridge && opts.replyTo.source !== "desk" ? { ...opts.replyTo.bridge, source: opts.replyTo.source as "discord" | "vector" } : undefined;
