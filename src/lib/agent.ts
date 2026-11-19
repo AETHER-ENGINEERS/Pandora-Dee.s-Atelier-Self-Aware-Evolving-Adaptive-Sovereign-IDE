@@ -203,7 +203,7 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
   const playing = Boolean(g && g.players.includes(me.id));
   const screen = playing ? await gameScreen.read() : "";
   // a game turn has the guide in its instruction; any other turn while she's playing gets it here
-  const guide = playing && !opts.game && g ? await gameGuide(g.slug) : "";
+  const guide = playing && !opts.game && g ? await gameGuide(g.slug, g.kind === "xdc" ? g.pkgId : undefined) : "";
   const bridge = opts.replyTo?.bridge && opts.replyTo.source !== "desk" ? { ...opts.replyTo.bridge, source: opts.replyTo.source as "discord" | "vector" } : undefined;
   const ctx: TurnCtx = {
     charId: me.id,
@@ -726,9 +726,12 @@ bridge.watch((scope, row) => {
 
 /** How to play a game, for the characters: a guide in the vault (Games/guides/<game>.md, which people and characters
  *  can write and improve), else one that comes with the desktop (public/game-guides/), else nothing. */
-export async function gameGuide(slug: string): Promise<string> {
+export async function gameGuide(slug: string, pkgId?: string): Promise<string> {
   const name = `${slug.replace(/[^\w.-]+/g, "-").toLowerCase()}.md`;
-  for (const url of [`/api/vault/file?path=${encodeURIComponent(`Games/guides/${name}`)}`, `/game-guides/${name}`]) {
+  // the vault's guide first (yours to change), then the built-in one, then the guide a made game carries itself
+  const urls = [`/api/vault/file?path=${encodeURIComponent(`Games/guides/${name}`)}`, `/game-guides/${name}`];
+  if (pkgId) urls.push(`/api/xdc/${encodeURIComponent(pkgId)}/file?path=guide.md`);
+  for (const url of urls) {
     const r = await fetch(url).catch(() => null);
     const text = r?.ok && !/html/i.test(r.headers.get("content-type") ?? "") ? (await r.text()).trim() : "";
     if (text) return text.slice(0, 6000);
@@ -743,7 +746,7 @@ export async function gameTurn() {
   if (s.flood.shut) return s.notice("The flood gate is shut, so the characters are resting.");
   const players = g.players.map((id) => s.character(id)).filter((c): c is Character => Boolean(c));
   if (!players.length) return s.notice("No characters are playing. Tap their names above the game to add them.");
-  const guide = await gameGuide(g.slug);
+  const guide = await gameGuide(g.slug, g.kind === "xdc" ? g.pkgId : undefined);
   const how = guide ? `\n\nHow to play it (the game's guide):\n${guide}` : "";
   await withRun(async () => {
     for (const c of players) {
