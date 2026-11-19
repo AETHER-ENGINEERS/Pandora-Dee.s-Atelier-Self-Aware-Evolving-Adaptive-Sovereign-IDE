@@ -8,8 +8,8 @@ deals the tiles itself: you send nothing for that, and `game_screen` shows your 
 is. Look there before every move:
 - **The board** comes first, row by row: letters are tiles already played; `TW` `DW` (triple and double word), `TL`
   `DL` (triple and double letter) and `★` (the centre) are empty bonus squares; `.` is an empty square.
-- Then the scores, the tiles left in the bag, and the last move ("Claude played OXEN for 22 pts", followed by that
-  word's letters again).
+- Then the scores, the tiles left in the bag, the last move ("Claude played OXEN for 22 pts"), and every tile on the
+  board listed again (letter, then points). Those aren't yours.
 - **Your rack** is the last seven letters before the buttons (`Play`, `Shuffle`…), each followed by its points. The
   first is rack index 0. "Waiting for…" instead of the buttons means it isn't your turn.
 
