@@ -1027,6 +1027,26 @@ export const useDesk = create<Store>()(
 
 export const desk = () => useDesk.getState();
 
+// The open game outlives a reload of this window (not a fresh start), so characters mid-game keep their game tools
+// and the board comes back where it was.
+if (typeof sessionStorage !== "undefined") {
+  try {
+    const g = JSON.parse(sessionStorage.getItem("pdd-open-game") ?? "null") as GameState | null;
+    if (g && typeof g === "object" && g.kind && g.slug) useDesk.setState({ game: g });
+  } catch {
+    /* nothing to bring back */
+  }
+  useDesk.subscribe((s, prev) => {
+    if (s.game === prev.game) return;
+    try {
+      if (s.game) sessionStorage.setItem("pdd-open-game", JSON.stringify(s.game));
+      else sessionStorage.removeItem("pdd-open-game");
+    } catch {
+      /* storage full or blocked: the game just won't come back after a reload */
+    }
+  });
+}
+
 // The relay needs to know where Python is, when it was set in Connections → Web.
 pythonFrom(() => useDesk.getState().net.python);
 noticesFrom((text) => useDesk.getState().say(text));

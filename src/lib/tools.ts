@@ -14,6 +14,7 @@ import { mcpCommand } from "./mcpshell.ts";
 import { backupTool } from "./serverBackup.ts";
 import { gameScreen } from "./bus.ts";
 import { describeRows, library, recentLive, sendLive, sendUpdate } from "./xdc.ts";
+import { moveDigest, pageRows } from "./xdcRows.ts";
 import { findSkill, searchSkills, skillsOf } from "./skills.ts";
 import { allTasks, baseOf, cleanVaultPath, isNote, loadNotes, noteName, noteTags, resolveNote, searchNotes, tasksIn, toggleTaskText, useNotes, vaultIndex, writeNote } from "./notes.ts";
 import { openNote } from "../ui/noteNav.ts";
@@ -722,15 +723,20 @@ ${(await gameScreen.read()).slice(0, 4000) || "(the screen has no readable text)
   {
     name: "app_updates",
     description: "For the open Vector app (webxdc): read the recent shared updates everyone (and you) sent, to see the game state and whose move it is.",
-    parameters: obj({ since: { type: "number", description: "Only updates after this serial number. 0 for the latest few." } }),
+    parameters: obj({ since: { type: "number", description: "Only updates after this serial number (to page forward). 0 or left out for the latest ones."} }),
     run: async (id, a) => {
       const g = desk().game;
       if (!g || g.kind !== "xdc" || !g.scope) return "No Vector app is open.";
-      const rows = await library.updates(g.scope, Number(a.since ?? 0));
+      const since = Math.max(0, Number(a.since ?? 0) || 0);
+      const all = await library.updates(g.scope, 0);
+      const rows = since ? all.filter((r) => r.serial > since) : all;
+      const { shown, note } = pageRows(rows, since);
+      const moves = moveDigest(all);
       const live = recentLive(g.scope);
       const parts = [
         `You play as address "ai:${id}" and name "${desk().character(id)?.short ?? id}".`,
-        rows.length ? `Saved updates:\n${describeRows(rows, 20)}` : "No saved updates yet.",
+        ...(moves ? [`Every move so far, by game (ply:move):\n${moves}`] : []),
+        rows.length ? `Saved updates:${note ? ` ${note}` : ""}\n${describeRows(shown, shown.length)}` : "No saved updates yet.",
         live.length ? `Live messages (recent):\n${live.map((l) => `${l.name}: ${l.text}`).join("\n")}` : "No live messages yet.",
       ];
       return parts.join("\n\n");

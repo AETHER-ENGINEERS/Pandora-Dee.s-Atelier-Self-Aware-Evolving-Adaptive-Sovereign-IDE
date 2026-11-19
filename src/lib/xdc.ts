@@ -19,7 +19,7 @@ export type Pkg = {
 };
 
 export type Update = { payload: unknown; info?: string; summary?: string; document?: string; href?: string; serial: number; max_serial?: number };
-type Row = { serial: number; at: number; from: string; name: string; update: Omit<Update, "serial" | "max_serial">; descr?: string };
+export type Row = { serial: number; at: number; from: string; name: string; update: Omit<Update, "serial" | "max_serial">; descr?: string };
 
 /** Apps run on a different origin from the desktop, so they can't read its storage. */
 export function appOrigin(): { origin: string; isolated: boolean } {
