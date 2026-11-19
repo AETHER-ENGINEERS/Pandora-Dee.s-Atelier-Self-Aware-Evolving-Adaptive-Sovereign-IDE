@@ -44,5 +44,7 @@ export const saidNothing = (text: string, thinking: string, toolsRan: number) =>
 // A move in an open game told, not made: "same star, now in cyan", "my stone goes to r8 c8", "I'll take e5".
 const MOVE = /\b(i(?:'ll|'m| will| am)?\s+(?:place|put|paint|repaint|draw|play|move|take|drop|claim|mark|colour|color|fill)\b|(?:my|a|the)\s+(?:move|stone|piece|pixels?|star|mark|brush\w*)\s+(?:goes|lands?|is|at|on|in|now)\b|(?:placed|painted|repainted|played|moved|dropped|drew|coloured|colored|filled)\s+(?:my|a|the|it|them|at|on|in|over)\b|\bnow in (?:proper )?\w+\b|\b(?:same|new)\s+(?:star|shape|pixels|picture|move)\b)/i;
 /** Whether a reply tells of a move in the game (so, with no move sent, nothing changed). */
-export const claimsMove = (text: string) => MOVE.test(text);
+// A move in chess notation after its number ("18…Ne2+", "17. Qxa7", "5...exd4", "9. O-O"): case matters here.
+const NUMBERED = /\b\d{1,3}\s*(?:\.{1,3}|…)\s*(?:[KQRBN][a-h]?[1-8]?x?[a-h][1-8]|[a-h](?:x[a-h])?[1-8](?:=?[QRBN])?|O-O(?:-O)?)(?![\w-])/;
+export const claimsMove = (text: string) => MOVE.test(text) || NUMBERED.test(text);
 export const MOVE_NOTE = "[Desk note] No move was sent in this reply, so the game hasn't changed: describing a move doesn't make it. If you meant to make one, send it now with app_send_update (the guide shows the shape), then say a line about it.";

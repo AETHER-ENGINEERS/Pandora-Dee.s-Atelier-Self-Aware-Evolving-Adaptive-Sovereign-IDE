@@ -50,8 +50,8 @@ test("a reply with no words after tools ran is caught; one that said something, 
 
 test("a move told in words, not sent, is caught; plain talk isn't", async () => {
   const { claimsMove } = await import("./deskRecord.ts");
-  for (const t of ["Black star, begone — same shape, now in proper cyan.", "I'll place my white stone at r8, c8.", "My stone goes to the corner.", "Repainted it over the black.", "I'll take e5."])
+  for (const t of ["Black star, begone — same shape, now in proper cyan.", "I'll place my white stone at r8, c8.", "My stone goes to the corner.", "Repainted it over the black.", "I'll take e5.", "18…Ne2+! — the zwischenzug.", "17. Qxa7: dessert.", "5...exd4, opening the centre", "9. O-O and safe."])
     assert.equal(claimsMove(t), true, t);
-  for (const t of ["Good game, Claude!", "That was a clever opening.", "Your move, Jade!", "The board is quiet today."])
+  for (const t of ["Good game, Claude!", "That was a clever opening.", "Your move, Jade!", "The board is quiet today.", "Version 0.6.199 is out.", "Step 2. Open the app.", "It took 2.5 seconds."])
     assert.equal(claimsMove(t), false, t);
 });
