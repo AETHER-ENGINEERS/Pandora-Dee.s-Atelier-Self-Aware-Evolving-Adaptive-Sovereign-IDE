@@ -473,3 +473,18 @@ test("the browser route falls back to the relay only when that can't send a requ
     globalThis.fetch = real;
   }
 });
+
+test("textToolCalls catches a call written out in a code block or on its own line, as a guide shows it", () => {
+  const names = ["game_seat_act", "app_updates"];
+  // Jade in Secret Word, 2026-11-19: the guide's example copied exactly, in a json block
+  let r = textToolCalls('```json\n{"name": "game_seat_act", "arguments": {"do": "type", "target": "Letter", "text": "O", "enter": true}}\n```', names);
+  assert.deepEqual(r.calls, [{ name: "game_seat_act", args: { do: "type", target: "Letter", text: "O", enter: true } }]);
+  assert.equal(r.rest, "");
+  r = textToolCalls('My guess is O!\n{"name": "game_seat_act", "arguments": {"do": "type", "target": "Letter", "text": "O"}}\n{"name": "game_seat_act", "arguments": {"do": "click", "target": "Guess"}}', names);
+  assert.equal(r.calls.length, 2);
+  assert.equal(r.rest, "My guess is O!");
+  // a code block that isn't a call stays as it is
+  r = textToolCalls("Here's the board:\n```\n8 r . . k\n```", names);
+  assert.equal(r.calls.length, 0);
+  assert.match(r.rest, /8 r \. \. k/);
+});

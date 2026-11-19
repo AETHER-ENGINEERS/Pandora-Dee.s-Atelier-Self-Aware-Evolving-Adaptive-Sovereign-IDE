@@ -722,6 +722,37 @@ ${(await gameScreen.read(id)).slice(0, 4000) || "(the screen has no readable tex
     },
   },
   {
+    name: "game_seat_act",
+    description:
+      "Use a control on your own seat's screen, the way a person uses their own: type into a field, click a button or a board cell, or pick a choice. It's private: no one else sees your screen or what you type there, only what the game itself sends out (so a secret word you type stays yours). game_screen lists the controls you can use.",
+    parameters: obj(
+      {
+        do: { type: "string", description: "One of: type (into a field), click (a button or a board cell), choose (in a list)" },
+        target: { type: "string", description: 'The control, by the name game_screen gives it (e.g. "Secret word", "Lock it in"), or a board cell as "row,col"' },
+        text: { type: "string", description: "What to type, or which choice to pick" },
+        enter: { type: "boolean", description: "After typing, press Enter" },
+      },
+      ["do", "target"],
+    ),
+    run: async (id, a) => {
+      const g = desk().game;
+      if (!g) return "No game or app is open.";
+      if (!gameScreen.hasSeat(id)) return "You have no seat of your own in this app (seats may be off for it), so there's no screen of yours to use.";
+      const sentAt = Date.now();
+      const kind = a.do === "type" || a.do === "choose" ? a.do : "click";
+      const r = await gameScreen.act(id, { do: kind, target: str(a.target), ...(a.text !== undefined ? { text: str(a.text) } : {}), ...(a.enter ? { enter: true } : {}) });
+      if (!r.ok) return r.said;
+      await new Promise((res) => setTimeout(res, 700));
+      const said = g.kind === "xdc" && g.scope ? appSaid(g.scope, `ai:${id}`, sentAt).map((l) => l.text) : [];
+      const screen = (await gameScreen.read(id)).slice(0, 2500);
+      return `${r.said}${said.length ? `
+The game said: ${said.slice(-3).join(" / ")}` : ""}
+
+Your screen now:
+${screen || "(no readable text)"}`;
+    },
+  },
+  {
     name: "app_updates",
     description: "For the open Vector app (webxdc): read the recent shared updates everyone (and you) sent, to see the game state and whose move it is.",
     parameters: obj({ since: { type: "number", description: "Only updates after this serial number (to page forward). 0 or left out for the latest ones."} }),
@@ -1359,7 +1390,7 @@ const NOTE_ALIASES: Record<string, string> = { read: "note_read", write: "note_w
 
 /** For a game turn: only the tools for playing (the screen, the game's updates, sending a move), so a model that
  *  would rather talk than pick from thirty tools sees just what the turn is for. */
-const GAME_TOOLS = new Set(["game_screen", "app_updates", "app_send_live", "app_send_update"]);
+const GAME_TOOLS = new Set(["game_screen", "game_seat_act", "app_updates", "app_send_live", "app_send_update"]);
 export function gameToolsFor(): Tool[] {
   return BASE.filter((t) => GAME_TOOLS.has(t.name));
 }
@@ -1425,6 +1456,7 @@ export function describeCall(name: string, args: Record<string, unknown>) {
     skill: "looked at skills",
     journal_write: "wrote in the journal",
     game_screen: "looked at the screen",
+    game_seat_act: "used their own screen",
     app_updates: "checked the game state",
     app_send_update: "made a move",
     app_send_live: "spoke to the app",

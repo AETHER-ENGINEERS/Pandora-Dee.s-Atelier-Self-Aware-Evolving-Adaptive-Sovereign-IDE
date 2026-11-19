@@ -111,7 +111,8 @@ export type ToolSpec = { name: string; description: string; parameters: Record<s
 
 /** `thinking`: what a reasoning model sent as its reasoning (apart from the reply). */
 /** What a call cost: the server's own counts when it reports them, else an estimate (four characters a token). */
-export type CallUsage = { prompt: number; output: number; ms: number; estimated: boolean; limits?: Record<string, string> };
+/** `pace` (Ollama only): how long the computer spent loading the model, reading the prompt and writing the answer. */
+export type CallUsage = { prompt: number; output: number; ms: number; estimated: boolean; limits?: Record<string, string>; pace?: { loadMs: number; readMs: number; writeMs: number } };
 export type StreamResult = { text: string; toolCalls: ToolCall[]; thinking: string; usage?: CallUsage };
 
 /** The rate-limit headers a provider sends (OpenAI, Groq, OpenRouter and others), so a character can see her limits coming. */
@@ -276,6 +277,36 @@ export function textToolCalls(text: string, names: string[]): { calls: { name: s
       return all;
     }
   });
+  // a call written out as {"name": …, "arguments": …}, in a code block or on a line of its own (as a guide shows it):
+  // GLM copies the example's shape exactly
+  const callsIn = (body: string) => {
+    const before = calls.length;
+    try {
+      if (asCall(JSON.parse(body))) return true;
+    } catch {
+      /* one call per line, perhaps */
+    }
+    const lines = body.split("\n").filter((l) => l.trim());
+    const parsed = lines.map((l) => {
+      try {
+        return JSON.parse(l) as unknown;
+      } catch {
+        return null;
+      }
+    });
+    const named = (j: unknown) => {
+      const o = j as { name?: unknown } | null;
+      return Boolean(o && typeof o.name === "string" && known.has(o.name));
+    };
+    if (!parsed.length || !parsed.every(named)) return false;
+    parsed.forEach(asCall);
+    return calls.length > before;
+  };
+  rest = rest.replace(/```(?:json)?[ \t]*\n?([\s\S]*?)```/g, (all, body: string) => (callsIn(body.trim()) ? "" : all));
+  rest = rest
+    .split("\n")
+    .filter((l) => !(/^\s*\{\s*"name"\s*:/.test(l) && callsIn(l.trim())))
+    .join("\n");
   // a bare JSON call, the whole reply
   if (!calls.length && /^\s*\{[\s\S]*\}\s*$/.test(rest)) {
     try {
@@ -444,6 +475,7 @@ export async function streamOnce(
   const partial = new Map<number, { id: string; name: string; args: string }>();
   let thinking = "";
   let counted: { prompt: number; output: number } | null = null;
+  let pace: CallUsage["pace"] | undefined;
   const think = (piece: string | undefined | null) => {
     if (!piece) return;
     thinking += piece;
@@ -471,9 +503,16 @@ export async function streamOnce(
           done?: boolean;
           prompt_eval_count?: number;
           eval_count?: number;
+          load_duration?: number;
+          prompt_eval_duration?: number;
+          eval_duration?: number;
         };
         if (row.error) throw new Error(row.error);
-        if (row.done && (row.prompt_eval_count || row.eval_count)) counted = { prompt: row.prompt_eval_count ?? 0, output: row.eval_count ?? 0 };
+        if (row.done && (row.prompt_eval_count || row.eval_count)) {
+          counted = { prompt: row.prompt_eval_count ?? 0, output: row.eval_count ?? 0 };
+          // (nanoseconds; a cloud model through Ollama reports none)
+          if (row.prompt_eval_duration || row.eval_duration) pace = { loadMs: Math.round((row.load_duration ?? 0) / 1e6), readMs: Math.round((row.prompt_eval_duration ?? 0) / 1e6), writeMs: Math.round((row.eval_duration ?? 0) / 1e6) };
+        }
         think(row.message?.thinking);
         take(row.message?.content);
         for (const tc of row.message?.tool_calls ?? []) {
@@ -508,7 +547,7 @@ export async function streamOnce(
     if (p.name) calls.push({ id: p.id || newCallId(), name: p.name, args: parseArgs(p.args) });
   }
   const usage: CallUsage = counted
-    ? { ...counted, ms: Date.now() - started, estimated: false, limits: limitHeaders(res.headers) }
+    ? { ...counted, ms: Date.now() - started, estimated: false, limits: limitHeaders(res.headers), ...(pace ? { pace } : {}) }
     : {
         prompt: Math.ceil((JSON.stringify(turns).length + JSON.stringify(toolDefs).length) / 4),
         output: Math.ceil((text.length + thinking.length + JSON.stringify(calls).length) / 4),

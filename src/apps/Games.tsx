@@ -27,7 +27,7 @@ import {
 import { desk, useDesk, type AppPrefs, type LibSection, type LibSort, type LibView } from "../lib/store.ts";
 import { gameScreen } from "../lib/bus.ts";
 import { gameTurn, sayToPlayers } from "../lib/agent.ts";
-import { appOrigin, bridge, groupApps, library, readScreen, webImportSaid, type Pkg, type UpdateRow } from "../lib/xdc.ts";
+import { appOrigin, bridge, groupApps, library, actOnScreen, readScreen, webImportSaid, type Pkg, type UpdateRow } from "../lib/xdc.ts";
 import { allowed } from "../lib/privacy.ts";
 import { imagineGame } from "../lib/gameMaker.ts";
 import { slug } from "../lib/characters.ts";
@@ -1085,6 +1085,7 @@ function Seat({ pkg, scope, id, name }: { pkg: Pkg; scope: string; id: string; n
   });
   useEffect(() => {
     gameScreen.registerSeat(id, () => readScreen(ref.current?.contentWindow));
+    gameScreen.registerActor(id, (act) => actOnScreen(ref.current?.contentWindow, act));
     // a seat makes no sound: the person hears their own copy
     const hush = (e: MessageEvent) => {
       if (e.source === ref.current?.contentWindow && (e.data as { __pdd?: string })?.__pdd === "volume-ready") ref.current?.contentWindow?.postMessage({ __pdd: "volume", volume: 0 }, "*");
@@ -1092,6 +1093,7 @@ function Seat({ pkg, scope, id, name }: { pkg: Pkg; scope: string; id: string; n
     window.addEventListener("message", hush);
     return () => {
       gameScreen.registerSeat(id, null);
+      gameScreen.registerActor(id, null);
       window.removeEventListener("message", hush);
     };
   }, [id]);

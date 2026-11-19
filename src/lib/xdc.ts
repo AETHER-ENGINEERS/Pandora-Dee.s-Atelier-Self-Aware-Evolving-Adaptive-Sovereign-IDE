@@ -108,7 +108,8 @@ export const library = {
   runUrl: (p: Pkg, scope: string, addr: string, name: string) =>
     `${appOrigin().origin}/run/${p.id}/index.html?scope=${encodeURIComponent(scope)}&addr=${encodeURIComponent(addr)}&name=${encodeURIComponent(name)}`,
   updates: (scope: string, since = 0) => api<Row[]>(`state/${encodeURIComponent(scope)}?since=${since}`),
-  clearUpdates: (scope: string) => api(`state/${encodeURIComponent(scope)}`, { method: "DELETE" }),
+  // (the bridge forgets how far this app had got, so a new game's first updates aren't taken for old ones)
+  clearUpdates: (scope: string) => api(`state/${encodeURIComponent(scope)}`, { method: "DELETE" }).then((r) => (seen.delete(scope), r)),
 };
 
 /** Compare version labels so 0.10 sorts after 0.9. */
@@ -134,8 +135,14 @@ let chatHandler: (from: string, app: string, content: { text?: string; file?: { 
 
 const toUpdate = (r: Row, max: number): Update => ({ ...r.update, serial: r.serial, max_serial: max });
 
+// The newest update each open app has seen here. Another device on this SEASIDE (a phone, another PC) playing the same
+// app sends its updates to the same server; they're fetched every couple of seconds while the app is open, so both
+// devices play one game. (Each device runs only the characters it has playing.)
+const seen = new Map<string, number>();
+
 function broadcast(scope: string, rows: Row[]) {
   if (!rows.length) return;
+  seen.set(scope, Math.max(seen.get(scope) ?? 0, rows[rows.length - 1].serial));
   const max = rows[rows.length - 1].serial;
   const updates = rows.map((r) => toUpdate(r, max));
   for (const f of frames) if (f.scope === scope) f.win.postMessage({ __pdd: "xdc", type: "updates", updates }, "*");
@@ -146,8 +153,13 @@ export async function sendUpdate(scope: string, from: string, name: string, upda
   const clean = JSON.parse(JSON.stringify(update)) as Row["update"];
   const res = await fetch(`/api/state/${encodeURIComponent(scope)}`, { method: "POST", body: JSON.stringify({ from, name, update: clean, descr }) });
   const row = (await res.json()) as Row;
-  broadcast(scope, [row]);
-  for (const w of watchers) w(scope, row);
+  // another device's update may have reached the server just before this one: pass it on first, in order, or this
+  // page would skip past it
+  const before = seen.get(scope);
+  const rows = before !== undefined && row.serial > before + 1 ? (await library.updates(scope, before).catch(() => [row])).filter((r) => r.serial > before && r.serial <= row.serial) : [row];
+  if (!rows.some((r) => r.serial === row.serial)) rows.push(row);
+  broadcast(scope, rows);
+  for (const r of rows) for (const w of watchers) w(scope, r);
   return row;
 }
 
@@ -178,10 +190,36 @@ export function sendLive(scope: string, from: string, name: string, text: string
   for (const f of frames) if (f.scope === scope) f.win.postMessage({ __pdd: "xdc", type: "rt", data: bytes }, "*");
 }
 
+let pulling = false;
+async function pullOthers() {
+  if (pulling) return;
+  pulling = true;
+  try {
+    for (const scope of new Set([...frames].map((f) => f.scope))) {
+      const since = seen.get(scope);
+      if (since === undefined) continue; // not started yet: its frames ask for everything themselves
+      const got = await library.updates(scope, since).catch(() => [] as Row[]);
+      const now = seen.get(scope) ?? since; // (this page may have sent one meanwhile)
+      const rows = got.filter((r) => r.serial > now);
+      if (!rows.length) continue;
+      broadcast(scope, rows);
+      for (const r of rows) for (const w of watchers) w(scope, r);
+    }
+  } finally {
+    pulling = false;
+  }
+}
+let pullTimer = 0;
+function startPulling(scope: string) {
+  if (!seen.has(scope)) void library.updates(scope, 0).then((rows) => seen.set(scope, Math.max(seen.get(scope) ?? 0, rows.length ? rows[rows.length - 1].serial : 0))).catch(() => seen.set(scope, 0));
+  if (!pullTimer) pullTimer = window.setInterval(() => (frames.size ? void pullOthers() : (window.clearInterval(pullTimer), (pullTimer = 0))), 2000);
+}
+
 export const bridge = {
   attach(win: Window, scope: string, addr: string, name: string) {
     const f = { win, scope, addr, name };
     frames.add(f);
+    startPulling(scope);
     return () => {
       frames.delete(f);
     };
@@ -258,6 +296,28 @@ export function readScreen(win: Window | null | undefined, timeout = 1500): Prom
     const t = window.setTimeout(() => done(""), timeout);
     window.addEventListener("message", on);
     win.postMessage({ __pdd: "screen", rid }, "*");
+  });
+}
+
+let actSeq = 0;
+export type SeatAct = { do: "type" | "click" | "choose"; target: string; text?: string; enter?: boolean };
+/** Use a control on a seat's own screen (type, click, choose), the way its player would on their own device. */
+export function actOnScreen(win: Window | null | undefined, act: SeatAct, timeout = 2000): Promise<{ ok: boolean; said: string }> {
+  if (!win) return Promise.resolve({ ok: false, said: "Your seat isn't open." });
+  return new Promise((resolve) => {
+    const rid = ++actSeq;
+    const done = (r: { ok: boolean; said: string }) => {
+      window.removeEventListener("message", on);
+      clearTimeout(t);
+      resolve(r);
+    };
+    const on = (e: MessageEvent) => {
+      const d = e.data as { __pdd?: string; rid?: number; ok?: boolean; said?: string } | null;
+      if (e.source === win && d?.__pdd === "act-reply" && d.rid === rid) done({ ok: Boolean(d.ok), said: String(d.said ?? "") });
+    };
+    const t = window.setTimeout(() => done({ ok: false, said: "Your seat didn't answer (it may still be loading)." }), timeout);
+    window.addEventListener("message", on);
+    win.postMessage({ __pdd: "act", rid, act }, "*");
   });
 }
 

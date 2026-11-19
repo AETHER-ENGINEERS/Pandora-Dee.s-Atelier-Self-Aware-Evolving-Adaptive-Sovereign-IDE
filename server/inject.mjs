@@ -70,7 +70,93 @@ function helper() {
     } catch (err) {
       grid = "";
     }
-    window.parent.postMessage({ __pdd: "screen-reply", rid: e.data.rid, text: (grid + text).slice(0, 6000), title: document.title }, "*");
+    let controls = "";
+    try {
+      const list = usable().slice(0, 30).map(describe).filter(Boolean);
+      if (list.length) controls = `\n\nControls on this screen (a player in their own seat can use them with game_seat_act):\n${list.join("\n")}`;
+    } catch (err) {
+      controls = "";
+    }
+    window.parent.postMessage({ __pdd: "screen-reply", rid: e.data.rid, text: (grid + text).slice(0, 6000 - controls.length) + controls, title: document.title }, "*");
+  });
+
+  // ---- a seat's own controls: what a player can type, click or choose on their own screen ----
+  // (sent only by the desktop that holds this frame, for a character's own seat: what she does here is as private as
+  // what a person does on their own screen; only what the game itself sends out reaches anyone else)
+  const shown = (el) => {
+    try {
+      return !el.disabled && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden";
+    } catch (err) {
+      return false;
+    }
+  };
+  const FIELDS = "input:not([type=hidden]):not([type=button]):not([type=submit]):not([type=reset]):not([type=checkbox]):not([type=radio]), textarea, [contenteditable=true]";
+  const usable = () => Array.from(document.querySelectorAll(`${FIELDS}, select, button, [role=button], input[type=button], input[type=submit], input[type=checkbox], input[type=radio], a[href]`)).filter(shown);
+  const clean = (s) => String(s || "").replace(/\s+/g, " ").trim();
+  const labelOf = (el) => {
+    const byFor = el.id ? document.querySelector(`label[for="${CSS.escape(el.id)}"]`) : null;
+    const wrap = el.closest && el.closest("label");
+    const own = el.matches("button, [role=button], a") ? el.innerText : el.matches("input[type=button], input[type=submit]") ? el.value : "";
+    return clean(el.getAttribute("aria-label") || (byFor && byFor.innerText) || own || (wrap && wrap.innerText) || el.getAttribute("placeholder") || el.getAttribute("title") || el.getAttribute("name") || el.id);
+  };
+  const describe = (el) => {
+    const name = labelOf(el).slice(0, 60);
+    if (!name && !el.matches("select, " + FIELDS)) return "";
+    if (el.matches("select")) return `[choice] "${name}": ${Array.from(el.options).map((o) => clean(o.text)).slice(0, 12).join(" | ")} (now: ${clean(el.options[el.selectedIndex] && el.options[el.selectedIndex].text)})`;
+    if (el.matches("input[type=checkbox], input[type=radio]")) return `[${el.type}] "${name}" (${el.checked ? "on" : "off"})`;
+    if (el.matches(FIELDS)) {
+      const v = el.matches("[contenteditable=true]") ? el.innerText : el.value;
+      return `[field] "${name}"${el.type === "password" ? "" : v ? ` (now: "${clean(v).slice(0, 40)}")` : " (empty)"}`;
+    }
+    return `[button] "${name}"`;
+  };
+  /** The control a player means: by id, by its exact label, then by a label that contains the words; a board cell as
+   *  "row,col" (from the board drawn above it). */
+  const find = (target, kind) => {
+    const t = clean(target).toLowerCase();
+    const cell = /^(?:cell\s*)?(\d+)\s*[, ]\s*(\d+)$/i.exec(clean(target));
+    if (cell) return document.querySelector(`[data-row="${cell[1]}"][data-col="${cell[2]}"]`);
+    const all = usable().filter((el) => (kind === "type" ? el.matches(FIELDS) : kind === "choose" ? el.matches("select") : true));
+    return all.find((el) => el.id && el.id.toLowerCase() === t) || all.find((el) => labelOf(el).toLowerCase() === t) || all.find((el) => labelOf(el).toLowerCase().includes(t)) || (kind === "type" && !t && all.length === 1 ? all[0] : null);
+  };
+  window.addEventListener("message", (e) => {
+    if (e.source !== window.parent || !e.data || e.data.__pdd !== "act") return;
+    const a = e.data.act || {};
+    const reply = (ok, said) => window.parent.postMessage({ __pdd: "act-reply", rid: e.data.rid, ok, said }, "*");
+    try {
+      const kind = String(a.do || "click");
+      const el = find(a.target || "", kind);
+      if (!el) return reply(false, `No ${kind === "type" ? "field" : kind === "choose" ? "choice" : "control"} called "${a.target || ""}" on your screen. game_screen lists the controls.`);
+      if (kind === "type") {
+        el.focus();
+        if (el.matches("[contenteditable=true]")) el.innerText = String(a.text ?? "");
+        else {
+          const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+          Object.getOwnPropertyDescriptor(proto, "value").set.call(el, String(a.text ?? ""));
+        }
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+        if (a.enter) {
+          ["keydown", "keypress", "keyup"].forEach((type) => el.dispatchEvent(new KeyboardEvent(type, { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true })));
+          if (el.form && el.form.requestSubmit) el.form.requestSubmit();
+        }
+        return reply(true, `Typed into "${labelOf(el) || a.target}"${a.enter ? " and pressed Enter" : ""}.`);
+      }
+      if (kind === "choose") {
+        const want = clean(a.text).toLowerCase();
+        const opt = Array.from(el.options).find((o) => clean(o.text).toLowerCase() === want || o.value.toLowerCase() === want) || Array.from(el.options).find((o) => clean(o.text).toLowerCase().includes(want));
+        if (!opt) return reply(false, `"${labelOf(el)}" has no choice "${a.text}". It offers: ${Array.from(el.options).map((o) => clean(o.text)).join(" | ")}.`);
+        el.value = opt.value;
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+        return reply(true, `Chose "${clean(opt.text)}" in "${labelOf(el)}".`);
+      }
+      ["pointerdown", "mousedown", "pointerup", "mouseup"].forEach((type) => el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window })));
+      el.click();
+      return reply(true, `Clicked "${labelOf(el) || a.target}".`);
+    } catch (err) {
+      return reply(false, `That didn't work: ${err && err.message ? err.message : err}`);
+    }
   });
   // Sound from games follows the desktop's app volume (audio and video elements, and Web Audio).
   let volume = 1;
@@ -154,7 +240,9 @@ function webxdc(cfg) {
   }
 
   // ---- storage, kept separate for each app ----
-  const prefix = "xdc:" + cfg.scope + ":";
+  // (a character's seat keeps its own, apart from the person's on the same device: a secret word or a hand of cards
+  // saved by one player's copy mustn't show up in another's; a person's own key stays as it always was)
+  const prefix = "xdc:" + cfg.scope + ":" + (/^ai:/.test(cfg.addr) ? cfg.addr + ":" : "");
   function wrap(real) {
     const keys = () => {
       const out = [];
