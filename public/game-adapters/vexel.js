@@ -463,12 +463,12 @@ export default {
         const isLog = (id) => id > 0 && /log$/i.test(String(n.block(id)).replace(/\s+/g, "_")) && !/^stripped/i.test(n.block(id));
         const countLogs = () => g.inv.slots.reduce((s, x) => s + (x && isLog(x.id) ? x.n : 0), 0);
         const before = countLogs();
-        // the nearest trunk: a log block within 16 blocks, at about her height
+        // the nearest trunk: a log block within 16 blocks, from a little below her to well above (trees up a slope)
         let best = null;
         const fx = Math.floor(p.x), fy = Math.floor(p.y), fz = Math.floor(p.z);
         for (let dx = -16; dx <= 16; dx++)
           for (let dz = -16; dz <= 16; dz++)
-            for (let dy = -3; dy <= 5; dy++) {
+            for (let dy = -6; dy <= 12; dy++) {
               const id = w.get(fx + dx, fy + dy, fz + dz);
               if (!isLog(id) || unreachable.has(`${fx + dx},${fy + dy},${fz + dz}`)) continue;
               const d = Math.hypot(dx, dz) + Math.abs(dy) * 0.3;
