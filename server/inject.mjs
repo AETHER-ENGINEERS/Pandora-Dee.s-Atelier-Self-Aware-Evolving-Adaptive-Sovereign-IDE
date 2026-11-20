@@ -351,6 +351,7 @@ const NATIVE = {
       } catch (e) {}
     };
     let keep = null;
+    let engineOff = false, gen = 0, playing = null; // (SEASIDE's voices: off after a failure; the line playing)
     const quiet = () => {
       if (keep) clearInterval(keep);
       keep = null;
@@ -363,6 +364,32 @@ const NATIVE = {
         if (seat || !synth || !window.SpeechSynthesisUtterance) {
           setTimeout(() => ev(id, "start"), 0);
           setTimeout(() => ev(id, "done"), Math.min(8000, 120 + (words * 300) / (Number(rate) || 1)));
+          return;
+        }
+        // SEASIDE's own voices first (server/omargVoices.mjs, the voice chosen for her); if they can't speak, the
+        // browser's voice for the rest of this session, so a lecture never goes quiet
+        if (!engineOff) {
+          const my = ++gen;
+          fetch("/app-voice/speak", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: String(text), rate: Number(rate) || 1 }) })
+            .then((r) => (r.ok ? r.blob() : Promise.reject(new Error("HTTP " + r.status))))
+            .then((b) => {
+              if (my !== gen) return; // (stopped meanwhile)
+              const a = new Audio(URL.createObjectURL(b));
+              playing = a;
+              a.onplay = () => ev(id, "start");
+              a.onended = () => {
+                URL.revokeObjectURL(a.src);
+                if (playing === a) playing = null;
+                ev(id, "done");
+              };
+              a.onerror = () => ev(id, "error", "audio");
+              return a.play();
+            })
+            .catch(() => {
+              if (my !== gen) return;
+              engineOff = true;
+              window.AndroidTTS.speak(text, rate, id);
+            });
           return;
         }
         const u = new SpeechSynthesisUtterance(String(text));
@@ -398,6 +425,13 @@ const NATIVE = {
       },
       stop() {
         quiet();
+        gen++;
+        if (playing) {
+          try {
+            playing.pause();
+          } catch (e) {}
+          playing = null;
+        }
         try {
           if (synth) synth.cancel();
         } catch (e) {}

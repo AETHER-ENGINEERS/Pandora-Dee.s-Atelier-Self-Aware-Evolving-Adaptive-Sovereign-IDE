@@ -6,6 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import * as WG from "./webgame.mjs";
 import * as AN from "./appNet.mjs";
+import * as OV from "./omargVoices.mjs";
 import { zipSync } from "fflate";
 import { createLibrary } from "./xdc.mjs";
 import { classicRelayScript, helperScript, webxdcScript } from "./inject.mjs";
@@ -114,6 +115,7 @@ const XDC_CSP = [
 export function deskServer() {
   let root = process.cwd();
   let dataDir = "";
+  let voices = null; // SEASIDE's own voices (omargVoices.mjs), made when first asked for
   let publicDir = "";
   let lib;
   let mus;
@@ -400,6 +402,23 @@ export function deskServer() {
     const parts = url.pathname.split("/").filter(Boolean).slice(1); // after "api"
     const m = req.method;
     const L = library();
+    // SEASIDE's own voices (omargVoices.mjs: the OMARG engine, sherpa-onnx), as a voice engine at /api/voices/v1/…
+    if (parts[0] === "voices" && parts[1] === "v1") {
+      voices ??= OV.createVoices(path.join(dataDir, "voices"));
+      try {
+        if (parts[2] === "models" && m === "GET") return send(res, 200, { object: "list", data: voices.packs().map((p) => ({ id: p.id, object: "model", owned_by: "seaside" })) });
+        if (parts[2] === "audio" && parts[3] === "voices" && m === "GET") return send(res, 200, { voices: voices.packs().flatMap((p) => p.voices.map((v) => ({ id: v.name, name: v.name, pack: p.id, lang: v.lang }))) });
+        if (parts[2] === "audio" && parts[3] === "speech" && m === "POST") {
+          const b = JSON.parse((await readBody(req, 200_000)).toString("utf8") || "{}");
+          const audio = await voices.speak({ input: b.input, voice: b.voice, speed: b.speed });
+          res.writeHead(200, { "Content-Type": "audio/wav", "Content-Length": audio.length });
+          return void res.end(audio);
+        }
+        return send(res, 404, { error: "No such voice route." });
+      } catch (e) {
+        return send(res, e?.status || 500, { error: e instanceof Error ? e.message : String(e) });
+      }
+    }
     // the module door (modules.mjs): looking in the Box and bringing modules in, from this computer or Tailscale's https
     if (parts[0] === "modules") {
       try {
@@ -1524,6 +1543,22 @@ export function deskServer() {
           return void send(res, r.status, r.text, "text/plain; charset=utf-8");
         } catch (e) {
           return void send(res, 502, e instanceof Error ? e.message : String(e), "text/plain; charset=utf-8");
+        }
+      }
+      // an app's voice through SEASIDE's own voices (omargVoices.mjs), for the apps given a voice (the Learning Lab's
+      // Lilith): the line comes back as WAV; which voice is the app's setting in voices/app-voices.json
+      if (isAppHost(req) && url.pathname === "/app-voice/speak" && req.method === "POST") {
+        const pkg = library().get(AN.askingPkg(req.headers.referer));
+        const voiceFor = OV.appVoice(path.join(dataDir, "voices"), pkg?.appKey);
+        if (!voiceFor) return void send(res, 403, { error: "This app has no voice." });
+        voices ??= OV.createVoices(path.join(dataDir, "voices"));
+        try {
+          const b = JSON.parse((await readBody(req, 50_000)).toString("utf8") || "{}");
+          const audio = await voices.speak({ input: b.text, voice: voiceFor, speed: b.rate });
+          res.writeHead(200, { "Content-Type": "audio/wav", "Content-Length": audio.length });
+          return void res.end(audio);
+        } catch (e) {
+          return void send(res, e?.status || 500, { error: e instanceof Error ? e.message : String(e) });
         }
       }
       // a game's adapter for characters' seats is SEASIDE's own, not the app's: served before an app's root paths
