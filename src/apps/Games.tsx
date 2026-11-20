@@ -29,10 +29,10 @@ import { gameScreen } from "../lib/bus.ts";
 import { gameTurn, sayToPlayers } from "../lib/agent.ts";
 import { changePlans, loadPlans, type Plan } from "../lib/plans.ts";
 import { LinkedGames, LinkThisGame } from "./GameLinks.tsx";
+import { myAddrName, ownName, useMyName } from "../lib/myName.ts";
 import { aiAddr, linkTag, appOrigin, bridge, bringInStep, groupApps, lanternOf, library, actOnScreen, readScreen, webImportSaid, type Lantern, type Pkg, type UpdateRow } from "../lib/xdc.ts";
 import { allowed } from "../lib/privacy.ts";
 import { imagineGame } from "../lib/gameMaker.ts";
-import { slug } from "../lib/characters.ts";
 import { CharAvatar, Confirm } from "../ui/common.tsx";
 import { openMenu, type MenuItem } from "../ui/ContextMenu.tsx";
 
@@ -955,7 +955,8 @@ function GamePlans() {
     };
   }, [scope]);
   if (!scope) return null;
-  const me = session ?? "You";
+  const named = useMyName();
+  const me = session && !ownName() ? session : named;
   const openPlans = plans.filter((p) => p.status === "open");
   const add = () => {
     const text = draft.trim();
@@ -1036,8 +1037,9 @@ function Playing() {
   const [full, setFull] = useState(false);
   const [nonce, setNonce] = useState(0);
   const [pkg, setPkg] = useState<Pkg | null>(null);
-  const me = session ?? "You";
-  const addr = `you:${slug(me) || "you"}${linkTag(g.scope)}`;
+  const named = useMyName();
+  const me = session && !ownName() ? session : named;
+  const addr = `you:${myAddrName()}${linkTag(g.scope)}`;
 
   useEffect(() => {
     if (g.kind !== "xdc" || !g.pkgId) return;
@@ -1144,7 +1146,7 @@ function GameLantern({ scope, pkgId }: { scope: string; pkgId?: string }) {
           <ul>
             {l.copies.map((c) => (
               <li key={c.addr}>
-                {c.addr.startsWith("ai:") ? `${c.name}'s seat` : c.name === "You" ? "Your copy" : `${c.name}'s copy`}: {c.at >= l.newest ? <span className="ok">#{c.at}, in step</span> : <span className="warn">#{c.at}, {c.behindFor >= 4000 ? "behind" : "catching up"}</span>}
+                {c.addr.startsWith("ai:") ? `${c.name}'s seat` : c.addr.startsWith("you:") && !c.addr.includes("@") ? "Your copy" : `${c.name}'s copy`}: {c.at >= l.newest ? <span className="ok">#{c.at}, in step</span> : <span className="warn">#{c.at}, {c.behindFor >= 4000 ? "behind" : "catching up"}</span>}
               </li>
             ))}
           </ul>

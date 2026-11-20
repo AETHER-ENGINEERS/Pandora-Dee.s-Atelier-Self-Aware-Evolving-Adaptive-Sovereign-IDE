@@ -26,6 +26,7 @@ import { speak, stopSpeaking } from "./voice.ts";
 import { aiFor, voiceFor } from "./prefs.ts";
 import type { TurnCtx } from "./tools.ts";
 import { aiAddr, bridge, library } from "./xdc.ts";
+import { myAddrName, myName, shownName } from "./myName.ts";
 import { fileInInbox, joinedApps } from "./messengers.ts";
 import { gameScreen } from "./bus.ts";
 import { turnNow, wakes, type Turn as GameTurn } from "./turns.ts";
@@ -246,7 +247,7 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
   const history = opts.history ?? s.messages;
   // A compacted chat sends its summary instead of the messages it covers (not for bridge chats or ended chats).
   const meta = !opts.history ? currentChat() : undefined;
-  const people = [s.session ?? (s.accounts.length ? "a guest" : "")].filter(Boolean);
+  const people = [myName() || (s.accounts.length ? "a guest" : "")].filter(Boolean);
   const g = s.game;
   const playing = Boolean(g && g.players.includes(me.id));
   // a model running on a computer here (not a cloud one) reads every word of its prompt slowly: while she plays, it gets
@@ -679,7 +680,7 @@ export async function say(text: string, from?: string, extra: { files?: Attachme
   if (!clean && !extra.files?.length) return;
   const role = from ? "keyholder" : s.role();
   const blocked = s.weigh(clean || "(files)", "desk", role);
-  const name = from ?? s.session ?? "You";
+  const name = from ?? shownName();
   const id = s.post({ kind: "human", who: from ? `api:${from}` : s.session ?? "you", name, text: clean, source: "desk", files: extra.files?.length ? extra.files : undefined });
   if (blocked) {
     s.notice(blocked);
@@ -698,7 +699,7 @@ export async function sayToPlayers(text: string) {
   if (!clean) return;
   if (!s.game?.players.length) return say(clean);
   const blocked = s.weigh(clean, "desk", s.role());
-  s.post({ kind: "human", who: s.session ?? "you", name: s.session ?? "You", text: clean, source: "desk" });
+  s.post({ kind: "human", who: s.session ?? "you", name: shownName(), text: clean, source: "desk" });
   if (blocked) return s.notice(blocked);
   await gameTurn();
 }
@@ -825,7 +826,7 @@ export async function gameTurn() {
   // whose turn the game says it is: only they open their eyes
   const turn = g.kind === "xdc" && g.scope ? turnNow(await library.updates(g.scope, 0).catch(() => []), players.map((c) => c.id), (id) => aiAddr(id, g.scope)) : ({ kind: "open" } as GameTurn);
   if (turn.kind === "waiting") {
-    const whose = turn.for.map((a) => (a === "you:you" || a === `you:${(s.session ?? "").toLowerCase()}` ? "your" : `${a.replace(/^(you|ai):/, "")}'s`));
+    const whose = turn.for.map((a) => (a === `you:${myAddrName()}` ? "your" : `${a.replace(/^(you|ai):/, "")}'s`));
     return s.notice(`The characters wait with their eyes closed: it's ${whose.join(" and ")} turn.`);
   }
   const playing = turn.kind === "theirs" ? players.filter((c) => turn.mine.has(c.id)) : players;
