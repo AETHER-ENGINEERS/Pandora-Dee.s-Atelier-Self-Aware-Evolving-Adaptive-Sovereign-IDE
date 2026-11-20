@@ -31,7 +31,7 @@ import { changePlans, loadPlans, type Plan } from "../lib/plans.ts";
 import { LinkedGames, LinkThisGame } from "./GameLinks.tsx";
 import "../lib/websimBridge.ts"; // websim games get the desktop's picture engine (server/inject.mjs)
 import "../lib/decide.ts"; // characters' seats get quick decisions from their own models (server/inject.mjs)
-import { myAddrName, ownName, useMyName } from "../lib/myName.ts";
+import { myAddrName, ownName, shownName, useMyName } from "../lib/myName.ts";
 import { aiAddr, linkTag, appOrigin, bridge, bringInStep, groupApps, lanternOf, library, actOnScreen, readScreen, webImportSaid, type Lantern, type Pkg, type UpdateRow } from "../lib/xdc.ts";
 import { allowed } from "../lib/privacy.ts";
 import { imagineGame } from "../lib/gameMaker.ts";
@@ -1176,15 +1176,39 @@ function Seats({ pkg, scope, slug, players, nonce }: { pkg: Pkg; scope: string; 
   const on = useDesk((s) => seatsWanted(s.appPrefs, slug));
   // names as one string, so the selector gives the same value until something really changes
   const names = useDesk((s) => players.map((id) => (s.roomCharacters().some((c) => c.id === id) ? (s.character(id)?.short ?? "") : "")).join("\n")).split("\n");
+  // watching a seat: the same running copy brought into view, watch-only, as looking over her shoulder. Her screen is
+  // hers (a secret word, a hand of cards), so she's told in the room when someone starts and stops watching.
+  const [watch, setWatch] = useState<string | null>(null);
+  const seated = players.map((id, i) => ({ id, name: names[i] })).filter((x) => x.name);
+  const watchSeat = (id: string | null) => {
+    const who = shownName();
+    const was = seated.find((x) => x.id === watch);
+    const now = seated.find((x) => x.id === id);
+    if (was) desk().post({ kind: "notice", who: "desk", name: "Desk", source: "desk", text: `${who} stopped watching ${was.name}'s screen.` });
+    if (now) desk().post({ kind: "notice", who: "desk", name: "Desk", source: "desk", text: `${who} is watching ${now.name}'s screen, as if over her shoulder (to see how it goes and learn along).` });
+    setWatch(id);
+  };
   if (!on) return null;
   return (
-    <div className="game-seats" aria-hidden="true">
-      {players.map((id, i) => (names[i] ? <Seat key={`${id}#${nonce}`} pkg={pkg} scope={scope} id={id} name={names[i]} /> : null))}
-    </div>
+    <>
+      {seated.length ? (
+        <div className={`seat-watch${watch ? " on" : ""}`}>
+          <span>👁 Watch</span>
+          {seated.map((x) => (
+            <button key={x.id} type="button" className={`chip${watch === x.id ? " on" : ""}`} onClick={() => watchSeat(watch === x.id ? null : x.id)} title={watch === x.id ? `Stop watching ${x.name}'s screen` : `Watch ${x.name}'s screen`}>
+              {x.name}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      <div className={`game-seats${watch ? " watching" : ""}`} aria-hidden="true">
+        {players.map((id, i) => (names[i] ? <Seat key={`${id}#${nonce}`} pkg={pkg} scope={scope} id={id} name={names[i]} watched={watch === id} /> : null))}
+      </div>
+    </>
   );
 }
 
-function Seat({ pkg, scope, id, name }: { pkg: Pkg; scope: string; id: string; name: string }) {
+function Seat({ pkg, scope, id, name, watched = false }: { pkg: Pkg; scope: string; id: string; name: string; watched?: boolean }) {
   const ref = useRef<HTMLIFrameElement>(null);
   // attach before the app's scripts run, as the person's frame does: they ask for their state at once
   useEffect(() => {
@@ -1206,6 +1230,6 @@ function Seat({ pkg, scope, id, name }: { pkg: Pkg; scope: string; id: string; n
       window.removeEventListener("message", hush);
     };
   }, [id]);
-  return <iframe ref={ref} className="game-seat" data-seat={id} src={library.runUrl(pkg, scope, aiAddr(id, scope), name)} title={`${name}'s seat`} tabIndex={-1} allow="autoplay; gamepad" />;
+  return <iframe ref={ref} className={`game-seat${watched ? " watched" : ""}`} data-seat={id} src={library.runUrl(pkg, scope, aiAddr(id, scope), name)} title={`${name}'s seat`} tabIndex={-1} allow="autoplay; gamepad" />;
 }
 
