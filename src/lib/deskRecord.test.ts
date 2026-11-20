@@ -55,3 +55,10 @@ test("a move told in words, not sent, is caught; plain talk isn't", async () => 
   for (const t of ["Good game, Claude!", "That was a clever opening.", "Your move, Jade!", "The board is quiet today.", "Version 0.6.199 is out.", "Step 2. Open the app.", "It took 2.5 seconds."])
     assert.equal(claimsMove(t), false, t);
 });
+
+test("a world told but not touched: what Dee said in Vexel without one action", async () => {
+  const { claimsWorld } = await import("./deskRecord.ts");
+  assert.equal(claimsWorld("I found a tree and did some honest forestry work — logs in hand, leaves raining"), true);
+  assert.equal(claimsWorld("I dug down three blocks and climbed out"), true);
+  assert.equal(claimsWorld("I'd love to find a tree next. What do you think?"), false);
+});

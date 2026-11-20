@@ -37,7 +37,7 @@ import { currentChat } from "./chats.ts";
 import { compact, shouldCompact } from "./context.ts";
 import { fitTurns, isCtxError, learnLimit, learnedLimit, sizeOf } from "./ctxfit.ts";
 import { missedNote, missedTool } from "./missedTool.ts";
-import { CLAIM_NOTE, MOVE_NOTE, SAY_NOTE, claimsMove, claimsTool, saidNothing, stripRecords } from "./deskRecord.ts";
+import { ACT_NOTE, CLAIM_NOTE, MOVE_NOTE, SAY_NOTE, claimsMove, claimsTool, claimsWorld, saidNothing, stripRecords } from "./deskRecord.ts";
 import { bookFor, bookHeader, parseScene, redactKeys, sceneText } from "./storybook.ts";
 import { allKeyValues, envFor } from "./residentKeys.ts";
 import { isLimitError, recordLimit, recordUsage } from "./meter.ts";
@@ -414,6 +414,20 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
         recordUsage(me.id, kindOf(opts), conn.label, result.usage);
         if (result.usage?.pace) paces.push({ ...result.usage.pace, prompt: result.usage.prompt, output: result.usage.output });
         thought = [thought, result.thinking.trim()].filter(Boolean).join("\n\n");
+        // her last step is for words: a tool asked for anyway (no tools were offered) isn't run, and she's told so,
+        // once, with one more step to say what she did (Dee in Vexel, 2026-11-20: every turn ended in an action)
+        if (step >= ai.maxSteps && result.toolCalls.length && !sayGiven) {
+          sayGiven = true;
+          const LAST = "[Desk note] That's all the actions for this turn, so that last one wasn't taken. Now say, in a line or two, what you did and what happened (only what your screen showed). You can carry on next turn.";
+          used.push({ name: "reply", ok: false, note: "out of actions: asked for her words", out: LAST, desk: true });
+          patch({ tools: [...used] });
+          turns.push({ role: "assistant", content: result.text || "(asked for another action)" });
+          turns.push({ role: "user", content: LAST });
+          tools = [];
+          step--;
+          continue;
+        }
+        if (step >= ai.maxSteps && result.toolCalls.length) result.toolCalls = []; // (still no: her words, whatever they are)
         if (!result.toolCalls.length) {
           // she meant to call a tool and didn't: the desk says so plainly, once a turn, and she goes on from there
           const parts = splitThink(result.text);
@@ -462,13 +476,16 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
           // can send it (her words stay shown)
           const toldMove =
             !moveGiven && playing && g?.kind === "xdc" && step < ai.maxSteps && tools.some((t) => t.name === "app_send_update") && !used.some((u) => u.name === "app_send_update") && claimsMove(parts.text);
-          if (!missed && toldMove) {
+          // the same in a game she plays on her own seat (an adapter's actions): a world told, not touched
+          const toldAct =
+            !toldMove && !moveGiven && playing && step < ai.maxSteps && tools.some((t) => t.name === "game_seat_act") && !used.some((u) => u.name === "game_seat_act") && (claimsWorld(parts.text) || claimsMove(parts.text));
+          if (!missed && (toldMove || toldAct)) {
             moveGiven = true;
-            used.push({ name: "reply", ok: false, note: "told a move, sent none", out: MOVE_NOTE, desk: true });
+            used.push({ name: "reply", ok: false, note: toldAct ? "told what she did, did none of it" : "told a move, sent none", out: toldAct ? ACT_NOTE : MOVE_NOTE, desk: true });
             if (parts.text.trim()) shown += `${parts.text.trim()}\n\n`;
             patch({ tools: [...used] });
             turns.push({ role: "assistant", content: result.text });
-            turns.push({ role: "user", content: MOVE_NOTE });
+            turns.push({ role: "user", content: toldAct ? ACT_NOTE : MOVE_NOTE });
             continue;
           }
           if (missed) {
