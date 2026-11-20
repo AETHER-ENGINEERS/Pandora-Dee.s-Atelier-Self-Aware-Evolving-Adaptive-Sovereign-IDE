@@ -127,8 +127,9 @@ export function groupApps(pkgs: Pkg[]) {
 
 // ---------- the bridge ----------
 
-type Frame = { win: Window; scope: string; addr: string; name: string };
+type Frame = { win: Window; scope: string; addr: string; name: string; at?: number; atTime?: number };
 const frames = new Set<Frame>();
+const progress = new WeakMap<Window, { scope: string; at: number; atTime: number }>();
 type Watcher = (scope: string, row: Row) => void;
 const watchers = new Set<Watcher>();
 let chatHandler: (from: string, app: string, content: { text?: string; file?: { name: string; dataUrl: string } }) => void = () => {};
@@ -142,6 +143,9 @@ const seen = new Map<string, number>();
 
 function broadcast(scope: string, rows: Row[]) {
   if (!rows.length) return;
+  const last = rows[rows.length - 1];
+  lastMove.set(scope, { name: last.name, at: last.at || Date.now(), serial: last.serial });
+  if (last.serial > (seen.get(scope) ?? 0)) newestAt.set(scope, Date.now());
   seen.set(scope, Math.max(seen.get(scope) ?? 0, rows[rows.length - 1].serial));
   const max = rows[rows.length - 1].serial;
   const updates = rows.map((r) => toUpdate(r, max));
@@ -190,6 +194,49 @@ export function sendLive(scope: string, from: string, name: string, text: string
   for (const f of frames) if (f.scope === scope) f.win.postMessage({ __pdd: "xdc", type: "rt", data: bytes }, "*");
 }
 
+// ---------- the lantern (Dee's idea): is every copy of this game seeing the same thing? ----------
+
+const lastMove = new Map<string, { name: string; at: number; serial: number }>();
+const lastPull = new Map<string, number>();
+const newestAt = new Map<string, number>(); // when this desk first knew of the newest update
+export type Lantern = {
+  newest: number;
+  copies: { name: string; addr: string; at: number; behindFor: number }[];
+  lastMove: { name: string; at: number; serial: number } | null;
+  pulledAt: number;
+  inStep: boolean;
+};
+/** Each open copy of an app (the person's, each character's seat) and how far it has got, against the newest update
+ *  this desk knows of. A copy more than a few seconds behind isn't in step. */
+export function lanternOf(scope: string): Lantern {
+  const newest = seen.get(scope) ?? 0;
+  const now = Date.now();
+  const copies = [...frames]
+    .filter((f) => f.scope === scope)
+    .map((f) => ({ name: f.name, addr: f.addr, at: f.at ?? 0, behindFor: (f.at ?? 0) < newest ? now - (newestAt.get(scope) ?? now) : 0 }));
+  return { newest, copies, lastMove: lastMove.get(scope) ?? null, pulledAt: lastPull.get(scope) ?? 0, inStep: copies.every((c) => c.at >= newest || c.behindFor < 4000) };
+}
+/** One line for a character: whether every copy agrees, or which one is behind. */
+export function lanternLine(scope: string) {
+  const l = lanternOf(scope);
+  if (!l.copies.length) return "";
+  const behind = l.copies.filter((c) => c.at < l.newest && c.behindFor >= 4000);
+  return behind.length
+    ? `Lantern: not every copy is in step. ${behind.map((c) => `${c.name}'s copy has seen up to #${c.at}`).join("; ")}, the newest is #${l.newest}. What a copy that's behind shows may be out of date.`
+    : `Lantern: all ${l.copies.length} copies of this game are in step at update #${l.newest}.`;
+}
+/** Catch up every copy that's behind: send it what it missed, in order. */
+export async function bringInStep(scope: string) {
+  const l = lanternOf(scope);
+  for (const f of frames) {
+    if (f.scope !== scope || (f.at ?? 0) >= l.newest) continue;
+    const rows = await library.updates(scope, f.at ?? 0).catch(() => [] as Row[]);
+    if (!rows.length) continue;
+    const max = rows[rows.length - 1].serial;
+    f.win.postMessage({ __pdd: "xdc", type: "updates", updates: rows.map((r) => toUpdate(r, max)) }, "*");
+  }
+}
+
 let pulling = false;
 async function pullOthers() {
   if (pulling) return;
@@ -199,6 +246,7 @@ async function pullOthers() {
       const since = seen.get(scope);
       if (since === undefined) continue; // not started yet: its frames ask for everything themselves
       const got = await library.updates(scope, since).catch(() => [] as Row[]);
+      lastPull.set(scope, Date.now());
       const now = seen.get(scope) ?? since; // (this page may have sent one meanwhile)
       const rows = got.filter((r) => r.serial > now);
       if (!rows.length) continue;
@@ -217,7 +265,9 @@ function startPulling(scope: string) {
 
 export const bridge = {
   attach(win: Window, scope: string, addr: string, name: string) {
-    const f = { win, scope, addr, name };
+    // (a frame is attached again on each render of its view: it keeps how far it had got)
+    const before = progress.get(win);
+    const f: Frame = { win, scope, addr, name, ...(before && before.scope === scope ? { at: before.at, atTime: before.atTime } : {}) };
     frames.add(f);
     startPulling(scope);
     return () => {
@@ -270,6 +320,10 @@ window.addEventListener("message", (e) => {
   } else if (m.type === "chat") {
     chatHandler(frame.name, frame.scope, (m.content ?? {}) as Parameters<typeof chatHandler>[2]);
     reply(undefined);
+  } else if (m.type === "at") {
+    frame.at = Number(m.serial) || 0;
+    frame.atTime = Date.now();
+    progress.set(frame.win, { scope: frame.scope, at: frame.at, atTime: frame.atTime });
   } else if (m.type === "rt-send") {
     recordLive(frame.scope, frame.addr, frame.name, m.data as number[]);
     for (const f of frames) if (f !== frame && f.scope === frame.scope) f.win.postMessage({ __pdd: "xdc", type: "rt", data: m.data }, "*");

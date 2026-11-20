@@ -319,6 +319,8 @@ function webxdc(cfg) {
         }
       }
     }
+    // how far this copy has got, for the desktop's lantern (are all the copies of this game in step?)
+    post({ type: "at", serial: lastSerial });
   };
   window.addEventListener("message", (e) => {
     if (e.source !== parent || !e.data || e.data.__pdd !== "xdc") return;

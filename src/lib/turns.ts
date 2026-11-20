@@ -37,9 +37,10 @@ export function turnNow(rows: Row[], players: string[]): Turn {
   return { kind: "waiting", for: still.filter((a) => a !== rows[at].from) };
 }
 
-/** Whether an update names a character playing here (so she wakes, even when another character sent it). */
+/** Whether an update names a character playing here, so she wakes, whoever sent it: even her own move, when the
+ *  game says it's her turn again ("everyone has spoken, act now", sent by the last one to speak). */
 export function wakes(row: Row, players: string[]) {
   const n = notifyOf(row);
   if (!n) return false;
-  return players.some((id) => `ai:${id}` in n && row.from !== `ai:${id}`) || ("*" in n && players.some((id) => row.from !== `ai:${id}`));
+  return players.some((id) => `ai:${id}` in n) || ("*" in n && players.length > 0);
 }

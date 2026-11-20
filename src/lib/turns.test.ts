@@ -25,8 +25,9 @@ test("everyone (*) is named: every playing character takes a turn", () => {
   assert.equal(t.kind === "theirs" ? t.mine.size : 0, 2);
 });
 
-test("a move naming a character wakes her, even from another character; not her own", () => {
+test("a move naming a character wakes her, from another character or from her own move (her turn again)", () => {
   assert.equal(wakes(row(1, "ai:jade", { "ai:dee": "Your guess" }), ["dee", "jade"]), true);
-  assert.equal(wakes(row(1, "ai:dee", { "ai:dee": "note to self" }), ["dee"]), false);
+  // First Frost, 2026-11-19: Dee's plan was the last of the huddle, and her own copy said "everyone act now"
+  assert.equal(wakes(row(1, "ai:dee", { "ai:dee": "Round 4: act now", "you:you": "Round 4: act now" }), ["dee"]), true);
   assert.equal(wakes(row(1, "you:t"), ["dee"]), false);
 });

@@ -29,6 +29,7 @@ import { bridge, library } from "./xdc.ts";
 import { fileInInbox, joinedApps } from "./messengers.ts";
 import { gameScreen } from "./bus.ts";
 import { turnNow, wakes, type Turn as GameTurn } from "./turns.ts";
+import { loadPlans, plansLine } from "./plans.ts";
 import type { Role } from "./flood.ts";
 import { currentChat } from "./chats.ts";
 import { compact, shouldCompact } from "./context.ts";
@@ -763,10 +764,15 @@ bridge.watch((scope, row) => {
   // when waking is on for this app
   const prefs = s.appPrefs[`xdc:${g.slug}`] ?? {};
   if (!wakes(row, g.players) && !(row.from.startsWith("you:") && (prefs.wake ?? g.slug === "jade-link"))) return;
+  // (a wake that comes while someone's turn is still running waits for the room to be free, rather than being lost:
+  // a game often names the next player while the last one is still talking)
   window.clearTimeout(wakeTimer);
-  wakeTimer = window.setTimeout(() => {
-    if (!running) void gameTurn();
-  }, 1500);
+  let tries = 0;
+  const tryTurn = () => {
+    if (!running) return void gameTurn();
+    if (++tries < 150) wakeTimer = window.setTimeout(tryTurn, 2000);
+  };
+  wakeTimer = window.setTimeout(tryTurn, 1500);
 });
 
 /** How to play a game, for the characters: a guide in the vault (Games/guides/<game>.md, which people and characters
@@ -800,6 +806,12 @@ export async function gameTurn() {
     return s.notice(`The characters wait with their eyes closed: it's ${whose.join(" and ")} turn.`);
   }
   const playing = turn.kind === "theirs" ? players.filter((c) => turn.mine.has(c.id)) : players;
+  // the plans on the table (Dee's soft commitments), for everyone playing to keep or change
+  const table = plansLine(await loadPlans(g.scope ?? g.slug));
+  const plans = table ? `
+
+Plans on the table (game_plan to add, revise, keep or cancel one):
+${table}` : "";
   const secret = gameScreen.hasSeat(playing[0]?.id ?? "") ? " Your seat's screen is yours alone: no one else sees it, or what you type there with game_seat_act. Never say a secret (your word, your cards) out loud." : "";
   await withRun(async () => {
     for (const c of playing) {
@@ -812,8 +824,8 @@ export async function gameTurn() {
         game: true,
         instruction:
           g.kind === "xdc"
-            ? `[Game] You're playing the Vector app "${g.title}" together, as a real player. Act first, talk after: start your reply with the tool call itself (app_updates to see the state; app_send_update to make your move when it's your turn, or game_seat_act when the game asks you to type, click or choose on your own screen), not with words about calling it. Once your move is made, say one short, playful line about it.${secret}${seat}${yours}${leanModel(c.id) ? how.slice(0, 2600) : how}`
-            : `[Game] You're playing "${g.title}" together. The game screen is described in your context. Say what you'd do next, or react to what's happening. Short and playful; the human has the controls.${how}`,
+            ? `[Game] You're playing the Vector app "${g.title}" together, as a real player. Act first, talk after: start your reply with the tool call itself (app_updates to see the state; app_send_update to make your move when it's your turn, or game_seat_act when the game asks you to type, click or choose on your own screen), not with words about calling it. Once your move is made, say one short, playful line about it.${secret}${seat}${yours}${plans}${leanModel(c.id) ? how.slice(0, 2600) : how}`
+            : `[Game] You're playing "${g.title}" together. The game screen is described in your context. Say what you'd do next, or react to what's happening. Short and playful; the human has the controls.${plans}${how}`,
       });
     }
   });

@@ -27,7 +27,8 @@ import {
 import { desk, useDesk, type AppPrefs, type LibSection, type LibSort, type LibView } from "../lib/store.ts";
 import { gameScreen } from "../lib/bus.ts";
 import { gameTurn, sayToPlayers } from "../lib/agent.ts";
-import { appOrigin, bridge, groupApps, library, actOnScreen, readScreen, webImportSaid, type Pkg, type UpdateRow } from "../lib/xdc.ts";
+import { changePlans, loadPlans, type Plan } from "../lib/plans.ts";
+import { appOrigin, bridge, bringInStep, groupApps, lanternOf, library, actOnScreen, readScreen, webImportSaid, type Lantern, type Pkg, type UpdateRow } from "../lib/xdc.ts";
 import { allowed } from "../lib/privacy.ts";
 import { imagineGame } from "../lib/gameMaker.ts";
 import { slug } from "../lib/characters.ts";
@@ -930,6 +931,62 @@ function useGameChat(): [boolean, (on: boolean) => void] {
 }
 
 /** The room's conversation beside the game: what the players say about their moves, and a box to talk to them. */
+/** Dee's soft commitments: plans left on the table in this game, that anyone playing can see, keep or cancel. */
+function GamePlans() {
+  const g = useDesk((s) => s.game);
+  const session = useDesk((s) => s.session);
+  const scope = g ? (g.scope ?? g.slug) : "";
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [draft, setDraft] = useState("");
+  const [open, setOpen] = useState(true);
+  useEffect(() => {
+    if (!scope) return;
+    let live = true;
+    const load = () => void loadPlans(scope).then((p) => live && setPlans(p));
+    load();
+    const t = window.setInterval(load, 4000); // (another device may add one)
+    window.addEventListener("pdd-plans", load);
+    return () => {
+      live = false;
+      window.clearInterval(t);
+      window.removeEventListener("pdd-plans", load);
+    };
+  }, [scope]);
+  if (!scope) return null;
+  const me = session ?? "You";
+  const openPlans = plans.filter((p) => p.status === "open");
+  const add = () => {
+    const text = draft.trim();
+    if (!text) return;
+    setDraft("");
+    void changePlans(scope, { do: "add", by: me, text });
+  };
+  return (
+    <div className="game-plans">
+      <button className="game-plans-head small" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+        Plans on the table{openPlans.length ? ` (${openPlans.length})` : ""}
+      </button>
+      {open ? (
+        <>
+          {openPlans.map((p) => (
+            <div key={p.id} className="game-plan small">
+              <b>{p.by}</b> {p.text}
+              {p.revisedBy ? <span className="faint"> (revised by {p.revisedBy})</span> : null}
+              <span className="game-plan-acts">
+                <button className="btn tiny" onClick={() => void changePlans(scope, { do: "done", id: p.id, by: me })} title="Kept">✓</button>
+                <button className="btn tiny" onClick={() => void changePlans(scope, { do: "cancel", id: p.id, by: me })} title="Cancel this plan">✕</button>
+              </span>
+            </div>
+          ))}
+          <div className="game-chat-say">
+            <input className="input" value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), add())} placeholder="Leave a plan: on my turn, if…" aria-label="Leave a plan" />
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 function GameChat() {
   const messages = useDesk((s) => s.messages);
   const character = useDesk((s) => s.character);
@@ -947,6 +1004,7 @@ function GameChat() {
   };
   return (
     <aside className="game-chat" aria-label="The room's chat">
+      <GamePlans />
       <div className="game-chat-list" ref={list}>
         {shown.length ? (
           shown.map((m) => (
@@ -1051,8 +1109,52 @@ function Playing() {
           <div className="empty">{g.kind === "xdc" ? "Opening…" : "This game couldn't be found."}</div>
         )}
         {chat ? <GameChat /> : null}
+        {g.kind === "xdc" && g.scope ? <GameLantern scope={g.scope} /> : null}
       </div>
       {g.kind === "xdc" && pkg && g.scope ? <Seats pkg={pkg} scope={g.scope} slug={g.slug} players={g.players} nonce={nonce} /> : null}
+    </div>
+  );
+}
+
+const ago = (ms: number) => (ms < 5000 ? "just now" : ms < 90_000 ? `${Math.round(ms / 1000)} s ago` : `${Math.round(ms / 60_000)} min ago`);
+
+/** Dee's lantern: a quiet sign of whether every copy of this game (yours, each character's seat) sees the same thing,
+ *  and which one is behind if not, with a way to bring it back in step. Divergence is normal and fixable. */
+function GameLantern({ scope }: { scope: string }) {
+  const [l, setL] = useState<Lantern>(() => lanternOf(scope));
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const t = window.setInterval(() => setL(lanternOf(scope)), 1000);
+    return () => window.clearInterval(t);
+  }, [scope]);
+  if (!l.copies.length) return null;
+  const now = Date.now();
+  const said = l.inStep ? `In step at #${l.newest}` : "A copy is behind";
+  return (
+    <div className={`game-lantern${l.inStep ? "" : " drift"}${open ? " open" : ""}`}>
+      <button className="game-lantern-bead" onClick={() => setOpen((o) => !o)} title={said} aria-label={`Lantern: ${said}`} aria-expanded={open}>
+        <span aria-hidden="true">🏮</span>
+        {open || !l.inStep ? <span className="small">{said}</span> : null}
+      </button>
+      {open ? (
+        <div className="game-lantern-card small">
+          <div className="muted">Each player runs their own copy of this game. Here's how far each has got:</div>
+          <ul>
+            {l.copies.map((c) => (
+              <li key={c.addr}>
+                {c.addr.startsWith("ai:") ? `${c.name}'s seat` : c.name === "You" ? "Your copy" : `${c.name}'s copy`}: {c.at >= l.newest ? <span className="ok">#{c.at}, in step</span> : <span className="warn">#{c.at}, {c.behindFor >= 4000 ? "behind" : "catching up"}</span>}
+              </li>
+            ))}
+          </ul>
+          {l.lastMove ? <div>Last update: #{l.lastMove.serial} from {l.lastMove.name}, {ago(now - l.lastMove.at)}.</div> : <div>No updates yet.</div>}
+          <div className="muted">Other devices on this SEASIDE: checked {l.pulledAt ? ago(now - l.pulledAt) : "soon"}.</div>
+          {!l.inStep ? (
+            <button className="btn small" onClick={() => void bringInStep(scope)}>
+              Bring everyone in step
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

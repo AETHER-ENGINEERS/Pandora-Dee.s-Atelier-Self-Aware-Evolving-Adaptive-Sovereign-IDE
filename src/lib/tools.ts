@@ -13,7 +13,8 @@ import { run } from "./shell.ts";
 import { mcpCommand } from "./mcpshell.ts";
 import { backupTool } from "./serverBackup.ts";
 import { gameScreen } from "./bus.ts";
-import { appSaid, describeRows, library, recentLive, sendLive, sendUpdate } from "./xdc.ts";
+import { changePlans, loadPlans, plansLine } from "./plans.ts";
+import { appSaid, describeRows, library, lanternLine, recentLive, sendLive, sendUpdate } from "./xdc.ts";
 import { moveDigest, pageRows } from "./xdcRows.ts";
 import { findSkill, searchSkills, skillsOf } from "./skills.ts";
 import { allTasks, baseOf, cleanVaultPath, isNote, loadNotes, noteName, noteTags, resolveNote, searchNotes, tasksIn, toggleTaskText, useNotes, vaultIndex, writeNote } from "./notes.ts";
@@ -753,6 +754,31 @@ ${screen || "(no readable text)"}`;
     },
   },
   {
+    name: "game_plan",
+    description:
+      "Soft commitments in the open game: leave a plan on the table (\"on my turn, if the frost reaches column 3, I'll cover the pumpkins\"), revise one (anyone's), mark one kept, or cancel it. Everyone playing sees the table. A plan is a promise in plain words, not something that happens by itself.",
+    parameters: obj(
+      {
+        action: { type: "string", description: "One of: add, revise, done, cancel, list" },
+        text: { type: "string", description: "The plan (add), or what it is now (revise)" },
+        id: { type: "string", description: "Which plan (revise, done, cancel): its id like p1a2b, or a few of its words" },
+      },
+      ["action"],
+    ),
+    run: async (id, a) => {
+      const g = desk().game;
+      if (!g) return "No game is open.";
+      const scope = g.scope ?? g.slug;
+      const by = desk().character(id)?.short ?? id;
+      const act = str(a.action).toLowerCase();
+      if (act === "list") return plansLine(await loadPlans(scope)) || "No plans on the table.";
+      if (act === "add") return (await changePlans(scope, { do: "add", by, text: str(a.text) })).said;
+      if (act === "revise") return (await changePlans(scope, { do: "revise", id: str(a.id), by, text: str(a.text) })).said;
+      if (act === "done" || act === "cancel") return (await changePlans(scope, { do: act, id: str(a.id), by })).said;
+      return "The action is one of: add, revise, done, cancel, list.";
+    },
+  },
+  {
     name: "app_updates",
     description: "For the open Vector app (webxdc): read the recent shared updates everyone (and you) sent, to see the game state and whose move it is.",
     parameters: obj({ since: { type: "number", description: "Only updates after this serial number (to page forward). 0 or left out for the latest ones."} }),
@@ -770,6 +796,7 @@ ${screen || "(no readable text)"}`;
         ...(moves ? [`Every move so far, by game (ply:move):\n${moves}`] : []),
         rows.length ? `Saved updates:${note ? ` ${note}` : ""}\n${describeRows(shown, shown.length)}` : "No saved updates yet.",
         live.length ? `Live messages (recent):\n${live.map((l) => `${l.name}: ${l.text}`).join("\n")}` : "No live messages yet.",
+        ...(lanternLine(g.scope) ? [lanternLine(g.scope)] : []),
       ];
       return parts.join("\n\n");
     },
@@ -1390,7 +1417,7 @@ const NOTE_ALIASES: Record<string, string> = { read: "note_read", write: "note_w
 
 /** For a game turn: only the tools for playing (the screen, the game's updates, sending a move), so a model that
  *  would rather talk than pick from thirty tools sees just what the turn is for. */
-const GAME_TOOLS = new Set(["game_screen", "game_seat_act", "app_updates", "app_send_live", "app_send_update"]);
+const GAME_TOOLS = new Set(["game_screen", "game_seat_act", "game_plan", "app_updates", "app_send_live", "app_send_update"]);
 export function gameToolsFor(): Tool[] {
   return BASE.filter((t) => GAME_TOOLS.has(t.name));
 }
@@ -1457,6 +1484,7 @@ export function describeCall(name: string, args: Record<string, unknown>) {
     journal_write: "wrote in the journal",
     game_screen: "looked at the screen",
     game_seat_act: "used their own screen",
+    game_plan: `planned (${str(args.action)})`,
     app_updates: "checked the game state",
     app_send_update: "made a move",
     app_send_live: "spoke to the app",
