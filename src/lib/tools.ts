@@ -781,8 +781,8 @@ ${(await gameScreen.read(id)).slice(0, 4000) || "(the screen has no readable tex
       "Use a control on your own seat's screen, the way a person uses their own: type into a field, click a button or a board cell, or pick a choice. It's private: no one else sees your screen or what you type there, only what the game itself sends out (so a secret word you type stays yours). game_screen lists the controls you can use.",
     parameters: obj(
       {
-        do: { type: "string", description: "One of: type (into a field), click (a button or a board cell), choose (in a list)" },
-        target: { type: "string", description: 'The control, by the name game_screen gives it (e.g. "Secret word", "Lock it in"), or a board cell as "row,col"' },
+        do: { type: "string", description: "One of: type (into a field), click (a button or a board cell), choose (in a list), use (one of the game's actions for characters, when game_screen lists some)" },
+        target: { type: "string", description: 'The control, by the name game_screen gives it (e.g. "Secret word", "Lock it in"), a board cell as "row,col", or with "use" the action\'s name (e.g. "walk")' },
         text: { type: "string", description: "What to type, or which choice to pick" },
         enter: { type: "boolean", description: "After typing, press Enter" },
       },
@@ -793,7 +793,7 @@ ${(await gameScreen.read(id)).slice(0, 4000) || "(the screen has no readable tex
       if (!g) return "No game or app is open.";
       if (!gameScreen.hasSeat(id)) return "You have no seat of your own in this app (seats may be off for it), so there's no screen of yours to use.";
       const sentAt = Date.now();
-      const kind = a.do === "type" || a.do === "choose" ? a.do : "click";
+      const kind = a.do === "type" || a.do === "choose" || a.do === "use" ? a.do : "click";
       const r = await gameScreen.act(id, { do: kind, target: str(a.target), ...(a.text !== undefined ? { text: str(a.text) } : {}), ...(a.enter ? { enter: true } : {}) });
       if (!r.ok) return r.said;
       await new Promise((res) => setTimeout(res, 700));

@@ -22,8 +22,20 @@ function helper() {
       return original.apply(this, args);
     };
   });
-  window.addEventListener("message", (e) => {
+  window.addEventListener("message", async (e) => {
     if (e.source !== window.parent || !e.data || e.data.__pdd !== "screen") return;
+    // a game's adapter (public/game-adapters/<app>.js, in characters' seats): its view of the game comes first
+    let seen = "";
+    const ad = window.__pddAdapter;
+    if (ad) {
+      try {
+        const acts = Object.entries(ad.actions || {}).map(([k, v]) => `[action] "${k}": ${v.help || ""}`);
+        acts.push(`[action] "steps": several of these in a row, in one call, separated by ";" (e.g. "turn north; walk forward 3; dig")`);
+        seen = `${await ad.describe()}\n\nActions here (game_seat_act with do "use", the action as target, and its details as text):\n${acts.join("\n")}\n\n`;
+      } catch (err) {
+        seen = `(The game's adapter couldn't read the game: ${err && err.message ? err.message : err})\n\n`;
+      }
+    }
     let text = "";
     try {
       text = (document.body && document.body.innerText) || "";
@@ -77,7 +89,7 @@ function helper() {
     } catch (err) {
       controls = "";
     }
-    window.parent.postMessage({ __pdd: "screen-reply", rid: e.data.rid, text: (grid + text).slice(0, 6000 - controls.length) + controls, title: document.title }, "*");
+    window.parent.postMessage({ __pdd: "screen-reply", rid: e.data.rid, text: (seen + (grid + text).slice(0, Math.max(0, 6000 - controls.length - seen.length))).slice(0, 8000) + controls, title: document.title }, "*");
   });
 
   // ---- a seat's own controls: what a player can type, click or choose on their own screen ----
@@ -128,6 +140,35 @@ function helper() {
     const reply = (ok, said) => window.parent.postMessage({ __pdd: "act-reply", rid: e.data.rid, ok, said }, "*");
     try {
       const kind = String(a.do || "click");
+      if (kind === "use") {
+        const ad = window.__pddAdapter;
+        // several actions in one call ("turn north; walk forward 3; dig"): a world takes many small moves, and each
+        // tool call is one of a turn's few steps
+        if (ad && String(a.target || "").toLowerCase() === "steps") {
+          const said = [];
+          const list = String(a.text || "").split(/;|\n/).map((t) => t.trim()).filter(Boolean).slice(0, 12);
+          return void (async () => {
+            for (const step of list) {
+              const [name, ...rest] = step.split(/\s+/);
+              const act = Object.entries(ad.actions || {}).find(([k]) => k.toLowerCase() === name.toLowerCase())?.[1];
+              if (!act) {
+                said.push(`${step}: no such action`);
+                break;
+              }
+              try {
+                said.push(`${step}: ${await act.run(rest.join(" "))}`);
+              } catch (err) {
+                said.push(`${step}: didn't work (${err && err.message ? err.message : err})`);
+                break;
+              }
+            }
+            reply(true, said.join("\n") || "No steps given.");
+          })();
+        }
+        const act = ad && ad.actions && (ad.actions[a.target] || Object.entries(ad.actions).find(([k]) => k.toLowerCase() === String(a.target || "").toLowerCase())?.[1]);
+        if (!act) return reply(false, ad ? `No action "${a.target}" here. The actions: ${Object.keys(ad.actions || {}).join(", ")}.` : "This game has no actions for characters (no adapter); use type, click or choose.");
+        return void Promise.resolve(act.run(String(a.text ?? ""))).then((said) => reply(true, String(said ?? "Done.")), (err) => reply(false, `That didn't work: ${err && err.message ? err.message : err}`));
+      }
       const el = find(a.target || "", kind);
       if (!el) return reply(false, `No ${kind === "type" ? "field" : kind === "choose" ? "choice" : "control"} called "${a.target || ""}" on your screen. game_screen lists the controls.`);
       if (kind === "type") {
@@ -250,8 +291,8 @@ function helper() {
 }
 
 /** The webxdc API, storage kept per app, plus the helper. */
-export function webxdcScript({ scope, addr, name, lan }) {
-  const cfg = JSON.stringify({ scope, addr, name, lan: Boolean(lan) }).replace(/</g, "\\u003c");
+export function webxdcScript({ scope, addr, name, lan, app = "" }) {
+  const cfg = JSON.stringify({ scope, addr, name, lan: Boolean(lan), app }).replace(/</g, "\\u003c");
   return `(${helper.toString()})();(${webxdc.toString()})(${cfg});`;
 }
 
@@ -364,6 +405,18 @@ function webxdc(cfg) {
     }
   });
 
+  // a character's seat: the game's adapter, if SEASIDE has one for this app, gives her words for what she sees and
+  // named actions (public/game-adapters/<app>.js); a person's own copy never loads it
+  if (/^ai:/.test(cfg.addr) && cfg.app) {
+    const adapter = `/game-adapters/${encodeURIComponent(cfg.app)}.js`;
+    // (most apps have none: asked first, so only a real adapter that fails to load says so)
+    fetch(adapter, { method: "HEAD" })
+      .then((r) => (r.ok ? import(adapter) : null))
+      .then((m) => {
+        if (m) window.__pddAdapter = m.default;
+      })
+      .catch((err) => console.warn(`[seaside] the game's adapter didn't load: ${err && err.message ? err.message : err}`));
+  }
   window.webxdc = {
     __pdd: true,
     selfAddr: cfg.addr,

@@ -37,7 +37,7 @@ import { currentChat } from "./chats.ts";
 import { compact, shouldCompact } from "./context.ts";
 import { fitTurns, isCtxError, learnLimit, learnedLimit, sizeOf } from "./ctxfit.ts";
 import { missedNote, missedTool } from "./missedTool.ts";
-import { CLAIM_NOTE, MOVE_NOTE, SAY_NOTE, claimsMove, claimsTool, saidNothing } from "./deskRecord.ts";
+import { CLAIM_NOTE, MOVE_NOTE, SAY_NOTE, claimsMove, claimsTool, saidNothing, stripRecords } from "./deskRecord.ts";
 import { bookFor, bookHeader, parseScene, redactKeys, sceneText } from "./storybook.ts";
 import { allKeyValues, envFor } from "./residentKeys.ts";
 import { isLimitError, recordLimit, recordUsage } from "./meter.ts";
@@ -426,6 +426,11 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
             patch({ tools: [...used] });
             turns.push({ role: "assistant", content: result.text });
             turns.push({ role: "user", content: UNSAID_NOTE });
+            // (on her last step too: she still gets one, without tools, to say it)
+            if (step >= ai.maxSteps) {
+              tools = [];
+              step--;
+            }
             continue;
           }
           // tools ran (a move sent, say) and then she stopped with nothing said at all, thinking included: the room only
@@ -478,7 +483,8 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
           }
           // tools ran and then she said nothing at all (some models do, once the tools are put away): the desk asks her,
           // once, to say it in words, and she gets one more step without tools to do it
-          if (!sayGiven && !signal.aborted && saidNothing(parts.text, `${result.thinking}${parts.thinking}`, used.filter((u) => !u.desk).length)) {
+          // (an imitation of the desk's own record is taken out of a reply later, so it counts as nothing said)
+          if (!sayGiven && !signal.aborted && saidNothing(stripRecords(parts.text), `${result.thinking}${parts.thinking}`, used.filter((u) => !u.desk).length)) {
             sayGiven = true;
             used.push({ name: "reply", ok: false, note: "tools ran, then no words", out: SAY_NOTE, desk: true });
             patch({ tools: [...used] });

@@ -1368,9 +1368,15 @@ export function deskServer() {
       if (rel === "webxdc.js") return send(res, 200, "/* webxdc is provided by PDA SEASIDE */", MIME.js);
       const q = url.searchParams;
       const inject = rel.endsWith(".html") || rel.endsWith(".htm")
-        ? webxdcScript({ scope: q.get("scope") || pkg.appKey, addr: q.get("addr") || "you", name: q.get("name") || "You", lan: lan() })
+        ? webxdcScript({ scope: q.get("scope") || pkg.appKey, addr: q.get("addr") || "you", name: q.get("name") || "You", lan: lan(), app: pkg.appKey })
         : "";
       return serveFile(res, L.fileOf(id, rel), inject);
+    }
+    // a game's adapter for characters' seats (public/game-adapters/<app>.js): served from the apps' own address
+    if (parts[0] === "game-adapters" && parts[1]) {
+      const file = path.resolve(publicDir, "game-adapters", path.basename(decodeURIComponent(parts[1])));
+      if (!file.endsWith(".js") || !fs.existsSync(file)) return send(res, 404, "", "text/plain");
+      return serveFile(res, file);
     }
     if (parts[0] === "games") {
       const rel = decodeURIComponent(parts.join("/"));
@@ -1509,7 +1515,11 @@ export function deskServer() {
       // An app built to sit at the root of its own address (Vite's "/assets/…", as most Vector apps are) asks for root
       // paths. Here every app shares one address under /run/<id>/, so those come from the app whose page asked (its
       // Referer), and only ever from that app's own files; anything else on the apps' address stays as it was.
-      if (isAppHost(req) && !url.pathname.startsWith("/run/") && !url.pathname.startsWith("/games/") && url.pathname !== "/browse") {
+      // a game's adapter for characters' seats is SEASIDE's own, not the app's: served before an app's root paths
+      if (isAppHost(req) && url.pathname.startsWith("/game-adapters/")) {
+        if (run(req, res, url) !== null) return;
+      }
+      if (isAppHost(req) && !url.pathname.startsWith("/run/") && !url.pathname.startsWith("/games/") && !url.pathname.startsWith("/game-adapters/") && url.pathname !== "/browse") {
         // the folder the asking page lives in: "/run/<id>/", or a built-in game's "/games/<set>/<slug>/"
         let home = "";
         try {

@@ -414,9 +414,9 @@ export function readScreen(win: Window | null | undefined, timeout = 1500): Prom
 }
 
 let actSeq = 0;
-export type SeatAct = { do: "type" | "click" | "choose"; target: string; text?: string; enter?: boolean };
+export type SeatAct = { do: "type" | "click" | "choose" | "use"; target: string; text?: string; enter?: boolean };
 /** Use a control on a seat's own screen (type, click, choose), the way its player would on their own device. */
-export function actOnScreen(win: Window | null | undefined, act: SeatAct, timeout = 2000): Promise<{ ok: boolean; said: string }> {
+export function actOnScreen(win: Window | null | undefined, act: SeatAct, timeout = act.do === "use" ? 45000 : 2000): Promise<{ ok: boolean; said: string }> {
   if (!win) return Promise.resolve({ ok: false, said: "Your seat isn't open." });
   return new Promise((resolve) => {
     const rid = ++actSeq;
