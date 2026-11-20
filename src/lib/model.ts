@@ -178,6 +178,21 @@ export async function decideOnce(c: Connection, key: string, model: string, syst
   return { text: ch?.message?.content ?? "", top: ch?.logprobs?.content?.[0]?.top_logprobs ?? [] };
 }
 
+/** The window a model is loaded with right now (Ollama's /api/ps), which can be smaller than what its file allows:
+ *  Ollama loads models with its own context length (OLLAMA_CONTEXT_LENGTH or its default), not the model's maximum. */
+export async function loadedWindow(c: Connection, key: string, model: string): Promise<number | null> {
+  if (c.kind !== "ollama") return null;
+  try {
+    const res = await outbound(`${base(c.baseUrl)}/api/ps`, { headers: authHeaders(c.kind, key) }, c.via);
+    if (!res.ok) return null;
+    const list = ((await res.json()) as { models?: { name?: string; model?: string; context_length?: number }[] }).models ?? [];
+    const m = list.find((x) => x.name === model || x.model === model);
+    return m && typeof m.context_length === "number" && m.context_length > 0 ? m.context_length : null;
+  } catch {
+    return null;
+  }
+}
+
 const windows = new Map<string, number | null>();
 /** How many tokens a model's context holds, as its server says (Ollama's /api/show), or null when it won't say. */
 export async function modelWindow(c: Connection, key: string, model: string): Promise<number | null> {

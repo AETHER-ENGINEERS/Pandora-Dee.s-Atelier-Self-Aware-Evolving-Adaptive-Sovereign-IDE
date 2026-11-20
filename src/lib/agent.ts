@@ -3,7 +3,7 @@
 import { relFor, withRel } from "./people.ts";
 import type { Character } from "./characters.ts";
 import { desk, type OutsideMail } from "./store.ts";
-import { credential, explainError, listModels, pickModel, scopeOf, streamOnce, type Connection, type Turn, modelWindow } from "./model.ts";
+import { credential, explainError, listModels, pickModel, scopeOf, streamOnce, type Connection, type Turn, loadedWindow, modelWindow } from "./model.ts";
 import { allowed, blockedBecause } from "./privacy.ts";
 import { memoryForPrompt } from "./vecmem.ts";
 import { catsNote } from "./cats.ts";
@@ -381,7 +381,8 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
       // full, then gets safe and says where she is and what's next (playRoom.ts)
       const seated = playing && tools.some((t) => t.name === "game_seat_act");
       const sizes = seated ? [s.chat.numCtx, learnedLimit(ctxKey), await modelWindow(conn, keyFor(conn, me.id), model)].filter((n): n is number => typeof n === "number" && n > 0) : [];
-      const playWindow = sizes.length ? Math.min(...sizes) : DEFAULT_WINDOW; // (the smallest of what's chosen, learned and said)
+      let playWindow = sizes.length ? Math.min(...sizes) : DEFAULT_WINDOW; // (the smallest of what's chosen, learned and said)
+      let windowChecked = !seated; // (after her first step the model is loaded, and its real window can be asked)
       let maxSteps = seated ? PLAY_STEPS : ai.maxSteps;
       let wrapGiven = false;
       // (on the end of what she's answering, not a message of its own: two in a row tangle some models' templates)
@@ -428,6 +429,11 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
           throw e;
         }
         recordUsage(me.id, kindOf(opts), conn.label, result.usage);
+        if (!windowChecked) {
+          windowChecked = true;
+          const loaded = await loadedWindow(conn, keyFor(conn, me.id), model);
+          if (loaded && loaded < playWindow) playWindow = loaded; // (loaded smaller than its file allows: that's her real room)
+        }
         if (result.usage?.pace) paces.push({ ...result.usage.pace, prompt: result.usage.prompt, output: result.usage.output });
         thought = [thought, result.thinking.trim()].filter(Boolean).join("\n\n");
         // her last step is for words: a tool asked for anyway (no tools were offered) isn't run, and she's told so,

@@ -108,6 +108,44 @@ async function judgeStep(b, t) {
   }
 }
 
+// Her look, through Vexel's own Character screen, pressed as a person presses it: each part by its name in the game
+// (from its own avatars.js), the colour swatches by plain colour names, the clothes' colour sliders by hue names.
+const SWATCH = {
+  skin: ["lightest", "light", "fair", "tan", "medium brown", "brown", "dark brown", "darkest"],
+  eyeCol: ["blue", "brown", "green", "grey", "hazel", "dark", "amber", "violet"],
+  hairCol: ["black", "dark brown", "brown", "light brown", "auburn", "ginger", "golden", "blonde", "platinum", "grey", "white", "pink", "lavender", "teal", "blue", "green"],
+  shoes: ["black", "brown", "tan", "white", "navy", "red", "olive", "grey"],
+};
+const HUES = { red: 0, orange: 5, gold: 8, yellow: 10, lime: 16, green: 21, teal: 28, cyan: 32, sky: 36, blue: 41, indigo: 45, purple: 49, violet: 50, magenta: 53, pink: 58, rose: 61 };
+// what she says → the game's own field
+const PARTS = [
+  [/^skin/, "skin"], [/^eye ?(?:colou?r)/, "eyeCol"], [/^eyes?/, "eyes"], [/^mouth/, "mouth"], [/^cheeks?/, "cheeks"],
+  [/^(?:facial hair|beard)/, "beard"], [/^hair ?(?:colou?r)/, "hairCol"], [/^hair(?: ?style)?/, "hair"], [/^ears?/, "ears"],
+  [/^arms?/, "slim"], [/^height/, "height"], [/^top ?(?:colou?r)/, "topHue"], [/^top ?shade/, "topShade"], [/^top/, "top"],
+  [/^(?:bottoms?|legs?|trousers) ?(?:colou?r)/, "legHue"], [/^(?:bottoms?|legs?|trousers) ?shade/, "legShade"], [/^(?:bottoms?|legs?)/, "legs"],
+  [/^shoes?/, "shoes"], [/^(?:extra|accessory|hat)/, "extra"],
+];
+let looks = null;
+async function lookNames() {
+  if (looks) return looks;
+  const a = await import(location.href.replace(/[^/]*$/, "") + "js/avatars.js");
+  looks = { eyes: a.EYE_STYLES, mouth: a.MOUTHS, cheeks: a.CHEEKS, beard: a.BEARDS, hair: a.HAIR_STYLES, ears: a.EARS, height: a.HEIGHTS, top: a.TOPS, topShade: a.SHADES, legs: a.LEGS, legShade: a.SHADES, extra: a.EXTRAS, slim: ["classic", "slim"] };
+  return looks;
+}
+const hueName = (v) => Object.entries(HUES).reduce((best, [n, h]) => (Math.abs(h - v) < Math.abs(HUES[best] - v) ? n : best), "red");
+/** Her look as the open Character screen shows it, in words. */
+function lookNow(box, names) {
+  const val = (k) => {
+    const cyc = box.querySelector(`.cyc[data-k="${k}"] b`);
+    if (cyc) return cyc.textContent;
+    const on = box.querySelector(`button.on[data-k="${k}"]`);
+    if (on) return SWATCH[k] ? SWATCH[k][+on.dataset.v] : names[k] ? names[k][+on.dataset.v] : on.dataset.v;
+    const r = box.querySelector(`.hue[data-k="${k}"]`);
+    return r ? hueName(+r.value) : "?";
+  };
+  return `skin ${val("skin")}; eyes ${val("eyes")}, eye colour ${val("eyeCol")}; mouth ${val("mouth")}; cheeks ${val("cheeks")}; facial hair ${val("beard")}; hair ${val("hair")}, hair colour ${val("hairCol")}; ears ${val("ears")}; arms ${val("slim")}; height ${val("height")}; top ${val("top")}, ${val("topShade")} ${val("topHue")}; bottoms ${val("legs")}, ${val("legShade")} ${val("legHue")}; shoes ${val("shoes")}; extra ${val("extra")}`;
+}
+
 export default {
   async describe() {
     const g = ready();
@@ -160,6 +198,58 @@ export default {
   },
 
   actions: {
+    appearance: {
+      help: 'how you look, through the game\'s Character screen: "appearance" alone shows your look and every choice; to change it, name parts and what you want, separated by commas: "hair Long, hair colour pink, ears Cat, top Hoodie, top colour purple, extra Flower"',
+      async run(text) {
+        ready();
+        const names = await lookNames();
+        const btn = document.getElementById("char-btn");
+        const box = document.getElementById("charscreen");
+        if (!btn || !box) return "This Vexel has no Character screen.";
+        btn.click(); // (opens it with your look now, as the menu's Character button does)
+        await new Promise((r) => setTimeout(r, 50));
+        const want = String(text || "").trim();
+        const choices = () =>
+          `Choices: skin (${SWATCH.skin.join(", ")}); eyes (${names.eyes.join(", ")}); eye colour (${SWATCH.eyeCol.join(", ")}); mouth (${names.mouth.join(", ")}); cheeks (${names.cheeks.join(", ")}); facial hair (${names.beard.join(", ")}); hair (${names.hair.join(", ")}); hair colour (${SWATCH.hairCol.join(", ")}); ears (${names.ears.join(", ")}); arms (classic, slim); height (${names.height.join(", ")}); top (${names.top.join(", ")}); top colour (${Object.keys(HUES).join(", ")}); top shade (${names.topShade.join(", ")}); bottoms (${names.legs.join(", ")}); bottoms colour and shade (as for the top); shoes (${SWATCH.shoes.join(", ")}); extra (${names.extra.join(", ")}).`;
+        const close = () => box.querySelector(".char-done")?.click();
+        if (!want) {
+          const now = lookNow(box, names);
+          close();
+          return `You look like this: ${now}.\n${choices()}`;
+        }
+        const done = [], missed = [];
+        for (const part of want.split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean)) {
+          const low = part.toLowerCase();
+          const hit = PARTS.find(([re]) => re.test(low));
+          if (!hit) {
+            missed.push(`${part} (no such part)`);
+            continue;
+          }
+          const k = hit[1];
+          const value = low.replace(hit[0], "").replace(/^[\s:=-]+|\s+$/g, "");
+          if (SWATCH[k] || k === "slim") {
+            const list = SWATCH[k] || names.slim;
+            const i = list.indexOf(value) >= 0 ? list.indexOf(value) : list.findIndex((c) => c.includes(value) || value.includes(c));
+            const b = i >= 0 && box.querySelector(`button[data-k="${k}"][data-v="${i}"]`);
+            if (b) { b.click(); done.push(`${part.slice(0, part.length - value.length).trim()} ${list[i]}`); } else missed.push(`${part} (choose from: ${list.join(", ")})`);
+          } else if (k === "topHue" || k === "legHue") {
+            const h = HUES[value] ?? (/^\d+$/.test(value) ? Math.min(63, Number(value)) : undefined);
+            const r = box.querySelector(`.hue[data-k="${k}"]`);
+            if (h !== undefined && r) { r.value = String(h); r.dispatchEvent(new Event("input", { bubbles: true })); done.push(part); } else missed.push(`${part} (a colour: ${Object.keys(HUES).join(", ")})`);
+          } else {
+            const list = names[k] || [];
+            const i = list.findIndex((n) => n.toLowerCase() === value) >= 0 ? list.findIndex((n) => n.toLowerCase() === value) : list.findIndex((n) => n.toLowerCase().includes(value) && value);
+            const c = box.querySelector(`.cyc[data-k="${k}"]`);
+            if (i < 0 || !c) { missed.push(`${part} (choose from: ${list.join(", ")})`); continue; }
+            for (let n = 0; n < list.length && c.querySelector("b").textContent !== list[i]; n++) c.querySelector('button[data-d="1"]').click();
+            done.push(`${part.slice(0, part.length - value.length).trim()} ${list[i]}`);
+          }
+        }
+        const now = lookNow(box, names);
+        close();
+        return `${done.length ? `Changed: ${done.join("; ")}.` : "Nothing changed."}${missed.length ? ` Not changed: ${missed.join("; ")}.` : ""}\nYou look like this now: ${now}. Everyone in the world sees it.`;
+      },
+    },
     choose: {
       help: 'do one of the things listed under "What you could do now", by its number ("3"): your hands do it, and you hear how it went',
       async run(text) {
