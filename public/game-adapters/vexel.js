@@ -152,6 +152,12 @@ export default {
     const n = await lookup();
     if (!g.inGame) return "Vexel (a 3D block world). You're at its start menu: use the action \"enter\" to step into the world.";
     const p = g.player, w = g.world;
+    // dead: the game shows its death screen until you press Respawn, as a person does
+    const death = document.getElementById("death");
+    if (death && death.classList.contains("active")) {
+      const why = (document.getElementById("death-msg")?.textContent || "").replace(/\s+/g, " ").trim();
+      return `Vexel: you died${why ? ` (${why})` : ""}. You're on the death screen and can't do anything until you get up again: use the action "respawn". You come back at your spawn point with empty hands; what you carried lies where you fell for a while.`;
+    }
     const f = ahead(p.yaw);
     const lines = [`Vexel: you stand at ${at(p)}, facing ${compass(f.x, f.z)}${p.pitch > 0.5 ? ", looking up" : p.pitch < -0.5 ? ", looking down" : ""}. It's ${timeWord(g.dayFrac)}${g.weather && g.weather.rain > 0.35 ? (g.weather.snow > 0.5 ? ", snowing" : ", raining") : ""}. Mode: ${g.mode}.`];
     const v = g.vitals || {};
@@ -198,6 +204,18 @@ export default {
   },
 
   actions: {
+    respawn: {
+      help: "after you die: press Respawn on the death screen, to get up again at your spawn point",
+      run() {
+        const g = ready();
+        const death = document.getElementById("death");
+        const btn = document.getElementById("respawn");
+        if (!death || !death.classList.contains("active") || !btn) return "You're alive: there's nothing to respawn from.";
+        btn.click();
+        g.tick(10);
+        return `You got up again at ${at(g.player)}. Read your screen: your hands are empty, and it may be night.`;
+      },
+    },
     appearance: {
       help: 'how you look, through the game\'s Character screen: "appearance" alone shows your look and every choice; to change it, name parts and what you want, separated by commas: "hair Long, hair colour pink, ears Cat, top Hoodie, top colour purple, extra Flower"',
       async run(text) {

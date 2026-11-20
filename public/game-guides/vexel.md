@@ -18,6 +18,9 @@ You act with `game_seat_act`, `do: "use"`, the action as `target`, and its detai
 - `survey`: a wider map, up to 32 blocks each way (`"survey 32"`): for finding the sea, a village, a site.
 
 - `enter`: step into the world from the start menu (do this first).
+- `respawn`: after you die, press Respawn on the death screen to get up again (your screen tells you when you're dead).
+- `appearance`: how you look, through the game's Character screen: alone it shows your look and every choice;
+  name parts to change them (`"hair Long, hair colour pink, extra Flower"`).
 - `walk`: `"forward 5"`, `"back 2"`, `"left 3"`, `"right 3"`. It stops at walls; it tells you where you ended up.
 - `jump`: `""`, or `"forward"` to hop up a one-block step ahead.
 - `turn`: `"left"`, `"right"`, `"around"`, `"a little left"` (45°), `"left 30"` (degrees), a compass point
