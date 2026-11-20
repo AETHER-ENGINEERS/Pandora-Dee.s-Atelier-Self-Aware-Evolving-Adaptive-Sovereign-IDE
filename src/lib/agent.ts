@@ -3,7 +3,7 @@
 import { relFor, withRel } from "./people.ts";
 import type { Character } from "./characters.ts";
 import { desk, type OutsideMail } from "./store.ts";
-import { credential, explainError, listModels, pickModel, scopeOf, streamOnce, type Connection, type Turn } from "./model.ts";
+import { credential, explainError, listModels, pickModel, scopeOf, streamOnce, type Connection, type Turn, modelWindow } from "./model.ts";
 import { allowed, blockedBecause } from "./privacy.ts";
 import { memoryForPrompt } from "./vecmem.ts";
 import { catsNote } from "./cats.ts";
@@ -44,6 +44,7 @@ import { isLimitError, recordLimit, recordUsage } from "./meter.ts";
 import type { UsageKind } from "./meterCore.ts";
 import { record } from "./trajectories.ts";
 import { isSeatView, shrinkOlderViews } from "./seatViews.ts";
+import { DEFAULT_WINDOW, PLAY_STEPS, WRAP_STEPS, playNote, timeToWrap, wrapNote } from "./playRoom.ts";
 import { fserveOn, parseCommand, serveCommand } from "./fserve.ts";
 import { isImage, promptParts, splitThink, type Attachment, type PromptContext, type ToolUse } from "./room.ts";
 
@@ -376,12 +377,25 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
       let moveGiven = false;
       let final = "";
       let thought = "";
-      for (let step = 0; step <= ai.maxSteps; step++) {
+      // on a game seat, her turn runs on her room, not a few actions: she plays on until her context is nearly
+      // full, then gets safe and says where she is and what's next (playRoom.ts)
+      const seated = playing && tools.some((t) => t.name === "game_seat_act");
+      const sizes = seated ? [s.chat.numCtx, learnedLimit(ctxKey), await modelWindow(conn, keyFor(conn, me.id), model)].filter((n): n is number => typeof n === "number" && n > 0) : [];
+      const playWindow = sizes.length ? Math.min(...sizes) : DEFAULT_WINDOW; // (the smallest of what's chosen, learned and said)
+      let maxSteps = seated ? PLAY_STEPS : ai.maxSteps;
+      let wrapGiven = false;
+      // (on the end of what she's answering, not a message of its own: two in a row tangle some models' templates)
+      if (seated) {
+        const last = turns[turns.length - 1];
+        if (last && last.role === "user" && typeof last.content === "string") turns[turns.length - 1] = { ...last, content: `${last.content}\n\n${playNote(playWindow)}` };
+        else turns.push({ role: "user", content: playNote(playWindow) });
+      }
+      for (let step = 0; step <= maxSteps; step++) {
         let streamed = "";
         let reasoning = "";
         let result;
         try {
-          result = await streamOnce(conn, model, keyFor(conn, me.id), turns, step < ai.maxSteps ? tools.map((t) => ({ ...t, description: withRel(t.description, rel) })) : [], ai.temperature, (piece) => {
+          result = await streamOnce(conn, model, keyFor(conn, me.id), turns, step < maxSteps ? tools.map((t) => ({ ...t, description: withRel(t.description, rel) })) : [], ai.temperature, (piece) => {
             streamed += piece;
             const parts = splitThink(shown + streamed);
             setBusy(me.id, parts.text.trim() ? "typing" : "thinking");
@@ -418,9 +432,11 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
         thought = [thought, result.thinking.trim()].filter(Boolean).join("\n\n");
         // her last step is for words: a tool asked for anyway (no tools were offered) isn't run, and she's told so,
         // once, with one more step to say what she did (Dee in Vexel, 2026-11-20: every turn ended in an action)
-        if (step >= ai.maxSteps && result.toolCalls.length && !sayGiven) {
+        if (step >= maxSteps && result.toolCalls.length && !sayGiven) {
           sayGiven = true;
-          const LAST = "[Desk note] That's all the actions for this turn, so that last one wasn't taken. Now say, in a line or two, what you did and what happened (only what your screen showed). You can carry on next turn.";
+          const LAST = seated
+            ? "[Desk note] That's all the actions for this turn, so that last one wasn't taken. Now say, in words, where you are (x, y, z, from your screen), what you did this turn, and what you'll do next turn."
+            : "[Desk note] That's all the actions for this turn, so that last one wasn't taken. Now say, in a line or two, what you did and what happened (only what your screen showed). You can carry on next turn.";
           used.push({ name: "reply", ok: false, note: "out of actions: asked for her words", out: LAST, desk: true });
           patch({ tools: [...used] });
           turns.push({ role: "assistant", content: result.text || "(asked for another action)" });
@@ -429,11 +445,11 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
           step--;
           continue;
         }
-        if (step >= ai.maxSteps && result.toolCalls.length) result.toolCalls = []; // (still no: her words, whatever they are)
+        if (step >= maxSteps && result.toolCalls.length) result.toolCalls = []; // (still no: her words, whatever they are)
         if (!result.toolCalls.length) {
           // she meant to call a tool and didn't: the desk says so plainly, once a turn, and she goes on from there
           const parts = splitThink(result.text);
-          const missed = !noteGiven && step < ai.maxSteps ? missedTool(`${result.thinking}\n${parts.thinking}`, parts.text, tools.map((t) => t.name)) : null;
+          const missed = !noteGiven && step < maxSteps ? missedTool(`${result.thinking}\n${parts.thinking}`, parts.text, tools.map((t) => t.name)) : null;
           // her whole answer stayed inside her thinking (a model that never closed it): nobody saw it, so the desk says so
           const unsaid = !missed && !heardGiven && !opts.nudge && !parts.text.trim() && `${result.thinking}${parts.thinking}`.trim().length > 40;
           if (unsaid) {
@@ -443,7 +459,7 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
             turns.push({ role: "assistant", content: result.text });
             turns.push({ role: "user", content: UNSAID_NOTE });
             // (on her last step too: she still gets one, without tools, to say it)
-            if (step >= ai.maxSteps) {
+            if (step >= maxSteps) {
               tools = [];
               step--;
             }
@@ -452,7 +468,7 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
           // tools ran (a move sent, say) and then she stopped with nothing said at all, thinking included: the room only
           // sees a row of tools. The desk asks once for a line about it (k2.7-code in Logic Garden, 2026-11-19)
           const silent =
-            !missed && playing && !heardGiven && !opts.nudge && step < ai.maxSteps && !parts.text.trim() && !shown.trim() && used.some((u) => !u.desk);
+            !missed && playing && !heardGiven && !opts.nudge && step < maxSteps && !parts.text.trim() && !shown.trim() && used.some((u) => !u.desk);
           if (silent) {
             heardGiven = true;
             used.push({ name: "reply", ok: false, note: "acted without a word", out: SILENT_NOTE, desk: true });
@@ -462,7 +478,7 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
             continue;
           }
           // she describes using a tool, and none ran in this reply: the desk says so, once, and her words stay shown
-          const claimed = !missed && !claimGiven && step < ai.maxSteps && tools.length > 0 && !used.some((u) => !u.desk) && claimsTool(parts.text);
+          const claimed = !missed && !claimGiven && step < maxSteps && tools.length > 0 && !used.some((u) => !u.desk) && claimsTool(parts.text);
           if (claimed) {
             claimGiven = true;
             used.push({ name: "reply", ok: false, note: "described tool use, but no tool ran", out: CLAIM_NOTE, desk: true });
@@ -477,10 +493,10 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
           // a move in the open game told in words, with none sent: the desk says the game hasn't changed, once, and she
           // can send it (her words stay shown)
           const toldMove =
-            !moveGiven && playing && g?.kind === "xdc" && step < ai.maxSteps && tools.some((t) => t.name === "app_send_update") && !used.some((u) => u.name === "app_send_update") && claimsMove(parts.text);
+            !moveGiven && playing && g?.kind === "xdc" && step < maxSteps && tools.some((t) => t.name === "app_send_update") && !used.some((u) => u.name === "app_send_update") && claimsMove(parts.text);
           // the same in a game she plays on her own seat (an adapter's actions): a world told, not touched
           const toldAct =
-            !toldMove && !moveGiven && playing && step < ai.maxSteps && tools.some((t) => t.name === "game_seat_act") && !used.some((u) => u.name === "game_seat_act") && (claimsWorld(parts.text) || claimsMove(parts.text));
+            !toldMove && !moveGiven && playing && step < maxSteps && tools.some((t) => t.name === "game_seat_act") && !used.some((u) => u.name === "game_seat_act") && (claimsWorld(parts.text) || claimsMove(parts.text));
           if (!missed && (toldMove || toldAct)) {
             moveGiven = true;
             used.push({ name: "reply", ok: false, note: toldAct ? "told what she did, did none of it" : "told a move, sent none", out: toldAct ? ACT_NOTE : MOVE_NOTE, desk: true });
@@ -510,7 +526,7 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
             turns.push({ role: "assistant", content: result.text });
             turns.push({ role: "user", content: SAY_NOTE });
             tools = [];
-            if (step >= ai.maxSteps) step--; // the last step was this one: she still gets hers
+            if (step >= maxSteps) step--; // the last step was this one: she still gets hers
             continue;
           }
           final = shown + result.text;
@@ -544,6 +560,15 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
           if (group.some((call) => isSeatView(call.name))) shrinkOlderViews(turns, turnFrom);
           group.forEach((call, k) => turns.push({ role: "tool", content: outs[k].text.slice(0, 12000), callId: call.id, name: call.name }));
           i = j;
+        }
+        // her room's nearly full: once, she's told to get safe and say where she is, with a few actions left for it
+        if (seated && !wrapGiven && timeToWrap(Math.max(result.usage?.prompt ?? 0, sizeOf(turns, toolsJson())), playWindow)) {
+          wrapGiven = true;
+          const note = wrapNote(Math.max(result.usage?.prompt ?? 0, sizeOf(turns, toolsJson())), playWindow);
+          used.push({ name: "reply", ok: true, note: "room nearly full: get safe, then say where", out: note, desk: true });
+          patch({ tools: [...used] });
+          turns.push({ role: "user", content: note });
+          maxSteps = Math.min(maxSteps, step + WRAP_STEPS);
         }
         // what a tool showed her (her browser tab) comes as a picture after the results; only the newest stays a
         // picture, so the conversation doesn't fill up with old ones

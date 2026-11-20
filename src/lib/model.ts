@@ -154,6 +154,28 @@ async function failure(res: Response, what: string) {
 
 const aicordIds = new Map<string, string>();
 
+const windows = new Map<string, number | null>();
+/** How many tokens a model's context holds, as its server says (Ollama's /api/show), or null when it won't say. */
+export async function modelWindow(c: Connection, key: string, model: string): Promise<number | null> {
+  const k = `${c.id}:${model}`;
+  if (windows.has(k)) return windows.get(k) ?? null;
+  let n: number | null = null;
+  if (c.kind === "ollama") {
+    try {
+      const res = await outbound(`${base(c.baseUrl)}/api/show`, { method: "POST", headers: authHeaders(c.kind, key), body: JSON.stringify({ model }) }, c.via);
+      if (res.ok) {
+        const info = ((await res.json()) as { model_info?: Record<string, unknown> }).model_info ?? {};
+        const found = Object.entries(info).find(([name, v]) => /\.context_length$/.test(name) && typeof v === "number");
+        n = found ? (found[1] as number) : null;
+      }
+    } catch {
+      n = null;
+    }
+  }
+  windows.set(k, n);
+  return n;
+}
+
 export async function listModels(c: Connection, key: string, signal?: AbortSignal): Promise<string[]> {
   if (c.kind === "ollama") {
     const res = await outbound(`${base(c.baseUrl)}/api/tags`, { headers: authHeaders(c.kind, key), signal }, c.via);
