@@ -4,6 +4,20 @@
 // themselves (G.tick) while a key is held, the way a person's held key would.
 
 const G = () => window.G;
+
+// A seat is read in words, not watched, so its own copy of Vexel draws at low quality and a short distance:
+// three full copies (two seats and the person's) once ran a page out of memory overnight. The seat keeps its own
+// settings (its storage is its own), so the person's window is untouched; it takes effect when the seat next loads.
+try {
+  const k = "vexel.settings";
+  const s = JSON.parse(localStorage.getItem(k) || "{}");
+  if (!s.seatLight) {
+    Object.assign(s, { quality: "low", rd: 3, userQuality: true, grade: false, seatLight: 1 });
+    localStorage.setItem(k, JSON.stringify(s));
+  }
+} catch (e) {
+  /* storage unavailable: the game's own defaults */
+}
 let names = null; // block and item names, from Vexel's own modules
 async function lookup() {
   if (names) return names;
