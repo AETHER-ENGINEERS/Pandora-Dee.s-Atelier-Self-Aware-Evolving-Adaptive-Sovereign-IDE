@@ -366,17 +366,28 @@ export default {
       },
     },
     walk: {
-      help: 'walk some blocks: "forward 5", "back 2", "left 3", "right 3" (it climbs one-block steps by itself)',
+      help: 'walk some blocks: "forward 5", "back 2", "left 3", "right 3", or a compass way, "north 2", "south-east 4" (it turns you first; it climbs one-block steps by itself)',
       run(text) {
         const g = ready();
-        const m = /(forward|ahead|back|backward|left|right)\D*(\d+)?/i.exec(text) || [];
-        const dir = (m[1] || "forward").toLowerCase();
-        const blocks = Math.max(1, Math.min(20, Number(m[2]) || 3));
-        const key = { forward: "KeyW", ahead: "KeyW", back: "KeyS", backward: "KeyS", left: "KeyA", right: "KeyD" }[dir];
+        const t = String(text || "").toLowerCase();
+        const count = Number(/\d+/.exec(t)?.[0]);
+        const blocks = Math.max(1, Math.min(20, Number.isFinite(count) && count > 0 ? count : 3));
+        // a compass way: turn that way first, then walk forward (as a person turns and walks)
+        const ways = { "north-east": -45, "north-west": 45, "south-east": -135, "south-west": 135, north: 0, east: -90, south: 180, west: 90 };
+        const way = Object.keys(ways).find((w) => t.replace(/\s+(?=east|west)/, "-").includes(w));
+        let dir = (/(forward|ahead|back|backward|left|right)/.exec(t) || [])[1] || "forward";
+        if (way && !/(forward|ahead|back|backward|left|right)/.test(t)) {
+          g.look((ways[way] * Math.PI) / 180, g.player.pitch);
+          g.tick(2);
+          dir = way;
+        }
+        const key = { forward: "KeyW", ahead: "KeyW", back: "KeyS", backward: "KeyS", left: "KeyA", right: "KeyD" }[dir] || "KeyW";
         const from = { ...g.player };
         hold([key], (blocks / 4.3) * 1000);
+        g.tick(10); // (let her come to a stop before saying where she is)
         const moved = Math.round(Math.hypot(g.player.x - from.x, g.player.z - from.z));
-        return `Walked ${dir}: ${moved} block${moved === 1 ? "" : "s"}, now at ${at(g.player)}.${moved < blocks - 1 ? " Something stopped you: maybe a wall or a step too high (try jump)." : ""}`;
+        const far = moved > blocks * 2 + 2 ? ` That's much further than ${blocks}: something carried you (a slope, water, a fall, or running). Read your screen before the next move.` : "";
+        return `Walked ${dir}: ${moved} block${moved === 1 ? "" : "s"}, now at ${at(g.player)}.${moved < blocks - 1 ? " Something stopped you: maybe a wall or a step too high (try jump)." : ""}${far}`;
       },
     },
     jump: {
