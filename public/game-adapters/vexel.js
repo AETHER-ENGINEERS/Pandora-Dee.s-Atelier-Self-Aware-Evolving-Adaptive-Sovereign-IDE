@@ -513,6 +513,31 @@ export default {
         return `Chopped ${dug} ${tree} block${dug === 1 ? "" : "s"}${got > 0 ? `; ${got} log${got === 1 ? "" : "s"} in your inventory now (${countLogs()} in all)` : ", but the logs haven't reached your hands yet: walk forward a step to pick them up"}. You're at ${at(g.player)}.`;
       },
     },
+    aim: {
+      help: 'point at a block, as a person moves the mouse to it: "aim 95 69 19" (x y z), or with the face to point at, "aim 95 69 19 top" (top, bottom, north, south, east, west). It says what you\'re pointing at and where a placed block would go, so dig and place reach exactly that',
+      async run(text) {
+        const g = ready();
+        const n = await lookup();
+        const nums = (String(text || "").match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+        if (nums.length < 3) return 'Say the block as x y z, from your screen or map: "aim 95 69 19", or "aim 95 69 19 top".';
+        const [x, y, z] = nums.map(Math.floor);
+        const faces = { top: [0, 1, 0], bottom: [0, -1, 0], north: [0, 0, -1], south: [0, 0, 1], east: [1, 0, 0], west: [-1, 0, 0] };
+        const word = Object.keys(faces).find((f) => new RegExp(`\\b${f}\\b`, "i").test(String(text)));
+        const [fx, fy, fz] = word ? faces[word] : [0, 0, 0];
+        const tx = x + 0.5 + fx * 0.45, ty = y + 0.5 + fy * 0.45, tz = z + 0.5 + fz * 0.45;
+        const p = g.player, eye = p.y + 1.62;
+        const dx = tx - p.x, dy = ty - eye, dz = tz - p.z, horiz = Math.hypot(dx, dz) || 0.001;
+        const dist = Math.hypot(horiz, dy);
+        if (dist > 5) return `That block is ${dist.toFixed(1)} blocks from your eyes, out of reach (about 5): walk closer first. You're at ${at(p)}.`;
+        g.look(Math.atan2(-dx, -dz), Math.atan2(dy, horiz));
+        g.tick(2);
+        const t = g.target;
+        if (!t) return `Nothing's there to point at: ${x}, ${y}, ${z} is open air.`;
+        const side = Object.entries(faces).find(([, v]) => v[0] === t.nx && v[1] === t.ny && v[2] === t.nz)?.[0] || "a";
+        const hit = t.x === x && t.y === y && t.z === z;
+        return `${hit ? "Pointing at" : `Something's in the way: pointing at`} ${n.block(t.id)} at ${t.x}, ${t.y}, ${t.z}, its ${side} face. dig breaks it; place puts a block at ${t.x + t.nx}, ${t.y + t.ny}, ${t.z + t.nz}.`;
+      },
+    },
     attack: {
       help: 'hit a creature, as a person aims at it and clicks: "attack sheep" (the nearest sheep), "attack zombie", or "attack" for the nearest creature. It turns you to it, steps within reach and swings until it falls or runs off (animals give food; villagers remember who hit them)',
       async run(text) {

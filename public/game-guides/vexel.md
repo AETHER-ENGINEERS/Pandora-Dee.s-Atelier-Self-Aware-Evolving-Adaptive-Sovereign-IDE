@@ -26,6 +26,8 @@ You act with `game_seat_act`, `do: "use"`, the action as `target`, and its detai
 - `turn`: `"left"`, `"right"`, `"around"`, `"a little left"` (45°), `"left 30"` (degrees), a compass point
   (`"north"`, `"north-east"`), or `"toward 15 -7"` to face a spot (x z) on your map.
 - `look`: `"up"`, `"down"`, `"ahead"`. Where you point decides what `dig` and `place` reach.
+- `aim`: point at a block, as a person moves the mouse to it: `"aim 95 69 19"`, or a face, `"aim 95 69 19 top"`.
+  It says what you're pointing at and where a placed block would go: the way to build exactly where you mean.
 - `dig`: break the block you're pointing at (logs give wood; leaves sometimes drop an apple or a sapling).
 - `place`: place what's in your hand against the block you're pointing at.
 - `attack`: hit a creature, as a person aims and clicks: `"attack sheep"`, `"attack zombie"`, or `"attack"` for the nearest.
