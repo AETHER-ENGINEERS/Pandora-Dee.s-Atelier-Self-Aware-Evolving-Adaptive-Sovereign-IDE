@@ -14,6 +14,7 @@ You act with `game_seat_act`, `do: "use"`, the action as `target`, and its detai
 - `look`: `"up"`, `"down"`, `"ahead"`. Where you point decides what `dig` and `place` reach.
 - `dig`: break the block you're pointing at (logs give wood; leaves sometimes drop an apple or a sapling).
 - `place`: place what's in your hand against the block you're pointing at.
+- `chop`: find the nearest tree, walk up to it and dig its trunk for logs (`"chop 3"` for up to three).
 - `select`: hold a hotbar slot, `"3"`, or by name, `"planks"`.
 - `say`: talk in Vexel's own chat (it shows over your head), or a command like `"/time day"`.
 - `steps`: several of these in one call, separated by `;`, e.g. `"look down; dig; walk forward 3"`.

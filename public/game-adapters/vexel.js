@@ -183,6 +183,65 @@ export default {
         return `Placed ${n.item(slot.id)} (if there was room).`;
       },
     },
+    chop: {
+      help: 'find the nearest tree, walk up to it and dig its trunk for logs: "chop", or "chop 3" for up to 3 logs',
+      async run(text) {
+        const g = ready();
+        const n = await lookup();
+        const want = Math.max(1, Math.min(6, Number(/\d+/.exec(text || "")?.[0]) || 3));
+        const w = g.world, p = g.player;
+        const isLog = (id) => id > 0 && /log$/i.test(String(n.block(id)).replace(/\s+/g, "_")) && !/^stripped/i.test(n.block(id));
+        const countLogs = () => g.inv.slots.reduce((s, x) => s + (x && isLog(x.id) ? x.n : 0), 0);
+        const before = countLogs();
+        // the nearest trunk: a log block within 16 blocks, at about her height
+        let best = null;
+        const fx = Math.floor(p.x), fy = Math.floor(p.y), fz = Math.floor(p.z);
+        for (let dx = -16; dx <= 16; dx++)
+          for (let dz = -16; dz <= 16; dz++)
+            for (let dy = -3; dy <= 5; dy++) {
+              const id = w.get(fx + dx, fy + dy, fz + dz);
+              if (!isLog(id)) continue;
+              const d = Math.hypot(dx, dz) + Math.abs(dy) * 0.3;
+              if (!best || d < best.d) best = { x: fx + dx, y: fy + dy, z: fz + dz, d, id };
+            }
+        if (!best) return "There's no tree within 16 blocks of you. Walk somewhere new and try again.";
+        const tree = n.block(best.id);
+        const face = (x, z) => g.look(Math.atan2(-(x + 0.5 - g.player.x), -(z + 0.5 - g.player.z)), 0);
+        // walk up to it, facing it each little stretch, hopping when something's in the way
+        for (let i = 0; i < 30 && Math.hypot(best.x + 0.5 - g.player.x, best.z + 0.5 - g.player.z) > 1.9; i++) {
+          face(best.x, best.z);
+          const from = { x: g.player.x, z: g.player.z };
+          hold(["KeyW"], 250);
+          if (Math.hypot(g.player.x - from.x, g.player.z - from.z) < 0.15) hold(["KeyW", "Space"], 350);
+        }
+        if (Math.hypot(best.x + 0.5 - g.player.x, best.z + 0.5 - g.player.z) > 3) return `You couldn't get to the ${tree} (something's in the way). You're at ${at(g.player)}.`;
+        // the trunk's logs within reach, lowest first: aim at each and dig it
+        let dug = 0;
+        for (let y = best.y - 1; y <= Math.floor(g.player.y) + 3 && dug < want; y++) {
+          if (!isLog(w.get(best.x, y, best.z))) continue;
+          const eye = g.player.y + 1.62, cx = best.x + 0.5, cz = best.z + 0.5;
+          const horiz = Math.hypot(cx - g.player.x, cz - g.player.z);
+          g.look(Math.atan2(-(cx - g.player.x), -(cz - g.player.z)), Math.atan2(y + 0.5 - eye, horiz));
+          g.tick(2);
+          const t = g.target;
+          if (!t || t.x !== best.x || t.y !== y || t.z !== best.z) continue; // (something else is in the line of sight)
+          g.button(0, true);
+          try {
+            for (let k = 0; k < 40 && isLog(w.get(best.x, y, best.z)); k++) g.tick(15);
+          } finally {
+            g.button(0, false);
+          }
+          if (!isLog(w.get(best.x, y, best.z))) dug++;
+        }
+        // what fell: step up to where the trunk stood to pick it up
+        face(best.x, best.z);
+        hold(["KeyW"], 500);
+        g.tick(60);
+        const got = countLogs() - before;
+        if (!dug) return `You reached the ${tree} at ${best.x}, ${best.y}, ${best.z} but couldn't get a clear swing at its trunk. Try "look ahead" and "dig".`;
+        return `Chopped ${dug} ${tree} block${dug === 1 ? "" : "s"}${got > 0 ? `; ${got} log${got === 1 ? "" : "s"} in your inventory now (${countLogs()} in all)` : ", but the logs haven't reached your hands yet: walk forward a step to pick them up"}. You're at ${at(g.player)}.`;
+      },
+    },
     select: {
       help: 'hold a hotbar slot: "3", or an item\'s name like "planks"',
       async run(text) {
