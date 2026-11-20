@@ -30,6 +30,7 @@ import { fileInInbox, joinedApps } from "./messengers.ts";
 import { gameScreen } from "./bus.ts";
 import { turnNow, wakes, type Turn as GameTurn } from "./turns.ts";
 import { loadPlans, plansLine } from "./plans.ts";
+import { findThreads, maybePuzzle, nextFlag, passOver, readWatcher, watcherLine, WATCHER_FILE } from "./watcher.ts";
 import type { Role } from "./flood.ts";
 import { currentChat } from "./chats.ts";
 import { compact, shouldCompact } from "./context.ts";
@@ -112,6 +113,28 @@ export function paceLine(paces: { loadMs: number; readMs: number; writeMs: numbe
   const t = paces.reduce((a, p) => ({ loadMs: a.loadMs + p.loadMs, readMs: a.readMs + p.readMs, writeMs: a.writeMs + p.writeMs, prompt: a.prompt + p.prompt, output: a.output + p.output }));
   const rate = t.writeMs ? (t.output / (t.writeMs / 1000)).toFixed(1) : "?";
   return ` · ${t.loadMs > 1500 ? `loaded in ${secs(t.loadMs)}, ` : ""}read ${t.prompt.toLocaleString()} tokens in ${secs(t.readMs)}, wrote ${t.output.toLocaleString()} at ${rate}/s${paces.length > 1 ? ` (${paces.length} steps)` : ""}`;
+}
+
+/** Jade's watcher, when its owner has switched it on: the flag that glows now and any puzzle waiting, as a line in her
+ *  own turn (lib/watcher.ts). Off as soon as she isn't in the room. Nothing runs by itself. */
+function watcherTurn(id: string, inRoom: boolean) {
+  const s = desk();
+  const files = s.filesOf(id);
+  let w = readWatcher(files);
+  if (!w.on) return "";
+  if (!inRoom) {
+    s.writeFile(id, WATCHER_FILE, JSON.stringify({ ...w, on: false }, null, 1));
+    return "";
+  }
+  const threads = findThreads(files);
+  w = passOver(w);
+  const f = nextFlag(w, threads);
+  const p = maybePuzzle(f.state, threads);
+  s.writeFile(id, WATCHER_FILE, JSON.stringify(p.state, null, 1));
+  const line = watcherLine(f.flag, p.puzzle);
+  return line ? `
+
+${line}` : "";
 }
 
 /** Whether her first model runs on a computer here (this one, or one on the network) rather than online: Ollama's
@@ -269,7 +292,7 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
     memoryFocus: await focusFor(me.id, history),
     around: catsNote(s.cats.list, s.cats.on),
   });
-  const sys = withRel(sys0, rel);
+  const sys = withRel(sys0, rel) + (opts.silent ? "" : watcherTurn(me.id, room.some((c) => c.id === me.id)));
   const base: Turn[] = [
     { role: "system", content: sys },
     // a game turn reads only the last few lines, so the game (and its guide) isn't drowned out by the chat

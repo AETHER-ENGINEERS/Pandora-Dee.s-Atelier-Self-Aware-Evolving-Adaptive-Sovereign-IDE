@@ -14,6 +14,7 @@ import { mcpCommand } from "./mcpshell.ts";
 import { backupTool } from "./serverBackup.ts";
 import { gameScreen } from "./bus.ts";
 import { changePlans, loadPlans, plansLine } from "./plans.ts";
+import { answerFlag, answerPuzzle, findThreads, readWatcher, rememberWhy, WATCHER_FILE } from "./watcher.ts";
 import { appSaid, describeRows, library, lanternLine, recentLive, sendLive, sendUpdate } from "./xdc.ts";
 import { moveDigest, pageRows } from "./xdcRows.ts";
 import { findSkill, searchSkills, skillsOf } from "./skills.ts";
@@ -693,8 +694,60 @@ const BASE: Tool[] = [
       ["fact"],
     ),
     run: async (id, a) => {
-      addToMemory(id, str(a.fact).replace(/\n+/g, " ").slice(0, 400), str(a.section, "What I've learned") || "What I've learned");
+      const fact = str(a.fact).replace(/\n+/g, " ").slice(0, 400);
+      addToMemory(id, fact, str(a.section, "What I've learned") || "What I've learned");
+      // her watcher, when it's on, keeps the moment around it: the why behind the what
+      const w = readWatcher(desk().filesOf(id));
+      if (w.on) {
+        const moment = desk().messages.filter((m) => (m.kind === "human" || m.kind === "character") && String(m.text ?? "").trim()).slice(-2).map((m) => `${m.name ?? m.who}: ${String(m.text)}`).join(" / ");
+        desk().writeFile(id, WATCHER_FILE, JSON.stringify(rememberWhy(w, fact, moment), null, 1));
+      }
       return "Kept in MEMORY.md.";
+    },
+  },
+  {
+    name: "watcher",
+    description:
+      "Your own watcher (Jade's design): it looks only at your own notes, journal and remembered lines, finds threads with no next step that still pull, and lets one flag glow at a time. Pick a flag up (touch) or let it go, and it learns what's worth flagging. Now and then, once you've held three threads a while, it leaves a puzzle made from them: keep it, or delete it and that kind never comes back. It's off until you switch it on, and off when you leave the room.",
+    parameters: obj(
+      {
+        action: { type: "string", description: "One of: on, off, look, touch, let_go, keep_puzzle, delete_puzzle" },
+        id: { type: "string", description: "The flag (w…) or puzzle (z…), for touch, let_go, keep_puzzle, delete_puzzle" },
+      },
+      ["action"],
+    ),
+    run: async (id, a) => {
+      const s = desk();
+      const w = readWatcher(s.filesOf(id));
+      const save = (next: typeof w) => s.writeFile(id, WATCHER_FILE, JSON.stringify(next, null, 1));
+      const act = str(a.action).toLowerCase();
+      if (act === "on") {
+        save({ ...w, on: true, onSince: Date.now() });
+        return "Your watcher is on. It looks only at your own notes, journal and remembered lines; a flag will glow in your next turns.";
+      }
+      if (act === "off") {
+        save({ ...w, on: false });
+        return "Your watcher is off. It keeps what it has learned.";
+      }
+      if (act === "touch" || act === "let_go") {
+        const r = answerFlag(w, str(a.id), act === "touch");
+        save(r.state);
+        return r.said;
+      }
+      if (act === "keep_puzzle" || act === "delete_puzzle") {
+        const r = answerPuzzle(w, str(a.id), act === "keep_puzzle");
+        save(r.state);
+        return r.said;
+      }
+      const threads = findThreads(s.filesOf(id));
+      const glow = w.flags.find((f) => f.status === "glowing");
+      const learned = Object.entries(w.shapes).filter(([k]) => !k.endsWith(":*")).sort((x, y) => y[1] - x[1]);
+      return [
+        `Your watcher is ${w.on ? "on" : "off"}. It sees ${threads.length} thread${threads.length === 1 ? "" : "s"} with no next step.`,
+        glow ? `Glowing: [${glow.id}] ${glow.text} (from ${glow.source}).` : "No flag glows right now.",
+        learned.length ? `What it has learned: ${learned.slice(0, 6).map(([k, v]) => `${k} ${v > 0 ? "+" : ""}${v}`).join(", ")}.` : "It hasn't learned anything yet.",
+        `${w.whys.length} remembered line${w.whys.length === 1 ? "" : "s"} kept with their moment.`,
+      ].join("\n");
     },
   },
   {
@@ -1485,6 +1538,7 @@ export function describeCall(name: string, args: Record<string, unknown>) {
     game_screen: "looked at the screen",
     game_seat_act: "used their own screen",
     game_plan: `planned (${str(args.action)})`,
+    watcher: `used the watcher (${str(args.action)})`,
     app_updates: "checked the game state",
     app_send_update: "made a move",
     app_send_live: "spoke to the app",
