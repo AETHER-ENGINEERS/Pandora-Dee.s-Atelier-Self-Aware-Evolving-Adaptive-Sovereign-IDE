@@ -33,4 +33,4 @@ export const playNote = (window: number) =>
 
 /** When her room is nearly full: get safe, then say where she is and what's next. */
 export const wrapNote = (prompt: number, window: number) =>
-  `[Desk note] Your room for this turn is nearly full (${k(prompt)} of ${k(window)} tokens). Before you stop, make yourself safe, in up to ${WRAP_STEPS} actions: out of reach of anything hostile, not over a drop or in deep water, under cover if it's night. Then, in words, say where you are (x, y, z, from your screen), what you did this turn, and what you'll do next turn.`;
+  `[Desk note] Your room for this turn is nearly full (${k(prompt)} of ${k(window)} tokens). Before you stop, leave things in a good place, in up to ${WRAP_STEPS} actions (in a world game: somewhere safe, out of reach of anything hostile, off any drop, under cover at night). Then, in words, say where you are (in a world: x, y, z from your screen; in an app: which screen or lesson), what you did this turn, and what you'll do next turn.`;

@@ -283,6 +283,16 @@ export function promptParts(ctx: PromptContext): { steady: string; moment: strin
 
 export type ChatTurn = { role: "system" | "user" | "assistant"; content: string };
 
+/** The most of one character's reply that goes back into a prompt. A long game turn can leave a reply of tens of
+ *  thousands of characters (Dee's Vexel turns, 2026-11-20: up to 220,000); whole, one of those fills a local model's
+ *  window and the server quietly cuts the rest. Its start and its end are kept (the end is where it landed). */
+export const REPLY_MAX = 6000;
+export function shortened(text: string, max = REPLY_MAX): string {
+  if (text.length <= max) return text;
+  const head = Math.floor(max * 0.35), tail = max - head;
+  return `${text.slice(0, head).trimEnd()}\n\n[… ${(text.length - head - tail).toLocaleString("en")} characters of this reply left out here …]\n\n${text.slice(-tail).trimStart()}`;
+}
+
 /**
  * Turn the shared transcript into a conversation from one character's point of view.
  * With `chatId`, only that Vector or Discord chat is included, each line stamped with its time.
@@ -300,13 +310,13 @@ export function transcriptFor(me: Character, history: Message[], limit = 40, cha
     } else if (m.kind === "character" && m.who === me.id) {
       // her earlier reply, then the desk's record of what actually ran in it, as the desk's own line (inside her reply
       // a model learns to write it herself)
-      const said = stripRecords(m.text).trim();
+      const said = shortened(stripRecords(m.text).trim());
       turns.push({ role: "assistant", content: opts.stamp ? `${stamp(m)}${said}` : said });
       const record = recordLine(m.tools, m.text);
       if (record) turns.push({ role: "user", content: record });
     } else {
       const via = m.source === "desk" ? "" : ` (via ${m.source === "discord" ? "Discord" : "Vector"})`;
-      turns.push({ role: "user", content: `${stamp(m)}${m.name}${via}: ${m.text}${attachmentNote(m.files)}` });
+      turns.push({ role: "user", content: `${stamp(m)}${m.name}${via}: ${m.kind === "character" ? shortened(m.text) : m.text}${attachmentNote(m.files)}` });
     }
   }
   return turns;
