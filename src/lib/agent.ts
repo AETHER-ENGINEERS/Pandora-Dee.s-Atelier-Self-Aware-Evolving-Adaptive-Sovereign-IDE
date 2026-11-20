@@ -44,7 +44,7 @@ import { isLimitError, recordLimit, recordUsage } from "./meter.ts";
 import type { UsageKind } from "./meterCore.ts";
 import { record } from "./trajectories.ts";
 import { isSeatView, shrinkOlderViews } from "./seatViews.ts";
-import { DEFAULT_WINDOW, PLAY_STEPS, WRAP_STEPS, playNote, timeToWrap, wrapNote } from "./playRoom.ts";
+import { DEFAULT_WINDOW, PLAY_STEPS, RUNAWAY_NOTE, WRAP_STEPS, playNote, runaway, timeToWrap, wrapNote } from "./playRoom.ts";
 import { fserveOn, parseCommand, serveCommand } from "./fserve.ts";
 import { isImage, promptParts, splitThink, type Attachment, type PromptContext, type ToolUse } from "./room.ts";
 
@@ -385,6 +385,7 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
       let windowChecked = !seated; // (after her first step the model is loaded, and its real window can be asked)
       let maxSteps = seated ? PLAY_STEPS : ai.maxSteps;
       let wrapGiven = false;
+      let runaways = 0;
       // (on the end of what she's answering, not a message of its own: two in a row tangle some models' templates)
       if (seated) {
         const last = turns[turns.length - 1];
@@ -395,13 +396,23 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
         let streamed = "";
         let reasoning = "";
         let result;
+        // on a game seat, a reply that narrates play instead of playing is cut off as it streams (playRoom.ts)
+        const stepCtrl = new AbortController();
+        const passOn = () => stepCtrl.abort();
+        signal.addEventListener("abort", passOn, { once: true });
+        let ranAway = false;
         try {
           result = await streamOnce(conn, model, keyFor(conn, me.id), turns, step < maxSteps ? tools.map((t) => ({ ...t, description: withRel(t.description, rel) })) : [], ai.temperature, (piece) => {
             streamed += piece;
+            if (seated && !ranAway && step < maxSteps && runaway(streamed)) {
+              ranAway = true;
+              stepCtrl.abort();
+              return;
+            }
             const parts = splitThink(shown + streamed);
             setBusy(me.id, parts.text.trim() ? "typing" : "thinking");
             streamPatch({ text: tidyReply(me, shown + streamed, room), thinking: [thought, reasoning, parts.thinking].filter(Boolean).join("\n\n") || undefined });
-          }, signal, {
+          }, stepCtrl.signal, {
             numCtx: s.chat.numCtx || undefined,
             think: (s.charPrefs[me.id]?.think ?? s.chat.askThink) && conn.kind === "ollama",
             onThink: (piece) => {
@@ -411,6 +422,18 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
             },
           });
         } catch (e) {
+          if (ranAway && !signal.aborted) {
+            // what she wrote is dropped from the room's view (it didn't happen); she hears why, and plays on. Twice in
+            // a turn, and the turn ends with her words instead.
+            runaways++;
+            streamPatch({ text: tidyReply(me, shown, room) });
+            used.push({ name: "reply", ok: false, note: "wrote out play instead of playing: stopped", out: RUNAWAY_NOTE, desk: true });
+            patch({ tools: [...used] });
+            turns.push({ role: "assistant", content: `${splitThink(streamed).text.slice(0, 300).trim() || "(described moves)"} …` });
+            turns.push({ role: "user", content: RUNAWAY_NOTE });
+            if (runaways >= 2) maxSteps = Math.min(maxSteps, step + 1);
+            continue;
+          }
           if ((e as { noTools?: boolean }).noTools && tools.length) {
             tools = [];
             step--;

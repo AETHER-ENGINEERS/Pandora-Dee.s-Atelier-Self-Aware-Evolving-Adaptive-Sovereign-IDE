@@ -84,7 +84,8 @@ function helper() {
     }
     let controls = "";
     try {
-      const list = usable().slice(0, 30).map(describe).filter(Boolean);
+      const many = repeated();
+      const list = usable().slice(0, 60).map((el) => describe(el, many)).filter(Boolean);
       if (list.length) controls = `\n\nControls on this screen (a player in their own seat can use them with game_seat_act):\n${list.join("\n")}`;
     } catch (err) {
       controls = "";
@@ -113,8 +114,33 @@ function helper() {
     // (a label folded away has no visible text: its words still name the control)
     return clean(el.getAttribute("aria-label") || (byFor && (byFor.innerText || byFor.textContent)) || own || (wrap && (wrap.innerText || wrap.textContent)) || el.getAttribute("placeholder") || el.getAttribute("title") || el.getAttribute("name") || el.id);
   };
-  const describe = (el) => {
-    const name = labelOf(el).slice(0, 60);
+  // Many controls with the same label (a "Get" on every course, a "Delete" on every row) can't be told apart by it,
+  // so each of those is named with what it belongs to: the nearest heading or title around it ("Get (AlphaGo)"),
+  // as a person sees which card a button sits on.
+  const ownerOf = (el) => {
+    let node = el.parentElement;
+    for (let i = 0; node && i < 8; i++, node = node.parentElement) {
+      const h = Array.from(node.querySelectorAll("h1,h2,h3,h4,h5,h6,[role=heading],legend,caption,strong,b,.title,.name")).find((x) => !x.contains(el) && !el.contains(x) && clean(x.innerText));
+      if (h) return clean(h.innerText).slice(0, 48);
+    }
+    return "";
+  };
+  const repeated = () => {
+    const seen = new Map();
+    for (const el of usable()) {
+      const k = labelOf(el).toLowerCase();
+      if (k) seen.set(k, (seen.get(k) || 0) + 1);
+    }
+    return seen;
+  };
+  const nameOf = (el, many) => {
+    const name = labelOf(el);
+    if (!name || ((many || repeated()).get(name.toLowerCase()) || 0) < 2) return name;
+    const owner = ownerOf(el);
+    return owner && owner.toLowerCase() !== name.toLowerCase() ? `${name} (${owner})` : name;
+  };
+  const describe = (el, many) => {
+    const name = nameOf(el, many || repeated()).slice(0, 80);
     if (!name && !el.matches("select, " + FIELDS)) return "";
     if (el.matches("select")) return `[choice] "${name}": ${Array.from(el.options).map((o) => clean(o.text)).slice(0, 12).join(" | ")} (now: ${clean(el.options[el.selectedIndex] && el.options[el.selectedIndex].text)})`;
     if (el.matches("input[type=checkbox], input[type=radio]")) return `[${el.type}] "${name}" (${el.checked ? "on" : "off"})`;
@@ -132,7 +158,20 @@ function helper() {
     const cell = /^(?:cell\s*)?(\d+)\s*[, ]\s*(\d+)$/i.exec(clean(target));
     if (cell) return document.querySelector(`[data-row="${cell[1]}"][data-col="${cell[2]}"]`);
     const all = usable().filter((el) => (kind === "type" ? el.matches(FIELDS) : kind === "choose" ? el.matches("select") : true));
-    return all.find((el) => el.id && el.id.toLowerCase() === t) || all.find((el) => labelOf(el).toLowerCase() === t) || all.find((el) => labelOf(el).toLowerCase().includes(t)) || (kind === "type" && !t && all.length === 1 ? all[0] : null);
+    // by its full name first ("Get (AlphaGo)", or "Get AlphaGo" without the brackets), so a repeated label reaches
+    // the one meant
+    const many = repeated();
+    const flat = (s) => clean(String(s).replace(/[()]/g, " ")).toLowerCase();
+    const named = all.map((el) => [el, nameOf(el, many).toLowerCase()]);
+    const hit = (pred) => (named.find(([el, n]) => pred(el, n)) || [])[0];
+    return (
+      all.find((el) => el.id && el.id.toLowerCase() === t) ||
+      hit((el, n) => n === t || flat(n) === flat(t)) ||
+      all.find((el) => labelOf(el).toLowerCase() === t) ||
+      hit((el, n) => flat(n).includes(flat(t))) ||
+      all.find((el) => labelOf(el).toLowerCase().includes(t)) ||
+      (kind === "type" && !t && all.length === 1 ? all[0] : null)
+    );
   };
   window.addEventListener("message", (e) => {
     if (e.source !== window.parent || !e.data || e.data.__pdd !== "act") return;
@@ -197,7 +236,7 @@ function helper() {
       }
       ["pointerdown", "mousedown", "pointerup", "mouseup"].forEach((type) => el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window })));
       el.click();
-      return reply(true, `Clicked "${labelOf(el) || a.target}".`);
+      return reply(true, `Clicked "${nameOf(el) || a.target}".`);
     } catch (err) {
       return reply(false, `That didn't work: ${err && err.message ? err.message : err}`);
     }

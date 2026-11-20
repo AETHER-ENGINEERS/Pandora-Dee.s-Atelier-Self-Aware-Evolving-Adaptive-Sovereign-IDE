@@ -17,3 +17,12 @@ test("the notes say how long she has, and what to say at the end", () => {
   assert.match(n, /x, y, z/);
   assert.match(n, /next turn/);
 });
+
+test("a reply that narrates play instead of playing is caught as it streams", async () => {
+  const { runaway } = await import("./playRoom.ts");
+  assert.equal(runaway("I'll read my screen first, then pick a course."), false);
+  assert.equal(runaway("Thinking it over.</think>\n\nI'll click Browse online."), false);
+  // Dee in the Learning Lab: pretend turns, one after another
+  assert.equal(runaway("I clicked Start.</think>Slide 1 is about AIXI.</think>I read the screen. Slide 2.</think>I'll continue."), true);
+  assert.equal(runaway("a".repeat(6001)), true);
+});
