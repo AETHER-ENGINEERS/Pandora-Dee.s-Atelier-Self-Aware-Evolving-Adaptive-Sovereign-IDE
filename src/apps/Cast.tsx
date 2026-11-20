@@ -651,6 +651,31 @@ function CharWays({ c }: { c: Character }) {
         </div>
         <span className="small faint">A smaller, cheaper model can do the background work; {c.short}'s own AI is still tried if it can't be reached.</span>
       </Own>
+      <Own label="Quick decisions model (game steps, quick checks)" own={Boolean(p.decider?.connection)} shared={`helper, then ${c.short}'s own AI`} onReset={() => unset("decider")}>
+        <div className="row" style={{ gap: 6 }}>
+          <select className="select" value={p.decider?.connection ?? ""} onChange={(e) => (e.target.value ? set({ decider: { connection: e.target.value } }) : unset("decider"))}>
+            <option value="">helper, then {c.short}'s own AI</option>
+            {conns.map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.label}
+              </option>
+            ))}
+          </select>
+          {p.decider?.connection ? (
+            <input
+              className="input mono grow"
+              value={p.decider.model ?? ""}
+              placeholder={conns.find((x) => x.id === p.decider?.connection)?.model || "that connection's model"}
+              onChange={(e) => set({ decider: { ...p.decider, model: e.target.value.trim() || undefined } })}
+              aria-label="Quick decisions model"
+            />
+          ) : null}
+        </div>
+        <span className="small faint">
+          Yes-or-no and pick-one questions answered in a fraction of a second, like whether a game step is done. A local model gives real
+          probabilities (a cloud model only its answer); it only reads and picks, never writes, so a small one does well.
+        </span>
+      </Own>
       <div className="field">
         <span>Heartbeat</span>
         <label className="check" style={{ padding: 0 }}>

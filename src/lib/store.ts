@@ -358,6 +358,8 @@ export type CharPrefs = {
   storybook?: boolean;
   /** Classic's helper model (auxProv/auxModel): what her background work runs on (journal, memory, heartbeat). */
   helper?: { connection?: string; model?: string };
+  /** Her quick decisions (lib/decide.ts: game steps, quick checks): tried before her helper and her own models. */
+  decider?: { connection?: string; model?: string };
   /** Her own budget for work she starts herself (heartbeats, her own time), in tokens: lib/meterCore.ts. She can set it with the usage tool. */
   budget?: { hourTokens?: number; dayTokens?: number };
   /** Time of her own while the house is quiet (lib/ownTimeCore.ts). Off until switched on. */

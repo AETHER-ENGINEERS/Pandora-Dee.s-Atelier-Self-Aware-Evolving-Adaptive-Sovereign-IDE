@@ -1,16 +1,22 @@
-// Quick decisions on the desk (decideCore.ts has the method): a character's quick judgements go to her helper model
-// when she has one (Settings › Characters), else to her usual models in order. Her helper is the natural one: a small
-// local model is fast, and a local Ollama shows its scores, so the answer is a real probability.
+// Quick decisions on the desk (decideCore.ts has the method): a character's quick judgements go to her quick-decisions
+// model when she has one (Cast, her page), then her helper model, then her usual models in order. A small local model
+// does well: it's fast, and a local Ollama shows its scores, so the answer is a real probability. (Kitti, a 9B Qwen
+// 3.5 on the Mac: 11 of 12 test decisions right, the same to the percent on a second run, about 0.15 s each.)
 
 import { chainFor, keyFor } from "./agent.ts";
 import { answerOf, decisionPrompt, fromText, labelsOf, readProbs, type Answer, type Question } from "./decideCore.ts";
 import { decideOnce } from "./model.ts";
+import { desk } from "./store.ts";
 
 export type { Answer, Question } from "./decideCore.ts";
 
 /** Answer each question about one state, for one character (whose models are used). */
 export async function decide(charId: string, state: string, questions: Question[], signal?: AbortSignal): Promise<(Answer & { model: string })[]> {
   const { list } = chainFor(charId, true);
+  // her quick-decisions model first, when she has one (Cast › her page)
+  const pick = desk().charPrefs[charId]?.decider;
+  const own = pick?.connection ? desk().model.connections.find((x) => x.id === pick.connection && x.enabled) : undefined;
+  if (own) list.unshift({ conn: own, model: pick?.model || own.model });
   if (!list.length) throw new Error("No model connection is set up for quick decisions.");
   let last: unknown = null;
   for (const { conn, model } of list) {
