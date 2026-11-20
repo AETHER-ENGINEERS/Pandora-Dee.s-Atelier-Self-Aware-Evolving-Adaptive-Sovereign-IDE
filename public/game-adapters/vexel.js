@@ -79,6 +79,7 @@ function optionsNow(b) {
 // decisions (her own models, src/lib/decide.ts), against the body's facts only (what she has and sees). At most every
 // few seconds, and only for a step that says what's true when it's done; "goal done" is always hers to say too.
 let judged = { key: "", at: 0 };
+const unreachable = new Set(); // (chop: logs it couldn't reach or swing at, "x,y,z")
 // her words as the body's facts put them ("I carry 12 logs" → "Claude carries 12 logs")
 const asClaude = (s) =>
   String(s || "")
@@ -443,6 +444,8 @@ export default {
         return `Placed ${n.item(slot.id)} (if there was room).`;
       },
     },
+    // (logs chop couldn't reach or swing at: skipped next time, so it moves on to another tree instead of trying the
+    // same stump again)
     chop: {
       help: 'find the nearest tree, walk up to it and dig its trunk for logs: "chop", or "chop 3" for up to 3 logs',
       async run(text) {
@@ -460,7 +463,7 @@ export default {
           for (let dz = -16; dz <= 16; dz++)
             for (let dy = -3; dy <= 5; dy++) {
               const id = w.get(fx + dx, fy + dy, fz + dz);
-              if (!isLog(id)) continue;
+              if (!isLog(id) || unreachable.has(`${fx + dx},${fy + dy},${fz + dz}`)) continue;
               const d = Math.hypot(dx, dz) + Math.abs(dy) * 0.3;
               if (!best || d < best.d) best = { x: fx + dx, y: fy + dy, z: fz + dz, d, id };
             }
@@ -474,7 +477,8 @@ export default {
           hold(["KeyW"], 250);
           if (Math.hypot(g.player.x - from.x, g.player.z - from.z) < 0.15) hold(["KeyW", "Space"], 350);
         }
-        if (Math.hypot(best.x + 0.5 - g.player.x, best.z + 0.5 - g.player.z) > 3) return `You couldn't get to the ${tree} (something's in the way). You're at ${at(g.player)}.`;
+        const skip = () => unreachable.add(`${best.x},${best.y},${best.z}`);
+        if (Math.hypot(best.x + 0.5 - g.player.x, best.z + 0.5 - g.player.z) > 3) return skip(), `You couldn't get to the ${tree} (something's in the way). You're at ${at(g.player)}.`;
         // the trunk's logs within reach, lowest first: aim at each and dig it
         let dug = 0;
         for (let y = best.y - 1; y <= Math.floor(g.player.y) + 3 && dug < want; y++) {
@@ -498,7 +502,7 @@ export default {
         hold(["KeyW"], 500);
         g.tick(60);
         const got = countLogs() - before;
-        if (!dug) return `You reached the ${tree} at ${best.x}, ${best.y}, ${best.z} but couldn't get a clear swing at its trunk. Try "look ahead" and "dig".`;
+        if (!dug) return skip(), `You reached the ${tree} at ${best.x}, ${best.y}, ${best.z} but couldn't get a clear swing at its trunk. Next time chop tries another tree; or look at it and dig.`;
         return `Chopped ${dug} ${tree} block${dug === 1 ? "" : "s"}${got > 0 ? `; ${got} log${got === 1 ? "" : "s"} in your inventory now (${countLogs()} in all)` : ", but the logs haven't reached your hands yet: walk forward a step to pick them up"}. You're at ${at(g.player)}.`;
       },
     },
