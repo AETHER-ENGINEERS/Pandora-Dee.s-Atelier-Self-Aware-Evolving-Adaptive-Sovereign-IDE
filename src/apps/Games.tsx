@@ -29,6 +29,7 @@ import { gameScreen } from "../lib/bus.ts";
 import { gameTurn, sayToPlayers } from "../lib/agent.ts";
 import { changePlans, loadPlans, type Plan } from "../lib/plans.ts";
 import { LinkedGames, LinkThisGame } from "./GameLinks.tsx";
+import "../lib/websimBridge.ts"; // websim games get the desktop's picture engine (server/inject.mjs)
 import { myAddrName, ownName, useMyName } from "../lib/myName.ts";
 import { aiAddr, linkTag, appOrigin, bridge, bringInStep, groupApps, lanternOf, library, actOnScreen, readScreen, webImportSaid, type Lantern, type Pkg, type UpdateRow } from "../lib/xdc.ts";
 import { allowed } from "../lib/privacy.ts";

@@ -108,7 +108,7 @@
    "name": "Cat club",
    "title": "Cat Club",
    "intent": "Pick a cat or kitten, pet, feed and clean it, choose a scene, teach it a dance, and make cats and kittens of your own.",
-   "cleared": "Your cats and settings save on this device. AI Draw is hidden here: it needs websim's own image maker.",
+   "cleared": "Your cats and settings save on this device. AI Draw uses SEASIDE's own picture engine (Create › Imagine › engines) in place of websim's.",
    "originalFiles": [
     "albino-cat.png",
     "app.js",

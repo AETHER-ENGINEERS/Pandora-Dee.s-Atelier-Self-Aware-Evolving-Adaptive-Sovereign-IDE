@@ -183,6 +183,59 @@ export async function makePictures(e: ImageEngine, a: PictureAsk, progress: Prog
   return runComfy(e, wf, "images", progress, signal);
 }
 
+export type EditAsk = { prompt: string; image: Blob; width: number; height: number; transparent?: boolean };
+/** An OpenAI-style image size near the asked shape (the sizes gpt-image-1 takes). */
+const editSize = (w: number, h: number) => (w > h * 1.15 ? "1536x1024" : h > w * 1.15 ? "1024x1536" : "1024x1024");
+const toB64 = async (b: Blob) => {
+  const bytes = new Uint8Array(await b.arrayBuffer());
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+};
+
+/**
+ * Change a picture with the desktop's picture engine (a game's "draw on my cat"): OpenAI-style engines edit it
+ * (/images/edits, keeping a transparent background when asked), Automatic1111 / Draw Things repaint it (img2img).
+ * ComfyUI has no editing workflow here, so it makes a new picture from the words, and `note` says so.
+ */
+export async function editPicture(e: ImageEngine, a: EditAsk, progress: Progress, signal?: AbortSignal): Promise<{ picture: Blob; note?: string }> {
+  progress("Asking…");
+  if (e.kind === "openai") {
+    const why = engineAllowed(e.url);
+    if (why) throw new Error(why);
+    const fd = new FormData();
+    fd.append("model", e.model || "gpt-image-1");
+    fd.append("prompt", a.prompt);
+    fd.append("image", a.image, "image.png");
+    fd.append("size", editSize(a.width, a.height));
+    fd.append("n", "1");
+    if (a.transparent) fd.append("background", "transparent");
+    // the form, packed by the browser (with its boundary), sent as bytes: the desktop relay carries bytes, not forms
+    const packed = new Response(fd);
+    const body = new Uint8Array(await packed.arrayBuffer());
+    const key = e.keyName ? desk().env[e.keyName] ?? "" : "";
+    const headers: Record<string, string> = { Accept: "*/*", "Content-Type": packed.headers.get("content-type") || "multipart/form-data" };
+    if (key) headers.Authorization = /^Bearer /i.test(key) ? key : `Bearer ${key}`;
+    const r = await outbound(`${trim(e.url)}/images/edits`, { method: "POST", headers, body, timeout: 300, signal }, e.via ?? desk().net.via);
+    const text = await r.text();
+    if (!r.ok) throw new Error(`${e.name} answered ${r.status}: ${text.slice(0, 300)}`);
+    const d = (JSON.parse(text) as { data?: { b64_json?: string; url?: string }[] }).data?.[0];
+    if (!d) throw new Error(`${e.name} gave back no picture.`);
+    return { picture: d.b64_json ? fromB64(d.b64_json) : await (await outbound(d.url!, {}, e.via ?? desk().net.via)).blob() };
+  }
+  if (e.kind === "a1111") {
+    const j = await json<{ images?: string[] }>(e, "/sdapi/v1/img2img", {
+      body: { init_images: [await toB64(a.image)], prompt: a.prompt, denoising_strength: 0.55, width: a.width, height: a.height, steps: e.steps || 20, seed: randomSeed() },
+      timeout: 600,
+      signal,
+    });
+    if (!j.images?.length) throw new Error(`${e.name} gave back no picture.`);
+    return { picture: fromB64(j.images[0]), note: a.transparent ? "This engine repaints the whole picture, so the background isn't kept transparent." : undefined };
+  }
+  const [picture] = await makePictures(e, { prompt: a.prompt, width: a.width, height: a.height, count: 1 }, progress, signal);
+  return { picture, note: "ComfyUI made a new picture from the words (it has no editing workflow here), so it won't be the same cat." };
+}
+
 /** Save pictures into the vault's folder for made pictures; returns their vault paths. */
 export async function savePictures(pics: Blob[], prompt: string): Promise<string[]> {
   const folder = desk().media.pictureFolder.replace(/^\/+|\/+$/g, "") || "pictures/made";

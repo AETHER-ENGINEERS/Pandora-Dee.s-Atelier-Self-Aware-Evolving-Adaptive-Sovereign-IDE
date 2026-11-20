@@ -233,7 +233,7 @@ async function compactAIImage(src){
   canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);return canvas.toDataURL('image/png');
 }
 $('openAIDraw').addEventListener('click',()=>{const panel=$('aiDrawPanel');panel.hidden=!panel.hidden;if(!panel.hidden)$('aiDrawPrompt').focus();});
-// cleared for PDA SEASIDE: AI Draw edits the cat with websim's own image maker, which only exists on websim
+// cleared for PDA SEASIDE: AI Draw goes to the desktop's own picture engine (SEASIDE gives games a websim.imageGen); hidden only where there's no websim at all
 if(!window.websim?.imageGen){$('openAIDraw').style.display='none';$('aiDrawPanel').hidden=true;}
 async function generateAIDrawing(){
   const prompt=$('aiDrawPrompt').value.trim(),status=$('aiDrawStatus');

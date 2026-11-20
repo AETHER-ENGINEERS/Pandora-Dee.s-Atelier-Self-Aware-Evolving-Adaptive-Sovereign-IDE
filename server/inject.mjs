@@ -161,6 +161,34 @@ function helper() {
       return reply(false, `That didn't work: ${err && err.message ? err.message : err}`);
     }
   });
+  // A websim game's picture maker (websim.imageGen), answered by the desktop's own picture engine: the game asks, the
+  // desktop makes or edits the picture and hands it back as a data: URL. Only imageGen: websim's rooms and users
+  // aren't here, and a game that finds them missing keeps to this device.
+  if (!window.websim) {
+    const waiting = new Map();
+    let seq = 0;
+    window.addEventListener("message", (e) => {
+      if (e.source !== window.parent || !e.data || e.data.__pdd !== "websim-reply") return;
+      const w = waiting.get(e.data.rid);
+      if (!w) return;
+      waiting.delete(e.data.rid);
+      if (e.data.error) w.no(new Error(e.data.error));
+      else w.ok(e.data.value);
+    });
+    window.websim = {
+      __pdd: true,
+      imageGen(opts) {
+        return new Promise((ok, no) => {
+          const rid = ++seq;
+          waiting.set(rid, { ok, no });
+          window.parent.postMessage({ __pdd: "websim", rid, op: "imageGen", opts: JSON.parse(JSON.stringify(opts || {})) }, "*");
+          setTimeout(() => {
+            if (waiting.delete(rid)) no(new Error("The picture took too long. Try again?"));
+          }, 600000);
+        });
+      },
+    };
+  }
   // Sound from games follows the desktop's app volume (audio and video elements, and Web Audio).
   let volume = 1;
   const apply = (el) => {
