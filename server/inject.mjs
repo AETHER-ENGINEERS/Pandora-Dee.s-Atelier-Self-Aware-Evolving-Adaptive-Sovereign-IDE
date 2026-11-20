@@ -367,6 +367,16 @@ const NATIVE = {
         }
         const u = new SpeechSynthesisUtterance(String(text));
         u.rate = Number(rate) || 1;
+        // Lilith is a woman: a female English voice, the more natural ones first (a browser's default is often a
+        // man's, Windows' "David")
+        const voices = synth.getVoices();
+        for (const re of [/aria/i, /jenny/i, /natural.*female|female.*natural/i, /zira/i, /hazel/i, /susan/i, /samantha/i, /female/i]) {
+          const v = voices.find((x) => re.test(x.name) && /^en/i.test(x.lang));
+          if (v) {
+            u.voice = v;
+            break;
+          }
+        }
         u.onstart = () => ev(id, "start");
         u.onboundary = () => ev(id, "range");
         u.onend = () => {
