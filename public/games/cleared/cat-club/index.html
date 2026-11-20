@@ -19,13 +19,13 @@
       <div class="scene-controls">
         <button class="theme-toggle" id="themeToggle" type="button" aria-label="Switch to dark mode">☾</button>
         <label class="scene-picker" for="sceneSelect"><span>Scene</span><select id="sceneSelect" aria-label="Background scene">
-          <option value="pastel">Pastel daytime yard</option><option value="day">Daytime yard</option><option value="night">Nighttime yard</option><option value="white">Plain white</option><option value="black">Plain black</option><option value="plain">Plain background</option><option value="dance">Dance floor</option><option value="picnic">Picnic</option><option value="striped">House · striped walls</option><option value="walls">House · plain walls</option><option value="interior">Plain house interior</option><option value="polkadot">House · polkadot walls</option><option value="stripedplain">House · stripes, plain floor</option><option value="polkadotplain">House · dots, plain floor</option>
+          <option value="pastel">Pastel daytime yard</option><option value="day">Daytime yard</option><option value="night">Nighttime yard</option><option value="white">Plain white</option><option value="black">Plain black</option><option value="plain">Plain background</option><option value="dance">Dance floor</option><option value="picnic">Picnic</option><option value="striped">House · striped walls</option><option value="walls">House · plain walls</option><option value="interior">Plain house interior</option><option value="polkadot">House · polkadot walls</option><option value="stripedplain">House · stripes, plain floor</option><option value="polkadotplain">House · dots, plain floor</option><option value="heartwalls">House · heart walls</option><option value="starwalls">House · star walls</option>
         </select></label><label class="scene-colors-toggle"><input type="checkbox" id="showSceneColors" checked> Custom colors</label>
       </div>
     </header>
 
     <section class="playground" id="playground" aria-label="Cat play area">
-      <div class="scene-floor" id="sceneFloor"><div class="checker-grid" id="checkerGrid" aria-hidden="true"></div></div>
+      <div class="scene-floor" id="sceneFloor"><div class="checker-grid" id="checkerGrid" aria-hidden="true"></div></div><div class="wall-pattern" id="wallPattern" aria-hidden="true"></div>
       <div class="picnic-blanket" id="picnicBlanket" aria-hidden="true"></div>
       <div class="disco-hanger" id="discoHanger" aria-hidden="true"><span class="disco-string"></span><span class="disco-ball">🪩</span></div>
       <div class="sun-glow"></div>
@@ -36,7 +36,7 @@
         <label id="wallColorControl" hidden>Walls <input id="wallColor" type="color" value="#efaaa4"></label>
         <label id="stripeColorControl" hidden>Stripes <input id="stripeColor" type="color" value="#ffffff"></label>
         <label id="dotColorControl" hidden>Dots <input id="dotColor" type="color" value="#ffffff"></label>
-        <label id="floorColorControl" hidden>Floor <input id="floorColor" type="color" value="#c98c63"></label>
+        <label id="floorColorControl" hidden>Floor <input id="floorColor" type="color" value="#c98c63"></label><button type="button" class="default-scene-colors" id="defaultSceneColors">Default colors</button>
       </div>
       <div class="cat-wrap" id="catWrap">
         <img id="mainCat" class="main-cat" src="orange-tabby-cat.png" alt="Orange tabby cat" draggable="false">
@@ -57,7 +57,7 @@
           <input id="customEmoji" aria-label="Add a food emoji" placeholder="🥕" maxlength="8" autocomplete="off">
           <button type="submit" aria-label="Add custom food">+</button>
         </form>
-        <span class="drag-note">drag a snack to your cat</span>
+        <label class="lift-cat-toggle"><input type="checkbox" id="liftCatToggle"> Lift cat</label><span class="drag-note">drag a snack to your cat</span>
       </div>
       <div class="drag-food" id="dragFood" aria-hidden="true"></div>
     </section>
@@ -65,9 +65,9 @@
     <nav class="actions" aria-label="Cat interactions">
       <button class="action-button" id="petButton" data-mode="pet"><span class="action-icon">🤚</span><span>Pet</span></button>
       <button class="action-button" id="feedButton" data-mode="feed"><span class="action-icon">🍗</span><span>Feed</span></button>
-      <button class="action-button" id="cleanButton" data-mode="clean"><span class="action-icon" id="cleanIcon">🧽</span><span>Clean</span></button><div class="clean-items" id="cleanItems" hidden aria-label="Choose cleaning item"><button type="button" data-clean="🧽">🧽</button><button type="button" data-clean="🧼">🧼</button><button type="button" data-clean="🧴">🧴</button><button type="button" data-clean="🪥">🪥</button></div>
+      <button class="action-button" id="cleanButton" data-mode="clean"><span class="action-icon" id="cleanIcon">🧽</span><span>Clean</span></button><div class="clean-items" id="cleanItems" hidden aria-label="Choose cleaning item"><button type="button" data-clean="🧽">🧽</button><button type="button" data-clean="🧼">🧼</button><button type="button" data-clean="🧴">🧴</button><button type="button" data-clean="🪥">🪥</button><button type="button" data-clean="🚿" aria-label="Shower">🚿</button></div>
       <button class="action-button" id="danceButton" data-mode="dance" hidden><span class="action-icon">🪩</span><span>Dance</span></button>
-      <button class="hint-toggle" id="hintToggle" type="button" aria-pressed="true">Hint on</button>
+      <div class="tilt-controls" id="tiltControls" hidden aria-label="Cat tilt"><span>Tilt</span><button type="button" data-tilt="none" class="active">No tilt</button><button type="button" data-tilt="left">←</button><button type="button" data-tilt="right">→</button></div><button class="hint-toggle" id="hintToggle" type="button" aria-pressed="true">Hint on</button>
       <div class="dance-moves" id="danceMoves" hidden aria-label="Dance moves">
         <button type="button" data-move="up" aria-label="Hop up">⬆️</button><button type="button" data-move="left" aria-label="Slide left">⬅️</button><button type="button" data-move="right" aria-label="Slide right">➡️</button><button type="button" data-move="down" aria-label="Dip down">⬇️</button><button type="button" data-move="tilt-right" aria-label="Tilt right">↗️</button><button type="button" data-move="tilt-left" aria-label="Tilt left">↖️</button><button type="button" data-move="spin" aria-label="Spin clockwise">🔁</button><button type="button" data-move="spin-reverse" aria-label="Spin counterclockwise">🔁2</button><button type="button" data-move="shrink" aria-label="Shrink">⏬️</button><button type="button" data-move="grow" aria-label="Grow">⏫️</button><button type="button" data-move="shake" aria-label="Shake">📳</button>
         <button type="button" class="assemble-dance-button" id="assembleDanceButton">＋ Assemble dance</button>
@@ -83,7 +83,7 @@
       <button class="modal-backdrop" id="closeCats" aria-label="Close cat chooser"></button>
       <div class="modal-card">
         <div class="modal-head"><span>Pick your cat</span><button class="close-button" id="closeCatsX" aria-label="Close">×</button></div>
-        <div class="cat-sort-tools"><label for="catSortPreset">Order <select id="catSortPreset" aria-label="Sort cats"><option value="Default">Default</option><option value="A-Z">A-Z</option><option value="Z-A">Z-A</option><option value="Color-based">Color-based</option><option value="Custom">Custom order</option></select></label><button type="button" id="toggleSortMode" class="draw-open-button">↕ Sort cats</button><label class="sort-adjacent"><input id="sortAdjacent" type="checkbox"> Place beside</label><span id="sortStatus" aria-live="polite"></span></div><div id="colorOrderTools" class="color-order-tools" hidden aria-label="Choose color sort order"></div>
+        <div class="cat-sort-tools"><label for="catSortPreset">Order <select id="catSortPreset" aria-label="Sort cats"><option value="Default">Default</option><option value="Kittens beside parents">Kittens beside parents</option><option value="A-Z">A-Z</option><option value="Z-A">Z-A</option><option value="Color-based">Color-based</option><option value="Custom">Custom order</option></select></label><button type="button" id="toggleSortMode" class="draw-open-button">↕ Sort cats</button><label class="sort-adjacent"><input id="sortAdjacent" type="checkbox"> Place beside</label><span id="sortStatus" aria-live="polite"></span></div><div id="colorOrderTools" class="color-order-tools" hidden aria-label="Choose color sort order"></div>
         <form class="create-cat" id="createCatForm">
           <div class="create-cat-heading">Make a cat</div>
           <div class="create-cat-fields">

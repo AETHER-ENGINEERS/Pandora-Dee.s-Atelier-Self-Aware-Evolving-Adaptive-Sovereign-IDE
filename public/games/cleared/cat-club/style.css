@@ -80,8 +80,46 @@ body.dark-theme{--ink:#e6eee8;--muted:#a0b1a5;--cream:#151c1a;--line:#35433d;bac
 /* Kittens are deliberately petite in both the playground and picker. */
 .main-cat.kitten{height:48%;width:min(42%,260px)}
 .cat-card img.kitten{height:48px;width:72%}
+.cat-card img.kitten{object-position:center bottom;transform:translateY(9px);margin-bottom:-9px}
 @media(max-width:600px){.main-cat.kitten{height:48%;width:52%}.cat-card img.kitten{height:50px;width:72%}}
 
 .size-control{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:9px;color:#738276;font-size:11px;font-weight:700}.size-control select{min-width:125px;height:32px;border:1px solid #dfe5d9;border-radius:9px;padding:0 9px;background:#fffdf8;color:var(--ink);font:600 11px 'DM Sans',sans-serif}.create-cat-bottom img.kitten{width:34px;height:32px}
 body.dark-theme .size-control select{background:#35423a;color:var(--ink);border-color:#4c5a51}
 @media(max-width:600px){.size-control select{min-width:110px}}
+
+/* New kitten, cleaning and scene controls */
+.wall-pattern{position:absolute;z-index:1;left:0;top:0;width:100%;height:78%;display:none;grid-template-columns:repeat(9,1fr);grid-auto-rows:1fr;align-items:center;justify-items:center;overflow:hidden;pointer-events:none;color:var(--dot-color)}
+.wall-pattern span{font-family:system-ui,sans-serif;font-size:clamp(17px,2.4vw,29px);line-height:1;opacity:.92;text-shadow:0 1px 2px #0001}
+.playground[data-scene="heartwalls"] .wall-pattern,.playground[data-scene="starwalls"] .wall-pattern{display:grid}
+.playground[data-scene="heartwalls"],.playground[data-scene="starwalls"]{background:linear-gradient(var(--wall-color) 0 78%,var(--floor-color) 78%)}
+.playground[data-scene="heartwalls"] .scene-floor,.playground[data-scene="starwalls"] .scene-floor{display:block;height:22%;background-color:var(--floor-color);background-image:repeating-linear-gradient(90deg,transparent 0 43px,#704b3533 44px 46px);background-size:46px 100%}
+.playground[data-scene="heartwalls"]:before,.playground[data-scene="starwalls"]:before{display:none}
+.playground[data-scene="heartwalls"] .sun-glow,.playground[data-scene="heartwalls"] .float-cloud,.playground[data-scene="starwalls"] .sun-glow,.playground[data-scene="starwalls"] .float-cloud{display:none}
+.default-scene-colors{height:25px;padding:0 8px;border:1px solid #dce3d7;border-radius:8px;background:#fffdf8;color:#617466;font:700 10px 'DM Sans',sans-serif;cursor:pointer}
+.cat-wrap{transition:transform .22s ease}
+.playground.cat-lifted .cat-wrap{transform:translateY(-13%)}
+.playground.kitten-selected .head-effects{top:52%;width:min(47%,270px)}
+.playground.kitten-selected .love-heart{right:18%;top:5px;font-size:25px}
+.playground.kitten-selected .purr{left:19%;font-size:15px}
+.tilt-controls{display:flex;align-items:center;gap:4px;padding:3px 6px;border:1px solid var(--line);border-radius:12px;background:#fffdf7;color:var(--muted);font:700 10px 'DM Sans',sans-serif}
+.tilt-controls[hidden]{display:none}
+.tilt-controls button{height:30px;padding:0 8px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--muted);font:700 10px 'DM Sans',sans-serif;cursor:pointer;white-space:nowrap}
+.tilt-controls button.active{background:#527860;color:#fff}
+.lift-cat-toggle{position:absolute;top:5px;left:12px;display:flex;align-items:center;gap:4px;color:#617466;font:700 10px 'DM Sans',sans-serif;z-index:2}
+.lift-cat-toggle input{accent-color:#668b6c}
+.water-drop{position:absolute;z-index:3;width:6px;height:9px;border-radius:70% 35% 65% 45%;background:linear-gradient(135deg,#e8fbff 0%,#70d8ff 28%,#178ed7 100%);box-shadow:0 1px 5px #36b9ff99;pointer-events:none;transform:rotate(35deg);animation:waterFall var(--fall-time) cubic-bezier(.3,.02,.7,.4) forwards}
+@keyframes waterFall{0%{opacity:.95;transform:translate(0,0) rotate(35deg) scale(.78)}75%{opacity:1}100%{opacity:0;transform:translate(var(--fall-x),180px) rotate(35deg) scale(1.05)}}
+@media(max-width:600px){.tilt-controls{gap:2px;padding-inline:4px}.tilt-controls button{padding-inline:6px;font-size:9px}.playground.kitten-selected .head-effects{top:51%;width:54%}.playground.kitten-selected .love-heart{right:13%}.playground.kitten-selected .purr{left:13%}.lift-cat-toggle{left:7px;font-size:9px}}
+
+.pet-hand.interaction-tilt-left{transform:translate(-50%,-50%) rotate(-48deg)}
+.pet-hand.interaction-tilt-right{transform:translate(-50%,-50%) rotate(24deg)}
+.playground.clean-mode .pet-hand.interaction-tilt-left{transform:translate(-50%,-50%) rotate(-48deg)}
+.playground.clean-mode .pet-hand.interaction-tilt-right{transform:translate(-50%,-50%) rotate(24deg)}
+
+.pet-hand.interaction-tilt-none{transform:translate(-50%,-50%) rotate(0deg)}
+.playground.clean-mode .pet-hand.interaction-tilt-none{transform:translate(-50%,-50%) rotate(0deg)}
+
+/* Align kitten thumbnails and labels to the same baseline as adult cards. */
+.cat-card img.kitten{margin-top:45px;margin-bottom:0;transform:none}
+
+.cat-grid-spacer{min-width:0;min-height:1px;pointer-events:none}
