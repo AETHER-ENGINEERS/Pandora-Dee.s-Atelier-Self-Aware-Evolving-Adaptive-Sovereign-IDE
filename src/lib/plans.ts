@@ -52,7 +52,13 @@ const fileOf = (scope: string) => `Games/plans/${scope.replace(/[^\w.@-]+/g, "-"
 
 export async function loadPlans(scope: string): Promise<Plan[]> {
   try {
-    const r = await fetch(`/api/vault/file?path=${encodeURIComponent(fileOf(scope))}`);
+    // (the folder's listing first: a game nobody has left a plan in has no file, and asking for it every few seconds
+    // would fill the console with "not found")
+    const path = fileOf(scope);
+    const dir = await fetch(`/api/vault/list?path=${encodeURIComponent("Games/plans")}`);
+    const names = dir.ok ? ((await dir.json()) as { name: string }[]).map((e) => e.name) : [];
+    if (!names.includes(path.split("/").pop()!)) return [];
+    const r = await fetch(`/api/vault/file?path=${encodeURIComponent(path)}`);
     if (!r.ok) return [];
     const j = (await r.json()) as unknown;
     return Array.isArray(j) ? (j as Plan[]) : [];
