@@ -157,10 +157,18 @@ export default {
       },
     },
     goal: {
-      help: 'set what you\'re working toward, and its steps, so "What you could do now" offers what fits it: "build a seaside cabin | find the sea => there is water on my map | get 12 logs => I carry 12 logs" (each step: what to do => what\'s true when it\'s done)',
+      help: 'set what you\'re working toward, and its steps, so "What you could do now" offers what fits it: "build a seaside cabin | find the sea => there is water on my map | get 12 logs => I carry 12 logs" (each step: what to do => what\'s true when it\'s done). You judge your own steps: "goal done" when you\'ve finished the one you\'re on, "goal" alone to see where you are',
       async run(text) {
         const b = await theBody();
         if (!b) return "Vexel's own body isn't here, so there's no goal to keep: just play.";
+        // you judge your own steps (Vexel's body was made to have a small model judge them; here the judge is you)
+        if (/^(?:done|next|step done)\b/i.test(String(text || "").trim())) {
+          const m0 = b.status().mind;
+          if (!m0.goal) return "You have no goal set, so there's no step to finish.";
+          const was = m0.step;
+          const next = b.stepDone();
+          return next ? `Step done: ${yours(was)}. Next: ${yours(next)}.` : `Step done: ${yours(was)}. That was the last one: your goal is done.`;
+        }
         const [goal, ...steps] = String(text || "").split("|").map((s) => s.trim()).filter(Boolean);
         if (!goal) {
           const m = b.status().mind;
@@ -214,25 +222,36 @@ export default {
       },
     },
     turn: {
-      help: 'turn: "left", "right", "around", or a compass point like "north"',
+      help: 'turn, as a player turns with the mouse: "left", "right", "around", "a little left" (45°), "left 30" (degrees), a compass point ("north", "north-east"), or "toward 15 -7" to face a spot (x z) you can see on your map',
       run(text) {
         const g = ready();
         const p = g.player;
-        const t = text.toLowerCase();
-        const dirs = { north: 0, east: -Math.PI / 2, south: Math.PI, west: Math.PI / 2 };
+        const t = String(text || "").toLowerCase().trim();
+        const rad = (d) => (d * Math.PI) / 180;
+        // compass: north is -z; yaw 0 faces north and turning left adds to it
+        const points = { "north-east": -45, "north-west": 45, "south-east": -135, "south-west": 135, northeast: -45, northwest: 45, southeast: -135, southwest: 135, north: 0, east: -90, south: 180, west: 90 };
         let yaw = p.yaw;
-        if (/around|back/.test(t)) yaw += Math.PI;
-        else if (/left/.test(t)) yaw += Math.PI / 2;
-        else if (/right/.test(t)) yaw -= Math.PI / 2;
-        else {
-          const k = Object.keys(dirs).find((d) => t.includes(d));
-          if (k === undefined) return 'Say left, right, around, or north, east, south or west.';
-          yaw = dirs[k];
+        const toward = /^(?:toward|towards|to|face)\s+-?\d/.test(t);
+        const deg = t.match(/(-?\d+(?:\.\d+)?)/);
+        if (toward) {
+          const nums = (t.match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+          if (nums.length < 2) return 'Say the spot to face as x and z, from your map: "toward 15 -7".';
+          const [x, z] = nums.length >= 3 ? [nums[0], nums[2]] : nums; // (x z, or x y z)
+          yaw = Math.atan2(-(x + 0.5 - p.x), -(z + 0.5 - p.z));
+        } else if (/around|back/.test(t)) yaw += Math.PI;
+        else if (/left|right/.test(t)) {
+          const by = deg ? Number(deg[1]) : /little|bit|slight/.test(t) ? 45 : 90;
+          yaw += (/left/.test(t) ? 1 : -1) * rad(by);
+        } else {
+          const k = Object.keys(points).find((d) => t.replace(/\s+/g, "-").includes(d));
+          if (k === undefined) return 'Say left, right, around, "a little left", "left 30", a compass point like "north-east", or "toward x z".';
+          yaw = rad(points[k]);
         }
         g.look(yaw, p.pitch);
         g.tick(2);
         const f = ahead(g.player.yaw);
-        return `You face ${compass(f.x, f.z)} now.`;
+        const bearing = Math.round(((((Math.atan2(f.x, -f.z) * 180) / Math.PI) + 360) % 360));
+        return `You face ${compass(f.x, f.z)} now (${bearing}° from north, clockwise).`;
       },
     },
     look: {

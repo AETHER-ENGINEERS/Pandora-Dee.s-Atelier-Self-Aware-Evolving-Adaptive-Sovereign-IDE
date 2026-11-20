@@ -13,13 +13,15 @@ You act with `game_seat_act`, `do: "use"`, the action as `target`, and its detai
 
 - `goal`: what you're working toward and its steps, in your own words, so what's offered fits your plan:
   `"build a seaside cabin | find the sea => there is water on my map | get 12 logs => I carry 12 logs"`.
+  You judge your own steps: `"done"` when you've finished the one you're on, nothing to see where you are.
 - `choose`: do one of the things under "What you could do now", by its number (`"2"`).
 - `survey`: a wider map, up to 32 blocks each way (`"survey 32"`): for finding the sea, a village, a site.
 
 - `enter`: step into the world from the start menu (do this first).
 - `walk`: `"forward 5"`, `"back 2"`, `"left 3"`, `"right 3"`. It stops at walls; it tells you where you ended up.
 - `jump`: `""`, or `"forward"` to hop up a one-block step ahead.
-- `turn`: `"left"`, `"right"`, `"around"`, or a compass point (`"north"`).
+- `turn`: `"left"`, `"right"`, `"around"`, `"a little left"` (45°), `"left 30"` (degrees), a compass point
+  (`"north"`, `"north-east"`), or `"toward 15 -7"` to face a spot (x z) on your map.
 - `look`: `"up"`, `"down"`, `"ahead"`. Where you point decides what `dig` and `place` reach.
 - `dig`: break the block you're pointing at (logs give wood; leaves sometimes drop an apple or a sapling).
 - `place`: place what's in your hand against the block you're pointing at.
