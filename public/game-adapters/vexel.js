@@ -578,25 +578,38 @@ export default {
         }
         if (!best) return want ? `There's no ${want} within 24 blocks of you.` : "There's no creature within 24 blocks of you.";
         const m = best.m, name = named(m);
-        const aim = () => {
+        // aim at a height on it (its box runs from its feet up), and ask the game whether it's really in the
+        // crosshair before swinging (a person sees that; a small chicken is easy to aim over)
+        const aimAt = (f) => {
           const h = (m.def && m.def.h) || 1;
           const dx = m.x - g.player.x, dz = m.z - g.player.z, horiz = Math.hypot(dx, dz) || 0.01;
-          g.look(Math.atan2(-dx, -dz), Math.atan2(m.y + h * 0.6 - (g.player.y + 1.62), horiz));
+          g.look(Math.atan2(-dx, -dz), Math.atan2(m.y + h * f - (g.player.y + 1.62), horiz));
+          g.tick(1);
         };
-        let swings = 0;
+        const onIt = () => (typeof g.mobTarget === "function" ? g.mobTarget() === m : true);
+        const aim = () => {
+          for (const f of [0.6, 0.35, 0.85, 0.15]) {
+            aimAt(f);
+            if (onIt()) return true;
+          }
+          return false;
+        };
+        const hp0 = m.hp;
+        let swings = 0, landed = 0;
         for (let i = 0; i < 40 && swings < 12 && !m.dying && g.mobs.list.has(m.id); i++) {
-          aim();
-          if (Math.hypot(m.x - g.player.x, m.z - g.player.z) > 2.6) {
+          const lined = aim();
+          if (Math.hypot(m.x - g.player.x, m.z - g.player.z) > 2.6 || !lined) {
             const from = { x: g.player.x, z: g.player.z };
             hold(["KeyW"], 250);
             if (Math.hypot(g.player.x - from.x, g.player.z - from.z) < 0.15) hold(["KeyW", "Space"], 300);
             continue;
           }
-          g.tick(2);
+          const before = m.hp;
           g.button(0, true);
           g.tick(2);
           g.button(0, false);
           swings++;
+          if (m.hp !== before || m.dying || (m.hurt || 0) > 0) landed++;
           g.tick(32); // (the swing's cooldown, as a person waits between hits)
         }
         const down = m.dying || !g.mobs.list.has(m.id);
@@ -605,9 +618,9 @@ export default {
           g.tick(40);
         }
         return down
-          ? `The ${name} fell after ${swings} hit${swings === 1 ? "" : "s"}; you stepped in for what it dropped. You're at ${at(g.player)}.`
+          ? `The ${name} fell after ${swings} swing${swings === 1 ? "" : "s"}; you stepped in for what it dropped. You're at ${at(g.player)}.`
           : swings
-            ? `You hit the ${name} ${swings} time${swings === 1 ? "" : "s"}, and it's still up (or got away). You're at ${at(g.player)}.`
+            ? `You swung at the ${name} ${swings} time${swings === 1 ? "" : "s"}, ${landed} landed${typeof hp0 === "number" && typeof m.hp === "number" ? ` (its health ${hp0} → ${m.hp})` : ""}; it's still up (or got away). You're at ${at(g.player)}.`
             : `You couldn't get within reach of the ${name}. You're at ${at(g.player)}.`;
       },
     },
