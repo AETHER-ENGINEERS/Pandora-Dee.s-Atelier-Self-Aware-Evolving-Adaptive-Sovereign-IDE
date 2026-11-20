@@ -1047,6 +1047,24 @@
     "index.html",
     "style.css"
    ]
+  },
+  {
+   "slug": "word-duel",
+   "name": "Word duel",
+   "title": "Word Duel",
+   "intent": "Pick a secret word, add a hint, and choose how it's guessed: letters, the next letter in order, the next letter with clues, or the whole word. Two players take turns on one screen.",
+   "cleared": "",
+   "originalFiles": [
+    "game.js",
+    "index.html",
+    "style.css"
+   ],
+   "clearedFiles": [
+    "game.js",
+    "index.html",
+    "style.css"
+   ],
+   "author": "SunkissedButterfly"
   }
  ]
 }
