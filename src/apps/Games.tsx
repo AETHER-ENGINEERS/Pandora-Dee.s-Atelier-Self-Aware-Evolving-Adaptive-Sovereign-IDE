@@ -28,7 +28,8 @@ import { desk, useDesk, type AppPrefs, type LibSection, type LibSort, type LibVi
 import { gameScreen } from "../lib/bus.ts";
 import { gameTurn, sayToPlayers } from "../lib/agent.ts";
 import { changePlans, loadPlans, type Plan } from "../lib/plans.ts";
-import { appOrigin, bridge, bringInStep, groupApps, lanternOf, library, actOnScreen, readScreen, webImportSaid, type Lantern, type Pkg, type UpdateRow } from "../lib/xdc.ts";
+import { LinkedGames, LinkThisGame } from "./GameLinks.tsx";
+import { aiAddr, linkTag, appOrigin, bridge, bringInStep, groupApps, lanternOf, library, actOnScreen, readScreen, webImportSaid, type Lantern, type Pkg, type UpdateRow } from "../lib/xdc.ts";
 import { allowed } from "../lib/privacy.ts";
 import { imagineGame } from "../lib/gameMaker.ts";
 import { slug } from "../lib/characters.ts";
@@ -264,6 +265,7 @@ function Library() {
       }}
     >
       <nav className="lib-nav" aria-label="Sections">
+        <LinkedGames />
         {(
           [
             ["all", "Everything"],
@@ -1035,7 +1037,7 @@ function Playing() {
   const [nonce, setNonce] = useState(0);
   const [pkg, setPkg] = useState<Pkg | null>(null);
   const me = session ?? "You";
-  const addr = `you:${slug(me) || "you"}`;
+  const addr = `you:${slug(me) || "you"}${linkTag(g.scope)}`;
 
   useEffect(() => {
     if (g.kind !== "xdc" || !g.pkgId) return;
@@ -1109,7 +1111,7 @@ function Playing() {
           <div className="empty">{g.kind === "xdc" ? "Opening…" : "This game couldn't be found."}</div>
         )}
         {chat ? <GameChat /> : null}
-        {g.kind === "xdc" && g.scope ? <GameLantern scope={g.scope} /> : null}
+        {g.kind === "xdc" && g.scope ? <GameLantern scope={g.scope} pkgId={g.pkgId} /> : null}
       </div>
       {g.kind === "xdc" && pkg && g.scope ? <Seats pkg={pkg} scope={g.scope} slug={g.slug} players={g.players} nonce={nonce} /> : null}
     </div>
@@ -1120,7 +1122,7 @@ const ago = (ms: number) => (ms < 5000 ? "just now" : ms < 90_000 ? `${Math.roun
 
 /** Dee's lantern: a quiet sign of whether every copy of this game (yours, each character's seat) sees the same thing,
  *  and which one is behind if not, with a way to bring it back in step. Divergence is normal and fixable. */
-function GameLantern({ scope }: { scope: string }) {
+function GameLantern({ scope, pkgId }: { scope: string; pkgId?: string }) {
   const [l, setL] = useState<Lantern>(() => lanternOf(scope));
   const [open, setOpen] = useState(false);
   useEffect(() => {
@@ -1153,6 +1155,7 @@ function GameLantern({ scope }: { scope: string }) {
               Bring everyone in step
             </button>
           ) : null}
+          <LinkThisGame scope={scope} pkgId={pkgId} />
         </div>
       ) : null}
     </div>
@@ -1183,7 +1186,7 @@ function Seat({ pkg, scope, id, name }: { pkg: Pkg; scope: string; id: string; n
   useEffect(() => {
     const win = ref.current?.contentWindow;
     if (!win) return;
-    return bridge.attach(win, scope, `ai:${id}`, name);
+    return bridge.attach(win, scope, aiAddr(id, scope), name);
   });
   useEffect(() => {
     gameScreen.registerSeat(id, () => readScreen(ref.current?.contentWindow));
@@ -1199,6 +1202,6 @@ function Seat({ pkg, scope, id, name }: { pkg: Pkg; scope: string; id: string; n
       window.removeEventListener("message", hush);
     };
   }, [id]);
-  return <iframe ref={ref} className="game-seat" src={library.runUrl(pkg, scope, `ai:${id}`, name)} title={`${name}'s seat`} tabIndex={-1} allow="autoplay; gamepad" />;
+  return <iframe ref={ref} className="game-seat" src={library.runUrl(pkg, scope, aiAddr(id, scope), name)} title={`${name}'s seat`} tabIndex={-1} allow="autoplay; gamepad" />;
 }
 

@@ -45,6 +45,7 @@ import { ensureKey, sshShell } from "./terminalSsh.mjs";
 import { createPadsWire } from "./padsWire.mjs";
 import { createRequire } from "node:module";
 import { createPeers } from "./peers.mjs";
+import { createGameLinks } from "./gameLinks.mjs";
 import { createPadsLink } from "./padsLink.mjs";
 import os from "node:os";
 import dns from "node:dns";
@@ -182,6 +183,7 @@ export function deskServer() {
   // linked servers (one per device): PADS and "Send to" across all of them (see peers.mjs, padsLink.mjs)
   const peers = createPeers({ file: () => path.join(dataDir, "pads-servers.json") });
   let padsLink = null; // made once vaultFile is defined, below
+  let gameLinks = null;
   /** A paired page may use the relay, but never to reach the desktop itself (its own server, by any name that
    *  leads to this computer, after any redirect): that would give it the desktop's controls. */
   const notTheDesktop = (req) => async (u) => {
@@ -290,6 +292,8 @@ export function deskServer() {
   };
 
   padsLink = createPadsLink({ pads, peers, vaultFile });
+  // games across linked SEASIDEs, and the realtime channel across devices (see gameLinks.mjs)
+  gameLinks = createGameLinks({ peers, library, file: () => path.join(dataDir, "game-links.json") });
   /** Where other devices can reach this server: this computer, and its home-network (and Tailscale) addresses. */
   const addressesOf = (port) => [
     `http://localhost:${port}`,
@@ -1304,10 +1308,45 @@ export function deskServer() {
         return send(res, 200, fs.readdirSync(dir, { withFileTypes: true }).map((e) => ({ name: e.name, dir: e.isDirectory(), size: e.isFile() ? fs.statSync(path.join(dir, e.name)).size : 0 })));
       }
     }
+    // games shared with linked SEASIDEs: the links, offering one, and answering an offer (see gameLinks.mjs)
+    if (parts[0] === "game-links") {
+      try {
+        if (m === "GET") return send(res, 200, { links: gameLinks.list(), servers: peers.list() });
+        const b = JSON.parse((await readBody(req, 10_000)).toString("utf8") || "{}");
+        if (b.op === "offer") return send(res, 200, await gameLinks.offer(b));
+        if (b.op === "accept") return send(res, 200, await gameLinks.accept(String(b.id || "")));
+        if (b.op === "decline") return send(res, 200, await gameLinks.decline(String(b.id || "")));
+        if (b.op === "close") return send(res, 200, await gameLinks.close(String(b.id || "")));
+        return send(res, 400, { error: "Which change?" });
+      } catch (e) {
+        return send(res, e?.status || 400, { error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+    // a game's realtime channel, across this SEASIDE's devices and any linked SEASIDE playing it
+    if (parts[0] === "rt" && parts[1]) {
+      const scope = decodeURIComponent(parts[1]);
+      if (parts[2] === "events" && m === "GET") return void gameLinks.listen(scope, String(url.searchParams.get("page") || ""), res);
+      if (m === "POST") {
+        const b = JSON.parse((await readBody(req, 8_000_000)).toString("utf8") || "{}");
+        gameLinks.realtime(scope, String(b.page || ""), b.msgs);
+        return send(res, 200, { ok: true });
+      }
+    }
     if (parts[0] === "state" && parts[1]) {
       const scope = parts[1];
       if (m === "GET") return send(res, 200, L.readUpdates(scope, Number(url.searchParams.get("since") || 0)));
-      if (m === "POST") return send(res, 200, L.appendUpdate(scope, JSON.parse((await readBody(req, 2_000_000)).toString("utf8"))));
+      if (m === "POST") {
+        const entry = JSON.parse((await readBody(req, 2_000_000)).toString("utf8"));
+        // a game linked from another SEASIDE: the move goes to its host, and comes back in the host's order
+        if (gameLinks.guestLink(scope)) {
+          try {
+            return send(res, 200, await gameLinks.sendAsGuest(scope, entry));
+          } catch (e) {
+            return send(res, 502, { error: e instanceof Error ? e.message : String(e) });
+          }
+        }
+        return send(res, 200, L.appendUpdate(scope, entry));
+      }
       if (m === "DELETE") {
         L.clearUpdates(scope);
         return send(res, 200, { ok: true });
@@ -1425,6 +1464,7 @@ export function deskServer() {
       if (url.pathname.startsWith("/luanti-web/")) return void luantiWeb.serve(req, res, url, send);
       if (url.pathname.startsWith("/pads-peer/")) {
         deskPorts.add(req.socket.localPort);
+        if (await gameLinks.handle(req, res, url, { readBody, send })) return;
         if (await padsLink.handle(req, res, url, { readBody, send })) return;
       }
       // paired Classic pages (other origins, with their pairing token): hello, and the relay

@@ -25,7 +25,7 @@ import { addJournal, describeCall, gameToolsFor, runTool, toolsFor, type Scope }
 import { speak, stopSpeaking } from "./voice.ts";
 import { aiFor, voiceFor } from "./prefs.ts";
 import type { TurnCtx } from "./tools.ts";
-import { bridge, library } from "./xdc.ts";
+import { aiAddr, bridge, library } from "./xdc.ts";
 import { fileInInbox, joinedApps } from "./messengers.ts";
 import { gameScreen } from "./bus.ts";
 import { turnNow, wakes, type Turn as GameTurn } from "./turns.ts";
@@ -786,7 +786,7 @@ bridge.watch((scope, row) => {
   // the game naming a character's turn (webxdc notify) wakes her, whoever sent it; otherwise a person's move does,
   // when waking is on for this app
   const prefs = s.appPrefs[`xdc:${g.slug}`] ?? {};
-  if (!wakes(row, g.players) && !(row.from.startsWith("you:") && (prefs.wake ?? g.slug === "jade-link"))) return;
+  if (!wakes(row, g.players, (id) => aiAddr(id, scope)) && !(row.from.startsWith("you:") && (prefs.wake ?? g.slug === "jade-link"))) return;
   // (a wake that comes while someone's turn is still running waits for the room to be free, rather than being lost:
   // a game often names the next player while the last one is still talking)
   window.clearTimeout(wakeTimer);
@@ -823,7 +823,7 @@ export async function gameTurn() {
   const guide = await gameGuide(g.slug, g.kind === "xdc" ? g.pkgId : undefined);
   const how = guide ? `\n\nHow to play it (the game's guide):\n${guide}` : "";
   // whose turn the game says it is: only they open their eyes
-  const turn = g.kind === "xdc" && g.scope ? turnNow(await library.updates(g.scope, 0).catch(() => []), players.map((c) => c.id)) : ({ kind: "open" } as GameTurn);
+  const turn = g.kind === "xdc" && g.scope ? turnNow(await library.updates(g.scope, 0).catch(() => []), players.map((c) => c.id), (id) => aiAddr(id, g.scope)) : ({ kind: "open" } as GameTurn);
   if (turn.kind === "waiting") {
     const whose = turn.for.map((a) => (a === "you:you" || a === `you:${(s.session ?? "").toLowerCase()}` ? "your" : `${a.replace(/^(you|ai):/, "")}'s`));
     return s.notice(`The characters wait with their eyes closed: it's ${whose.join(" and ")} turn.`);

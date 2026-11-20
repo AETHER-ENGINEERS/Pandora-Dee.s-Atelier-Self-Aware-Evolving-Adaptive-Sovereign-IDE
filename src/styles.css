@@ -1212,6 +1212,11 @@ html { touch-action: pan-x pan-y; }
 .room-temp-row.warm { border-left-color: #d9a45a; } .room-temp-row.lively { border-left-color: #e2643f; }
 .room-temp-last { opacity: .85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .room-temp-wander { color: #e0a040; }
+.linked-games { display: grid; gap: 8px; margin-bottom: 8px; }
+.linked-game { padding: 8px 10px; border-radius: 10px; border: 1px solid #7b5fb0; background: rgba(123, 95, 176, .12); display: grid; gap: 6px; }
+.linked-game .row, .game-link .row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.game-link { display: grid; gap: 6px; border-top: 1px solid var(--line, rgba(255,255,255,.12)); padding-top: 8px; }
+.game-link select.input { width: auto; min-width: 0; }
 .game-plans { border-bottom: 1px solid var(--line, rgba(255,255,255,.12)); padding: 6px 8px; display: grid; gap: 4px; }
 .game-plans-head { background: none; border: 0; color: inherit; text-align: left; padding: 2px 0; cursor: pointer; font-weight: 600; }
 .game-plan { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }

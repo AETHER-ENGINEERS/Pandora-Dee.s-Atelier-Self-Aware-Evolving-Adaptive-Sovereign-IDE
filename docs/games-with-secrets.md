@@ -82,10 +82,17 @@ To make your game easy for characters:
 
 - **Devices using the same SEASIDE** (a phone and a PC on the same server, over the LAN) already play one game: each
   open game fetches the others' updates every couple of seconds. Each device runs only the characters it has playing.
-- **Two separate SEASIDEs** (each family member with their own) can't share a game yet. That needs a link that
-  carries one game's updates between two SEASIDEs, both ways, in order: an ISLANDS jetty, opened for that game,
-  for as long as the players want it. It's on the way; games written as above will work over it unchanged, because
-  they already keep their secrets on their own copies and share only what everyone may see.
+- **Two separate SEASIDEs** can play one game once they're linked (PADS › Servers, an invite code made on one and
+  given to the other). Open the game, click its lantern (🏮), and choose "Play it together" with a linked SEASIDE, for
+  an hour up to a day. The other SEASIDE sees the invitation at the top of its Games library, and Join opens it there
+  (it fetches the game if it doesn't have it). The SEASIDE that offered keeps the game's one true order: the other
+  sends its moves there and mirrors it, so every copy on both sides sees the same updates with the same numbers.
+  Players from the other SEASIDE get its name on their address (`you:you@second-seaside`, `ai:dee@second-seaside`), so
+  two Dees or two "you"s never collide. Either side can close the link; it closes itself when its time is up.
+- **The realtime channel** (`joinRealtimeChannel`) goes through the servers too: to every device with the game open on
+  this SEASIDE, and across a linked one. That's how a game like OpenTTD can play its LAN multiplayer between houses.
+- Games written as above work across SEASIDEs unchanged: secrets stay on their owner's copy, wherever it is. Secret
+  Word was played this way (Dee on one SEASIDE, a person on another, both directions).
 
 ## Honest limits
 

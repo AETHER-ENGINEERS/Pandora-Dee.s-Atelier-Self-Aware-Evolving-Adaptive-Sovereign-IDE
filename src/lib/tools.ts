@@ -15,7 +15,7 @@ import { backupTool } from "./serverBackup.ts";
 import { gameScreen } from "./bus.ts";
 import { changePlans, loadPlans, plansLine } from "./plans.ts";
 import { answerFlag, answerPuzzle, findThreads, readWatcher, rememberWhy, WATCHER_FILE } from "./watcher.ts";
-import { appSaid, describeRows, library, lanternLine, recentLive, sendLive, sendUpdate } from "./xdc.ts";
+import { aiAddr, appSaid, describeRows, library, lanternLine, recentLive, sendLive, sendUpdate } from "./xdc.ts";
 import { moveDigest, pageRows } from "./xdcRows.ts";
 import { findSkill, searchSkills, skillsOf } from "./skills.ts";
 import { allTasks, baseOf, cleanVaultPath, isNote, loadNotes, noteName, noteTags, resolveNote, searchNotes, tasksIn, toggleTaskText, useNotes, vaultIndex, writeNote } from "./notes.ts";
@@ -797,7 +797,7 @@ ${(await gameScreen.read(id)).slice(0, 4000) || "(the screen has no readable tex
       const r = await gameScreen.act(id, { do: kind, target: str(a.target), ...(a.text !== undefined ? { text: str(a.text) } : {}), ...(a.enter ? { enter: true } : {}) });
       if (!r.ok) return r.said;
       await new Promise((res) => setTimeout(res, 700));
-      const said = g.kind === "xdc" && g.scope ? appSaid(g.scope, `ai:${id}`, sentAt).map((l) => l.text) : [];
+      const said = g.kind === "xdc" && g.scope ? appSaid(g.scope, aiAddr(id, g.scope), sentAt).map((l) => l.text) : [];
       const screen = (await gameScreen.read(id)).slice(0, 2500);
       return `${r.said}${said.length ? `
 The game said: ${said.slice(-3).join(" / ")}` : ""}
@@ -845,7 +845,7 @@ ${screen || "(no readable text)"}`;
       const moves = moveDigest(all);
       const live = recentLive(g.scope);
       const parts = [
-        `You play as address "ai:${id}" and name "${desk().character(id)?.short ?? id}". The time now is ${Date.now()} (ms), for any "ts" a message needs.`,
+        `You play as address "${aiAddr(id, g.scope)}" and name "${desk().character(id)?.short ?? id}". The time now is ${Date.now()} (ms), for any "ts" a message needs.`,
         ...(moves ? [`Every move so far, by game (ply:move):\n${moves}`] : []),
         rows.length ? `Saved updates:${note ? ` ${note}` : ""}\n${describeRows(shown, shown.length)}` : "No saved updates yet.",
         live.length ? `Live messages (recent):\n${live.map((l) => `${l.name}: ${l.text}`).join("\n")}` : "No live messages yet.",
@@ -864,7 +864,7 @@ ${screen || "(no readable text)"}`;
       if (!g || g.kind !== "xdc" || !g.scope) return "No Vector app is open.";
       if (!g.players.includes(id)) return "You're not one of the players in this app.";
       const msg = typeof a.message === "string" ? a.message : JSON.stringify(a.message);
-      sendLive(g.scope, `ai:${id}`, s.character(id)?.short ?? id, msg);
+      sendLive(g.scope, aiAddr(id, g.scope), s.character(id)?.short ?? id, msg);
       return "Sent.";
     },
   },
@@ -890,11 +890,11 @@ ${screen || "(no readable text)"}`;
       const payload = given === undefined ? fields : typeof given === "string" ? JSON.parse(given) : given;
       if (!payload || typeof payload !== "object" || !Object.keys(payload).length) return "Send the update's payload: the same shape as the app's own updates (see app_updates and the game's guide).";
       const sentAt = Date.now();
-      const row = await sendUpdate(g.scope, `ai:${id}`, c?.short ?? id, { payload, ...(a.info ? { info: str(a.info) } : {}) });
+      const row = await sendUpdate(g.scope, aiAddr(id, g.scope), c?.short ?? id, { payload, ...(a.info ? { info: str(a.info) } : {}) });
       // with a seat, her own copy of the game takes the update in too: give it a moment, and pass on any objection
       if (!gameScreen.hasSeat(id)) return `Sent as update #${row.serial}.`;
       await new Promise((r) => setTimeout(r, 900));
-      const said = appSaid(g.scope, `ai:${id}`, sentAt).map((l) => l.text);
+      const said = appSaid(g.scope, aiAddr(id, g.scope), sentAt).map((l) => l.text);
       return said.length
         ? `Sent as update #${row.serial}, but the game objected (from your own seat):\n${said.slice(-5).join("\n")}\nIf it refused your move, it didn't happen: fix it and send it again.`
         : `Sent as update #${row.serial}. Your seat raised no objection; game_screen shows the result.`;
@@ -1107,7 +1107,7 @@ async function appsTool(charId: string, a: Record<string, unknown>) {
   }
   if (act === "send") {
     const c = s.character(charId);
-    const row = await sendUpdate(scope, `ai:${charId}`, c?.short ?? charId, { payload: a.payload ?? {}, ...(a.info ? { info: str(a.info) } : {}) });
+    const row = await sendUpdate(scope, aiAddr(charId, scope), c?.short ?? charId, { payload: a.payload ?? {}, ...(a.info ? { info: str(a.info) } : {}) });
     return `Sent as update #${row.serial}.`;
   }
   if (act === "open") {
