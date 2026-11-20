@@ -568,7 +568,7 @@ export default {
       async run(text) {
         const g = ready();
         // ("attack chicken", "the chicken", "chicken": the creature's name is what's left)
-        const want = String(text || "").trim().toLowerCase().replace(/^(?:attack|hit|hunt|kill)s+/, "").replace(/^(?:the|a|an|that|this)s+/, "").replace(/s$/, "");
+        const want = String(text || "").trim().toLowerCase().replace(/^(?:attack|hit|hunt|kill)\s+/, "").replace(/^(?:the|a|an|that|this)\s+/, "").replace(/s$/, "");
         const p = g.player;
         const named = (m) => String((m.def && (m.def.label || m.def.name)) || m.type || "").toLowerCase();
         let best = null;
