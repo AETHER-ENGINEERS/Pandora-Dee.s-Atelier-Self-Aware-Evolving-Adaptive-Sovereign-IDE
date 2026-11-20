@@ -185,6 +185,13 @@ export default {
     // the hotbar
     const slots = (g.inv && g.inv.slots ? g.inv.slots.slice(0, 9) : []).map((s, i) => (s ? `${i + 1} ${n.item(s.id)}${s.n > 1 ? ` x${s.n}` : ""}${g.sel === i ? " (in hand)" : ""}` : null)).filter(Boolean);
     lines.push(slots.length ? `Hotbar: ${slots.join(", ")}.` : "Your hands and hotbar are empty.");
+    // Vexel's chat, as it shows on screen: the last few lines, who said what (and the game's own news)
+    const said = Array.from(document.querySelectorAll("#chatlog > div")).slice(-6).map((d) => {
+      const who = d.querySelector("b")?.textContent || "";
+      const text = (d.textContent || "").slice(who.length).trim();
+      return who ? `${who}: ${text}` : `(${text})`;
+    });
+    if (said.length) lines.push(`Chat (latest last): ${said.join(" / ")}`);
     try {
       const b = await theBody();
       if (b) {
