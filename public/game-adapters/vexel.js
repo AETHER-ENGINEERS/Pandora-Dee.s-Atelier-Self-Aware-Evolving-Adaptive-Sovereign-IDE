@@ -567,7 +567,8 @@ export default {
       help: 'hit a creature, as a person aims at it and clicks: "attack sheep" (the nearest sheep), "attack zombie", or "attack" for the nearest creature. It turns you to it, steps within reach and swings until it falls or runs off (animals give food; villagers remember who hit them)',
       async run(text) {
         const g = ready();
-        const want = String(text || "").trim().toLowerCase();
+        // ("attack chicken", "the chicken", "chicken": the creature's name is what's left)
+        const want = String(text || "").trim().toLowerCase().replace(/^(?:attack|hit|hunt|kill)s+/, "").replace(/^(?:the|a|an|that|this)s+/, "").replace(/s$/, "");
         const p = g.player;
         const named = (m) => String((m.def && (m.def.label || m.def.name)) || m.type || "").toLowerCase();
         let best = null;
