@@ -162,7 +162,7 @@ function helper() {
                 break;
               }
             }
-            reply(true, said.join("\n") || "No steps given.");
+            reply(true, said.join("\n") || 'No steps given: put them in text, separated by ";", like text "turn north; walk forward 3; look down; dig".');
           })();
         }
         const act = ad && ad.actions && (ad.actions[a.target] || Object.entries(ad.actions).find(([k]) => k.toLowerCase() === String(a.target || "").toLowerCase())?.[1]);

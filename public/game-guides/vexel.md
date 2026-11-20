@@ -5,7 +5,16 @@ on your own seat through SEASIDE's Vexel adapter: `game_screen` tells you in wor
 what's under you and ahead of you block by block, what you're pointing at, who and what is near (with directions
 from you), the time and weather, your health and food, and your hotbar.
 
+Your screen also has Vexel's own eyes, written by Vexel's author for players like you: what's around you in
+words, a map of the land (north up: `T` trees, `~` water, `:` sand, `@` you), and **what you could do now**,
+the way a game shows a player what they can craft or who's near.
+
 You act with `game_seat_act`, `do: "use"`, the action as `target`, and its details as `text`:
+
+- `goal`: what you're working toward and its steps, in your own words, so what's offered fits your plan:
+  `"build a seaside cabin | find the sea => there is water on my map | get 12 logs => I carry 12 logs"`.
+- `choose`: do one of the things under "What you could do now", by its number (`"2"`).
+- `survey`: a wider map, up to 32 blocks each way (`"survey 32"`): for finding the sea, a village, a site.
 
 - `enter`: step into the world from the start menu (do this first).
 - `walk`: `"forward 5"`, `"back 2"`, `"left 3"`, `"right 3"`. It stops at walls; it tells you where you ended up.

@@ -48,6 +48,33 @@ function hold(codes, ms) {
 }
 const at = (p) => `${Math.floor(p.x)}, ${Math.floor(p.y)}, ${Math.floor(p.z)}`;
 
+// Vexel's own body for an AI player (its js/body/: written by Vexel's author for exactly this). Its eyes: the scene
+// in words and a map of the land about. Its options: what's possible right now, as sentences, the way a game shows a
+// person what they can craft or who's near. The character chooses; the body's hands only do what she chose. It stays
+// off between choices, so her own walk/turn/dig keys are hers, and it never chooses anything itself.
+let menu = [];
+async function theBody() {
+  if (window.BODY) return window.BODY;
+  const base = location.href.replace(/[^/]*$/, "");
+  await import(base + "js/body/body.js");
+  if (window.BODY) window.BODY.off();
+  return window.BODY || null;
+}
+// the body speaks of its player as "Claude"; here the player is whoever sits in this seat
+const yours = (s) =>
+  String(s || "")
+    .replace(/\bClaude has\b/g, "you have").replace(/\bClaude is\b/g, "you are").replace(/\bClaude carries\b/g, "you carry")
+    .replace(/\bClaude's\b/g, "your").replace(/\bClaude\b/g, "you");
+/** Ask the body what's possible now (it's switched on only for the asking). */
+function optionsNow(b) {
+  b.on();
+  try {
+    return b.tick();
+  } finally {
+    b.off();
+  }
+}
+
 export default {
   async describe() {
     const g = ready();
@@ -80,12 +107,82 @@ export default {
     // the hotbar
     const slots = (g.inv && g.inv.slots ? g.inv.slots.slice(0, 9) : []).map((s, i) => (s ? `${i + 1} ${n.item(s.id)}${s.n > 1 ? ` x${s.n}` : ""}${g.sel === i ? " (in hand)" : ""}` : null)).filter(Boolean);
     lines.push(slots.length ? `Hotbar: ${slots.join(", ")}.` : "Your hands and hotbar are empty.");
+    try {
+      const b = await theBody();
+      if (b) {
+        const t = optionsNow(b);
+        lines.push("", "Around you (Vexel's own eyes):", yours(b.look()), "", b.map(10));
+        menu = (t.options || []).slice(0, 24);
+        if (t.goal) lines.push("", `Your goal in Vexel: ${yours(t.goal)}${t.step ? `; the step you're on: ${yours(t.step)}` : ""}.`);
+        if (t.last) lines.push(`Last thing you chose: ${yours(t.last.text)}: ${t.last.ok ? "done" : "it didn't work"} (${yours(t.last.what)}).`);
+        if (menu.length) lines.push("", 'What you could do now (do "use", target "choose", text the number):', ...menu.map((o, i) => `${i + 1}. ${yours(o.text)}`));
+      }
+    } catch (e) {
+      lines.push(`(Vexel's own eyes didn't open: ${e.message})`);
+    }
     return lines.join("\n");
   },
 
   actions: {
+    choose: {
+      help: 'do one of the things listed under "What you could do now", by its number ("3"): your hands do it, and you hear how it went',
+      async run(text) {
+        const g = ready();
+        const b = await theBody();
+        if (!b) return "Vexel's own body isn't here, so there's nothing to choose from: use walk, turn, look and dig.";
+        const t = optionsNow(b);
+        menu = (t.options || []).slice(0, 24);
+        const want = String(text || "").trim();
+        const k = Number.parseInt(want, 10);
+        const o = Number.isFinite(k) ? menu[k - 1] : menu.find((m) => yours(m.text).toLowerCase().includes(want.toLowerCase()));
+        if (!o) return `There's no option ${want || "(none given)"} now. Read your screen again for what you could do.`;
+        b.on();
+        let r;
+        try {
+          b.tick(); // (the body's own list, the same as the one you were shown)
+          r = b.act(o.id);
+          const end = performance.now() + 40000;
+          while (b.body.act && performance.now() < end) {
+            g.tick(20);
+            await new Promise((res) => setTimeout(res, 0));
+          }
+          if (b.body.act) b.stop();
+        } finally {
+          b.off();
+        }
+        if (r === "no such option now") return "That option was gone by the time you chose it. Read your screen again.";
+        const last = b.body.last;
+        const what = last && last.id === o.id ? `${last.ok ? "Done" : "It didn't work"}: ${yours(last.what)}` : "You stopped partway (it took too long).";
+        return `You chose: ${yours(o.text)}. ${what}. You're at ${at(g.player)}.`;
+      },
+    },
+    goal: {
+      help: 'set what you\'re working toward, and its steps, so "What you could do now" offers what fits it: "build a seaside cabin | find the sea => there is water on my map | get 12 logs => I carry 12 logs" (each step: what to do => what\'s true when it\'s done)',
+      async run(text) {
+        const b = await theBody();
+        if (!b) return "Vexel's own body isn't here, so there's no goal to keep: just play.";
+        const [goal, ...steps] = String(text || "").split("|").map((s) => s.trim()).filter(Boolean);
+        if (!goal) {
+          const m = b.status().mind;
+          return m.goal ? `Your goal: ${yours(m.goal)}. Steps: ${m.steps.map((s, i) => `${i + 1}. ${yours(s)}${i === m.at ? " (you're here)" : ""}`).join(" ")}` : "You have no goal set yet.";
+        }
+        const mine = (s) => s.replace(/\b(?:I am|I'm)\b/gi, "Claude is").replace(/\bI have\b/gi, "Claude has").replace(/\bI carry\b/gi, "Claude carries").replace(/\bmy\b/gi, "Claude's").replace(/\bI\b/g, "Claude");
+        b.goal(mine(goal), steps.map(mine));
+        return `Goal set: ${goal}${steps.length ? `, in ${steps.length} step${steps.length === 1 ? "" : "s"}, starting with: ${steps[0]}` : ""}. Read your screen for what you could do now.`;
+      },
+    },
+    survey: {
+      help: 'look out over the land: a wider map, up to 32 blocks each way: "survey", or "survey 32"',
+      async run(text) {
+        ready();
+        const b = await theBody();
+        if (!b) return "Vexel's own eyes aren't here.";
+        const r = Math.max(8, Math.min(32, Number.parseInt(text, 10) || 24));
+        return b.map(r);
+      },
+    },
     enter: {
-      help: "step into the world from the start menu",
+      help:"step into the world from the start menu",
       run() {
         const g = ready();
         if (g.inGame) return "You're already in the world.";

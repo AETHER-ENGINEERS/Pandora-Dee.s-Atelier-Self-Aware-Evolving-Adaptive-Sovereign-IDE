@@ -43,6 +43,7 @@ import { allKeyValues, envFor } from "./residentKeys.ts";
 import { isLimitError, recordLimit, recordUsage } from "./meter.ts";
 import type { UsageKind } from "./meterCore.ts";
 import { record } from "./trajectories.ts";
+import { isSeatView, shrinkOlderViews } from "./seatViews.ts";
 import { fserveOn, parseCommand, serveCommand } from "./fserve.ts";
 import { isImage, promptParts, splitThink, type Attachment, type PromptContext, type ToolUse } from "./room.ts";
 
@@ -362,6 +363,7 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
       const ai = aiFor(me.id);
       let tools = ai.tools ? (opts.game ? gameToolsFor() : toolsFor(ctx)) : [];
       const turns = [...base];
+      const turnFrom = turns.length; // (where this turn's own messages begin)
       const ctxKey = `${conn.id}:${model}`;
       const toolsJson = () => (tools.length ? JSON.stringify(tools) : "");
       const known = learnedLimit(ctxKey);
@@ -538,6 +540,8 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
               return out;
             }),
           );
+          // a new view of her game seat: the older ones this turn shrink to their first lines (she sees the screen as it is now)
+          if (group.some((call) => isSeatView(call.name))) shrinkOlderViews(turns, turnFrom);
           group.forEach((call, k) => turns.push({ role: "tool", content: outs[k].text.slice(0, 12000), callId: call.id, name: call.name }));
           i = j;
         }
