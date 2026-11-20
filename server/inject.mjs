@@ -293,8 +293,91 @@ function helper() {
 /** The webxdc API, storage kept per app, plus the helper. */
 export function webxdcScript({ scope, addr, name, lan, app = "" }) {
   const cfg = JSON.stringify({ scope, addr, name, lan: Boolean(lan), app }).replace(/</g, "\\u003c");
-  return `(${helper.toString()})();(${webxdc.toString()})(${cfg});`;
+  const native = NATIVE[app] ? `(${NATIVE[app].toString()})(${cfg});` : "";
+  return `(${helper.toString()})();(${webxdc.toString()})(${cfg});${native}`;
 }
+
+// Apps made with a native bridge of their own (the Android app they also ship as), given that bridge here, so what
+// the app does through it works in SEASIDE too, without changing the app. Only for the apps named.
+const NATIVE = {
+  // The Lilith Learning Lab (Lucky's): voice, course downloads (server/appNet.mjs), copy and share. Its AI calls
+  // (httpStart) aren't bridged yet, so its Teacher stays off until SEASIDE's models are bridged to it.
+  "lilith-learning-lab": function lilithBridge(cfg) {
+    if (window.AndroidTTS) return;
+    const seat = /^ai:/.test(cfg.addr);
+    const synth = window.speechSynthesis;
+    const ev = (id, type, code) => {
+      try {
+        if (window.__ttsEvent) window.__ttsEvent(id, type, code);
+      } catch (e) {}
+    };
+    let keep = null;
+    const quiet = () => {
+      if (keep) clearInterval(keep);
+      keep = null;
+    };
+    window.AndroidTTS = {
+      speak(text, rate, id) {
+        const words = String(text || "").split(/\s+/).filter(Boolean).length;
+        // a character's seat is out of sight and out of hearing: the words are on her screen, so the voice is silent,
+        // taking about as long as reading them aloud would
+        if (seat || !synth || !window.SpeechSynthesisUtterance) {
+          setTimeout(() => ev(id, "start"), 0);
+          setTimeout(() => ev(id, "done"), Math.min(8000, 120 + (words * 300) / (Number(rate) || 1)));
+          return;
+        }
+        const u = new SpeechSynthesisUtterance(String(text));
+        u.rate = Number(rate) || 1;
+        u.onstart = () => ev(id, "start");
+        u.onboundary = () => ev(id, "range");
+        u.onend = () => {
+          quiet();
+          ev(id, "done");
+        };
+        u.onerror = (e) => {
+          quiet();
+          ev(id, "error", e && e.error);
+        };
+        synth.speak(u);
+        // (Chrome stops long speech after about 15 s unless it's nudged)
+        quiet();
+        keep = setInterval(() => {
+          if (!synth.speaking) return quiet();
+          synth.pause();
+          synth.resume();
+        }, 10000);
+      },
+      stop() {
+        quiet();
+        try {
+          if (synth) synth.cancel();
+        } catch (e) {}
+      },
+      restartEngine() {
+        this.stop();
+      },
+      fetchUrl(url, id) {
+        const done = (ok, text) => {
+          try {
+            if (window.__netDone) window.__netDone(id, ok, text);
+          } catch (e) {}
+        };
+        fetch("/app-net/fetch?url=" + encodeURIComponent(String(url))).then(
+          (r) => r.text().then((t) => done(r.ok, r.ok ? t : t || "HTTP " + r.status)),
+          (e) => done(false, String((e && e.message) || e)),
+        );
+      },
+      copy(t) {
+        try {
+          navigator.clipboard.writeText(String(t));
+        } catch (e) {}
+      },
+      share(title, t) {
+        this.copy(t);
+      },
+    };
+  },
+};
 
 function webxdc(cfg) {
   if (window.webxdc && window.webxdc.__pdd) return;

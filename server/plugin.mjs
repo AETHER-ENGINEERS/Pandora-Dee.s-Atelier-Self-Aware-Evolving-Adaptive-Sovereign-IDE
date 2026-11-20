@@ -5,6 +5,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import * as WG from "./webgame.mjs";
+import * as AN from "./appNet.mjs";
 import { zipSync } from "fflate";
 import { createLibrary } from "./xdc.mjs";
 import { classicRelayScript, helperScript, webxdcScript } from "./inject.mjs";
@@ -1515,6 +1516,16 @@ export function deskServer() {
       // An app built to sit at the root of its own address (Vite's "/assets/…", as most Vector apps are) asks for root
       // paths. Here every app shares one address under /run/<id>/, so those come from the app whose page asked (its
       // Referer), and only ever from that app's own files; anything else on the apps' address stays as it was.
+      // the few things a few Mini Apps are made to fetch (appNet.mjs: the Learning Lab's courses), for those apps alone
+      if (isAppHost(req) && url.pathname === "/app-net/fetch" && req.method === "GET") {
+        const pkg = library().get(AN.askingPkg(req.headers.referer));
+        try {
+          const r = await AN.fetchFor(pkg?.appKey, String(url.searchParams.get("url") || ""));
+          return void send(res, r.status, r.text, "text/plain; charset=utf-8");
+        } catch (e) {
+          return void send(res, 502, e instanceof Error ? e.message : String(e), "text/plain; charset=utf-8");
+        }
+      }
       // a game's adapter for characters' seats is SEASIDE's own, not the app's: served before an app's root paths
       if (isAppHost(req) && url.pathname.startsWith("/game-adapters/")) {
         if (run(req, res, url) !== null) return;
