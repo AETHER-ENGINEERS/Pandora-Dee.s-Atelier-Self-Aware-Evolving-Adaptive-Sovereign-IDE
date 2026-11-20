@@ -37,7 +37,7 @@ import { currentChat } from "./chats.ts";
 import { compact, shouldCompact } from "./context.ts";
 import { fitTurns, isCtxError, learnLimit, learnedLimit, sizeOf } from "./ctxfit.ts";
 import { missedNote, missedTool } from "./missedTool.ts";
-import { ACT_NOTE, CLAIM_NOTE, MOVE_NOTE, SAY_NOTE, claimsMove, claimsTool, claimsWorld, saidNothing, stripRecords } from "./deskRecord.ts";
+import { ACT_NOTE, CLAIM_NOTE, MOVE_NOTE, SAY_NOTE, claimsMove, claimsTool, claimsWorld, saidNothing, stripRecords, toldNote } from "./deskRecord.ts";
 import { bookFor, bookHeader, parseScene, redactKeys, sceneText } from "./storybook.ts";
 import { allKeyValues, envFor } from "./residentKeys.ts";
 import { isLimitError, recordLimit, recordUsage } from "./meter.ts";
@@ -386,6 +386,7 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
       let maxSteps = seated ? PLAY_STEPS : ai.maxSteps;
       let wrapGiven = false;
       let runaways = 0;
+      let truthGiven = false;
       // (on the end of what she's answering, not a message of its own: two in a row tangle some models' templates)
       if (seated) {
         const last = turns[turns.length - 1];
@@ -534,6 +535,22 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
             turns.push({ role: "assistant", content: result.text });
             turns.push({ role: "user", content: toldAct ? ACT_NOTE : MOVE_NOTE });
             continue;
+          }
+          // on her seat, her words weighed against what ran (one click, then a whole chapter "completed"): her own
+          // quick-decisions model judges, once a turn, and she hears what really ran (decide.ts)
+          if (!missed && seated && !truthGiven && step < maxSteps && parts.text.trim().length > 80) {
+            truthGiven = true;
+            const ran = used.filter((u) => !u.desk).map((u) => `${u.note}${u.args ? ` ${String(u.args).replace(/\s+/g, " ").slice(0, 120)}` : ""}`).slice(-12);
+            const more = await import("./decide.ts").then((d) => d.toldMoreThanRan(me.id, parts.text, ran)).catch(() => false);
+            if (more) {
+              const note = toldNote(ran);
+              used.push({ name: "reply", ok: false, note: "told more than she did", out: note, desk: true });
+              if (parts.text.trim()) shown += `${parts.text.trim()}\n\n`;
+              patch({ tools: [...used] });
+              turns.push({ role: "assistant", content: result.text });
+              turns.push({ role: "user", content: note });
+              continue;
+            }
           }
           if (missed) {
             noteGiven = true;

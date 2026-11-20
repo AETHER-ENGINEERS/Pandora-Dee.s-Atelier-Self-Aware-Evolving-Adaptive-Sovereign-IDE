@@ -39,6 +39,21 @@ export async function decide(charId: string, state: string, questions: Question[
   throw last instanceof Error ? last : new Error(String(last));
 }
 
+/** Whether a reply tells of more than the actions that ran (one click, then a whole chapter "completed"): judged by
+ *  her own quick-decisions model. True only when it's fairly sure. */
+// Asked both ways and compared, which cancels a model's lean toward yes or no (tested 2026-11-20 on six real replies:
+// a 27B Qwen got all six with wide margins; a 9B ranked them right but leaned so far toward "no" that it stays
+// quiet, never a false alarm; a "thinking" distill said yes to everything, so it's no judge).
+export async function toldMoreThanRan(charId: string, reply: string, ran: string[]): Promise<boolean> {
+  const state = `Her reply: "${reply.trim().slice(-2000)}"\nWhat actually ran in that reply: ${ran.length ? ran.join("; ") : "nothing (no actions)"}.`;
+  const [more, all] = await decide(charId, state, [
+    { kind: "yesno", ask: "Does her reply tell of something she did that, going by what actually ran, never happened?" },
+    { kind: "yesno", ask: "Did everything her reply says she did actually run?" },
+  ]);
+  if (more.scored && all.scored) return more.probs[0] - all.probs[0] > 0;
+  return more.pick === 0 && all.pick === 1;
+}
+
 /** Whose seat a request came from: only a character's own seat frame (Games.tsx marks it) asks for her. */
 const seatOf = (src: MessageEventSource | null) => [...document.querySelectorAll<HTMLIFrameElement>("iframe.game-seat")].find((f) => f.contentWindow === src)?.dataset.seat;
 

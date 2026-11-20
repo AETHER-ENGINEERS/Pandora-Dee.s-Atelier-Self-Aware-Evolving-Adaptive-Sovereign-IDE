@@ -53,4 +53,7 @@ const WORLD = /\b(?:i(?:'ve| have)?\s+(?:dug|chopped|cut|gathered|mined|broke|wa
 /** Whether a reply tells of something done in a game world (so, with no action taken, nothing happened). */
 export const claimsWorld = (text: string) => WORLD.test(text);
 export const ACT_NOTE = "[Desk note] Nothing happened in the game this turn: no action was taken, so what you told didn't happen (your screen still shows where you were). If you meant to do it, do it now with game_seat_act (do \"use\", or \"steps\" for several), then say a line about what really happened.";
+/** A reply that tells of more than her actions did: what really ran, and the rest didn't happen. */
+export const toldNote = (ran: string[]) =>
+  `[Desk note] Your reply tells of more than you did. The actions that really ran this turn: ${ran.length ? ran.join("; ") : "none"}. Anything else you described didn't happen, and your screen shows only what those did. If you meant to do it, do it now, one real action at a time, then say what really happened.`;
 export const MOVE_NOTE = "[Desk note] No move was sent in this reply, so the game hasn't changed: describing a move doesn't make it. If you meant to make one, send it now with app_send_update (the guide shows the shape), then say a line about it.";
