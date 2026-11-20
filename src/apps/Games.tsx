@@ -30,6 +30,7 @@ import { gameTurn, sayToPlayers } from "../lib/agent.ts";
 import { changePlans, loadPlans, type Plan } from "../lib/plans.ts";
 import { LinkedGames, LinkThisGame } from "./GameLinks.tsx";
 import "../lib/websimBridge.ts"; // websim games get the desktop's picture engine (server/inject.mjs)
+import "../lib/decide.ts"; // characters' seats get quick decisions from their own models (server/inject.mjs)
 import { myAddrName, ownName, useMyName } from "../lib/myName.ts";
 import { aiAddr, linkTag, appOrigin, bridge, bringInStep, groupApps, lanternOf, library, actOnScreen, readScreen, webImportSaid, type Lantern, type Pkg, type UpdateRow } from "../lib/xdc.ts";
 import { allowed } from "../lib/privacy.ts";
@@ -1205,6 +1206,6 @@ function Seat({ pkg, scope, id, name }: { pkg: Pkg; scope: string; id: string; n
       window.removeEventListener("message", hush);
     };
   }, [id]);
-  return <iframe ref={ref} className="game-seat" src={library.runUrl(pkg, scope, aiAddr(id, scope), name)} title={`${name}'s seat`} tabIndex={-1} allow="autoplay; gamepad" />;
+  return <iframe ref={ref} className="game-seat" data-seat={id} src={library.runUrl(pkg, scope, aiAddr(id, scope), name)} title={`${name}'s seat`} tabIndex={-1} allow="autoplay; gamepad" />;
 }
 

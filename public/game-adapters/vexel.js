@@ -75,6 +75,39 @@ function optionsNow(b) {
   }
 }
 
+// Whether the step she's on is done: what Vexel's body had a small judging model do, done with SEASIDE's own quick
+// decisions (her own models, src/lib/decide.ts), against the body's facts only (what she has and sees). At most every
+// few seconds, and only for a step that says what's true when it's done; "goal done" is always hers to say too.
+let judged = { key: "", at: 0 };
+// her words as the body's facts put them ("I carry 12 logs" → "Claude carries 12 logs")
+const asClaude = (s) =>
+  String(s || "")
+    .replace(/\b(?:I am|I'm)\b/gi, "Claude is").replace(/\bI have\b/gi, "Claude has").replace(/\bI carry\b/gi, "Claude carries")
+    .replace(/\b(?:my|mine)\b/gi, "Claude's").replace(/\bme\b/gi, "Claude").replace(/\bI\b/g, "Claude");
+async function judgeStep(b, t) {
+  if (!t.check || !t.step || typeof window.__pddDecide !== "function") return "";
+  const key = `${t.stepNo}|${t.state}`;
+  if (key === judged.key || performance.now() - judged.at < 4000) return "";
+  judged = { key, at: performance.now() };
+  try {
+    // the body's facts call the player "Claude"; her step is in her words, so it's put the same way, and what's under
+    // her feet is added (the body's facts don't always say)
+    const g = ready(), n = await lookup(), p = g.player;
+    const under = n.block(g.world.get(Math.floor(p.x), Math.floor(p.y) - 1, Math.floor(p.z)));
+    const facts = `${t.state}\nClaude is standing on ${under} at (${at(p)}).`;
+    const [a] = await window.__pddDecide(facts, [{ kind: "yesno", ask: `Is this true of Claude now: ${asClaude(t.check)}?` }]);
+    const yes = a && a.probs ? a.probs[0] : 0;
+    judged.said = `${a.scored ? `${Math.round(yes * 100)}% sure it's done` : a.pick === 0 ? "done" : "not yet"} (${a.model})`;
+    if (!(a.scored ? yes >= 0.8 : a.pick === 0)) return "";
+    const next = b.stepDone();
+    const sure = a.scored ? ` (${Math.round(yes * 100)}% sure)` : "";
+    return next ? `Step done${sure}: ${yours(t.step)}. Next: ${yours(next)}.` : `Step done${sure}: ${yours(t.step)}. That was the last: your goal is done.`;
+  } catch (e) {
+    judged.said = `couldn't judge: ${e && e.message ? e.message : e}`;
+    return "";
+  }
+}
+
 export default {
   async describe() {
     const g = ready();
@@ -110,8 +143,11 @@ export default {
     try {
       const b = await theBody();
       if (b) {
-        const t = optionsNow(b);
+        let t = optionsNow(b);
+        const done = await judgeStep(b, t);
+        if (done) t = optionsNow(b); // (a new step: what fits it now)
         lines.push("", "Around you (Vexel's own eyes):", yours(b.look()), "", b.map(10));
+        if (done) lines.push("", done);
         menu = (t.options || []).slice(0, 24);
         if (t.goal) lines.push("", `Your goal in Vexel: ${yours(t.goal)}${t.step ? `; the step you're on: ${yours(t.step)}` : ""}.`);
         if (t.last) lines.push(`Last thing you chose: ${yours(t.last.text)}: ${t.last.ok ? "done" : "it didn't work"} (${yours(t.last.what)}).`);
@@ -153,7 +189,8 @@ export default {
         if (r === "no such option now") return "That option was gone by the time you chose it. Read your screen again.";
         const last = b.body.last;
         const what = last && last.id === o.id ? `${last.ok ? "Done" : "It didn't work"}: ${yours(last.what)}` : "You stopped partway (it took too long).";
-        return `You chose: ${yours(o.text)}. ${what}. You're at ${at(g.player)}.`;
+        const done = await judgeStep(b, optionsNow(b));
+        return `You chose: ${yours(o.text)}. ${what}. You're at ${at(g.player)}.${done ? `\n${done}` : ""}`;
       },
     },
     goal: {
@@ -172,10 +209,9 @@ export default {
         const [goal, ...steps] = String(text || "").split("|").map((s) => s.trim()).filter(Boolean);
         if (!goal) {
           const m = b.status().mind;
-          return m.goal ? `Your goal: ${yours(m.goal)}. Steps: ${m.steps.map((s, i) => `${i + 1}. ${yours(s)}${i === m.at ? " (you're here)" : ""}`).join(" ")}` : "You have no goal set yet.";
+          return m.goal ? `Your goal: ${yours(m.goal)}. Steps: ${m.steps.map((s, i) => `${i + 1}. ${yours(s)}${i === m.at ? " (you're here)" : ""}`).join(" ")}${judged.said ? `. Last check of your step: ${judged.said}` : ""}` : "You have no goal set yet.";
         }
-        const mine = (s) => s.replace(/\b(?:I am|I'm)\b/gi, "Claude is").replace(/\bI have\b/gi, "Claude has").replace(/\bI carry\b/gi, "Claude carries").replace(/\bmy\b/gi, "Claude's").replace(/\bI\b/g, "Claude");
-        b.goal(mine(goal), steps.map(mine));
+        b.goal(asClaude(goal), steps.map(asClaude));
         return `Goal set: ${goal}${steps.length ? `, in ${steps.length} step${steps.length === 1 ? "" : "s"}, starting with: ${steps[0]}` : ""}. Read your screen for what you could do now.`;
       },
     },

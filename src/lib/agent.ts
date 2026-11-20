@@ -77,7 +77,7 @@ function setBusy(id: string, what: string | null) {
 }
 
 /** A connection's key: the character's own first (residentKeys.ts), then the household's. */
-function keyFor(c: Connection, charId?: string) {
+export function keyFor(c: Connection, charId?: string) {
   return credential(c, envFor(charId));
 }
 

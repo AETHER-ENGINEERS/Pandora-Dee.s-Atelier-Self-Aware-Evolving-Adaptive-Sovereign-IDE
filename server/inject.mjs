@@ -416,6 +416,27 @@ function webxdc(cfg) {
         if (m) window.__pddAdapter = m.default;
       })
       .catch((err) => console.warn(`[seaside] the game's adapter didn't load: ${err && err.message ? err.message : err}`));
+    // quick decisions for the adapter (src/lib/decide.ts): a state and questions, answered as probabilities by her
+    // own models, for the judging a player does without thinking ("is that step done?")
+    const asked = new Map();
+    let n = 0;
+    window.addEventListener("message", (e) => {
+      if (e.source !== window.parent || !e.data || e.data.__pdd !== "decide-reply") return;
+      const w = asked.get(e.data.rid);
+      if (!w) return;
+      asked.delete(e.data.rid);
+      if (e.data.error) w.no(new Error(e.data.error));
+      else w.ok(e.data.value);
+    });
+    window.__pddDecide = (state, questions) =>
+      new Promise((ok, no) => {
+        const rid = ++n;
+        asked.set(rid, { ok, no });
+        window.parent.postMessage({ __pdd: "decide", rid, state: String(state), questions: JSON.parse(JSON.stringify(questions || [])) }, "*");
+        setTimeout(() => {
+          if (asked.delete(rid)) no(new Error("The decision took too long."));
+        }, 30000);
+      });
   }
   window.webxdc = {
     __pdd: true,

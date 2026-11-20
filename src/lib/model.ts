@@ -154,6 +154,30 @@ async function failure(res: Response, what: string) {
 
 const aicordIds = new Map<string, string>();
 
+/** One quick answer for a decision (decideCore.ts): a single token, with the scores of the likeliest first tokens when
+ *  the server shows them (local Ollama and OpenAI-style servers that support logprobs; cloud models often don't). */
+export async function decideOnce(c: Connection, key: string, model: string, system: string, user: string, signal?: AbortSignal): Promise<{ text: string; top: { token: string; logprob: number }[] }> {
+  const messages = [
+    { role: "system", content: system },
+    { role: "user", content: user },
+  ];
+  const ollama = c.kind === "ollama";
+  const url = ollama ? `${base(c.baseUrl)}/api/chat` : `${base(c.baseUrl)}/chat/completions`;
+  const body = ollama
+    ? { model, messages, stream: false, think: false, logprobs: true, top_logprobs: 20, options: { temperature: 0, num_predict: 1 } }
+    : { model, messages, stream: false, temperature: 0, max_tokens: 1, logprobs: true, top_logprobs: 20 };
+  const res = await outbound(url, { method: "POST", headers: authHeaders(c.kind, key), body: JSON.stringify(body), signal }, c.via);
+  if (!res.ok) throw await failure(res, c.label);
+  const j = (await res.json()) as {
+    message?: { content?: string };
+    logprobs?: { top_logprobs?: { token: string; logprob: number }[] }[];
+    choices?: { message?: { content?: string }; logprobs?: { content?: { top_logprobs?: { token: string; logprob: number }[] }[] } }[];
+  };
+  if (ollama) return { text: j.message?.content ?? "", top: j.logprobs?.[0]?.top_logprobs ?? [] };
+  const ch = j.choices?.[0];
+  return { text: ch?.message?.content ?? "", top: ch?.logprobs?.content?.[0]?.top_logprobs ?? [] };
+}
+
 const windows = new Map<string, number | null>();
 /** How many tokens a model's context holds, as its server says (Ollama's /api/show), or null when it won't say. */
 export async function modelWindow(c: Connection, key: string, model: string): Promise<number | null> {

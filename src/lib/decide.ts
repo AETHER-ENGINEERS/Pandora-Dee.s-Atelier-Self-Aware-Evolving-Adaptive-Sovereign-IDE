@@ -1,0 +1,51 @@
+// Quick decisions on the desk (decideCore.ts has the method): a character's quick judgements go to her helper model
+// when she has one (Settings › Characters), else to her usual models in order. Her helper is the natural one: a small
+// local model is fast, and a local Ollama shows its scores, so the answer is a real probability.
+
+import { chainFor, keyFor } from "./agent.ts";
+import { answerOf, decisionPrompt, fromText, labelsOf, readProbs, type Answer, type Question } from "./decideCore.ts";
+import { decideOnce } from "./model.ts";
+
+export type { Answer, Question } from "./decideCore.ts";
+
+/** Answer each question about one state, for one character (whose models are used). */
+export async function decide(charId: string, state: string, questions: Question[], signal?: AbortSignal): Promise<(Answer & { model: string })[]> {
+  const { list } = chainFor(charId, true);
+  if (!list.length) throw new Error("No model connection is set up for quick decisions.");
+  let last: unknown = null;
+  for (const { conn, model } of list) {
+    try {
+      const out: (Answer & { model: string })[] = [];
+      // one at a time, in order: the state's start is the same each time, so the server reads it once
+      for (const q of questions.slice(0, 16)) {
+        const { system, user } = decisionPrompt(state, q);
+        const r = await decideOnce(conn, keyFor(conn, charId), model, system, user, signal);
+        const labels = labelsOf(q);
+        const scored = r.top.some((t) => labels.includes(t.token.trim()));
+        out.push({ ...answerOf(scored ? readProbs(r.top, labels) : fromText(r.text, labels), scored), model: `${conn.label} · ${model}` });
+      }
+      return out;
+    } catch (e) {
+      if (signal?.aborted) throw e;
+      last = e;
+    }
+  }
+  throw last instanceof Error ? last : new Error(String(last));
+}
+
+/** Whose seat a request came from: only a character's own seat frame (Games.tsx marks it) asks for her. */
+const seatOf = (src: MessageEventSource | null) => [...document.querySelectorAll<HTMLIFrameElement>("iframe.game-seat")].find((f) => f.contentWindow === src)?.dataset.seat;
+
+// a character's game seat asks (server/inject.mjs gives seats window.__pddDecide): only for the seat's own character
+if (typeof window !== "undefined")
+  window.addEventListener("message", (e) => {
+    const m = e.data as { __pdd?: string; rid?: number; state?: string; questions?: Question[] } | null;
+    if (!m || m.__pdd !== "decide") return;
+    const who = seatOf(e.source);
+    if (!who) return;
+    const reply = (v: { value?: unknown; error?: string }) => (e.source as Window).postMessage({ __pdd: "decide-reply", rid: m.rid, ...v }, "*");
+    decide(who, String(m.state ?? ""), Array.isArray(m.questions) ? m.questions : []).then(
+      (value) => reply({ value }),
+      (err: unknown) => reply({ error: err instanceof Error ? err.message : String(err) }),
+    );
+  });
