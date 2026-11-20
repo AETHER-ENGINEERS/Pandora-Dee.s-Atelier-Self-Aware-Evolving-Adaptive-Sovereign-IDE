@@ -360,6 +360,8 @@ export type CharPrefs = {
   helper?: { connection?: string; model?: string };
   /** Her quick decisions (lib/decide.ts: game steps, quick checks): tried before her helper and her own models. */
   decider?: { connection?: string; model?: string };
+  /** Her playing model (games and apps where she has a seat): tried first while she plays (agent.ts chainFor). */
+  player?: { connection?: string; model?: string };
   /** Her own budget for work she starts herself (heartbeats, her own time), in tokens: lib/meterCore.ts. She can set it with the usage tool. */
   budget?: { hourTokens?: number; dayTokens?: number };
   /** Time of her own while the house is quiet (lib/ownTimeCore.ts). Off until switched on. */

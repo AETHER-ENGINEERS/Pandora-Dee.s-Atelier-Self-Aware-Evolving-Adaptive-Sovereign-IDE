@@ -149,7 +149,7 @@ export function leanModel(charId: string) {
 }
 
 /** Connections to try for this character, in order, with the reason any were skipped. */
-export function chainFor(charId: string, helper = false): { list: { conn: Connection; model: string }[]; skipped: string[] } {
+export function chainFor(charId: string, helper = false, playing = false): { list: { conn: Connection; model: string }[]; skipped: string[] } {
   const s = desk();
   const pref = s.charPrefs[charId];
   const conns = s.model.connections;
@@ -170,6 +170,13 @@ export function chainFor(charId: string, helper = false): { list: { conn: Connec
   const help = helper && pref?.helper?.connection ? conns.find((x) => x.id === pref.helper!.connection && x.enabled) : undefined;
   if (help) {
     const first = { conn: help, model: pref!.helper!.model || help.model };
+    picked.splice(0, picked.length, first, ...picked.filter((p) => !(p.conn.id === first.conn.id && p.model === first.model)));
+  }
+  // seated in a game or app, her playing model goes first, when she has one: a model that takes actions well, where
+  // her usual one may be chosen for conversation or roleplay (Jade: a 27B to play, her 32B to talk)
+  const play = playing && !helper && pref?.player?.connection ? conns.find((x) => x.id === pref.player!.connection && x.enabled) : undefined;
+  if (play) {
+    const first = { conn: play, model: pref!.player!.model || play.model };
     picked.splice(0, picked.length, first, ...picked.filter((p) => !(p.conn.id === first.conn.id && p.model === first.model)));
   }
   const skipped: string[] = [];
@@ -326,7 +333,7 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
   if (opts.nudge) base.push({ role: "user", content: TURN_NUDGE });
   if (opts.instruction) base.push({ role: "user", content: opts.instruction });
 
-  const { list, skipped } = chainFor(me.id, opts.helper);
+  const { list, skipped } = chainFor(me.id, opts.helper, playing && !bridge);
   if (!list.length) {
     const why = skipped.length ? skipped.join(" ") : "No AI connection is set up yet. Open Settings → AI.";
     if (!opts.silent) s.post({ kind: "notice", who: "desk", name: "Desk", text: `${me.short} can't answer. ${why}`, source: "desk", error: true });

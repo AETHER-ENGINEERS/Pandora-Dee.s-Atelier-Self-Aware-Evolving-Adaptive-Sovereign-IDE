@@ -676,6 +676,31 @@ function CharWays({ c }: { c: Character }) {
           probabilities (a cloud model only its answer); it only reads and picks, never writes, so a small one does well.
         </span>
       </Own>
+      <Own label="Playing model (games and apps)" own={Boolean(p.player?.connection)} shared={`${c.short}'s own AI`} onReset={() => unset("player")}>
+        <div className="row" style={{ gap: 6 }}>
+          <select className="select" value={p.player?.connection ?? ""} onChange={(e) => (e.target.value ? set({ player: { connection: e.target.value } }) : unset("player"))}>
+            <option value="">{c.short}'s own AI</option>
+            {conns.map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.label}
+              </option>
+            ))}
+          </select>
+          {p.player?.connection ? (
+            <input
+              className="input mono grow"
+              value={p.player.model ?? ""}
+              placeholder={conns.find((x) => x.id === p.player?.connection)?.model || "that connection's model"}
+              onChange={(e) => set({ player: { ...p.player, model: e.target.value.trim() || undefined } })}
+              aria-label="Playing model"
+            />
+          ) : null}
+        </div>
+        <span className="small faint">
+          While {c.short} has a seat in a game or app, this model plays: one that takes actions well. Her own AI stays for talk and roleplay, and
+          is still tried if this one can't be reached.
+        </span>
+      </Own>
       <div className="field">
         <span>Heartbeat</span>
         <label className="check" style={{ padding: 0 }}>
