@@ -31,7 +31,7 @@ import { changePlans, loadPlans, type Plan } from "../lib/plans.ts";
 import { LinkedGames, LinkThisGame } from "./GameLinks.tsx";
 import "../lib/websimBridge.ts"; // websim games get the desktop's picture engine (server/inject.mjs)
 import "../lib/decide.ts"; // characters' seats get quick decisions from their own models (server/inject.mjs)
-import { myAddrName, ownName, shownName, useMyName } from "../lib/myName.ts";
+import { myAddrName, myName, ownName, useMyName } from "../lib/myName.ts";
 import { aiAddr, linkTag, appOrigin, bridge, bringInStep, groupApps, lanternOf, library, actOnScreen, readScreen, webImportSaid, type Lantern, type Pkg, type UpdateRow } from "../lib/xdc.ts";
 import { allowed } from "../lib/privacy.ts";
 import { imagineGame } from "../lib/gameMaker.ts";
@@ -1181,7 +1181,7 @@ function Seats({ pkg, scope, slug, players, nonce }: { pkg: Pkg; scope: string; 
   const [watch, setWatch] = useState<string | null>(null);
   const seated = players.map((id, i) => ({ id, name: names[i] })).filter((x) => x.name);
   const watchSeat = (id: string | null) => {
-    const who = shownName();
+    const who = myName() || "The person";
     const was = seated.find((x) => x.id === watch);
     const now = seated.find((x) => x.id === id);
     if (was) desk().post({ kind: "notice", who: "desk", name: "Desk", source: "desk", text: `${who} stopped watching ${was.name}'s screen.` });
