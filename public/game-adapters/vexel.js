@@ -513,6 +513,54 @@ export default {
         return `Chopped ${dug} ${tree} block${dug === 1 ? "" : "s"}${got > 0 ? `; ${got} log${got === 1 ? "" : "s"} in your inventory now (${countLogs()} in all)` : ", but the logs haven't reached your hands yet: walk forward a step to pick them up"}. You're at ${at(g.player)}.`;
       },
     },
+    attack: {
+      help: 'hit a creature, as a person aims at it and clicks: "attack sheep" (the nearest sheep), "attack zombie", or "attack" for the nearest creature. It turns you to it, steps within reach and swings until it falls or runs off (animals give food; villagers remember who hit them)',
+      async run(text) {
+        const g = ready();
+        const want = String(text || "").trim().toLowerCase();
+        const p = g.player;
+        const named = (m) => String((m.def && (m.def.label || m.def.name)) || m.type || "").toLowerCase();
+        let best = null;
+        for (const m of g.mobs && g.mobs.list ? g.mobs.list.values() : []) {
+          if (m.dying || (want && !named(m).includes(want))) continue;
+          const d = Math.hypot(m.x - p.x, m.z - p.z);
+          if (d < 24 && (!best || d < best.d)) best = { m, d };
+        }
+        if (!best) return want ? `There's no ${want} within 24 blocks of you.` : "There's no creature within 24 blocks of you.";
+        const m = best.m, name = named(m);
+        const aim = () => {
+          const h = (m.def && m.def.h) || 1;
+          const dx = m.x - g.player.x, dz = m.z - g.player.z, horiz = Math.hypot(dx, dz) || 0.01;
+          g.look(Math.atan2(-dx, -dz), Math.atan2(m.y + h * 0.6 - (g.player.y + 1.62), horiz));
+        };
+        let swings = 0;
+        for (let i = 0; i < 40 && swings < 12 && !m.dying && g.mobs.list.has(m.id); i++) {
+          aim();
+          if (Math.hypot(m.x - g.player.x, m.z - g.player.z) > 2.6) {
+            const from = { x: g.player.x, z: g.player.z };
+            hold(["KeyW"], 250);
+            if (Math.hypot(g.player.x - from.x, g.player.z - from.z) < 0.15) hold(["KeyW", "Space"], 300);
+            continue;
+          }
+          g.tick(2);
+          g.button(0, true);
+          g.tick(2);
+          g.button(0, false);
+          swings++;
+          g.tick(32); // (the swing's cooldown, as a person waits between hits)
+        }
+        const down = m.dying || !g.mobs.list.has(m.id);
+        if (down) {
+          hold(["KeyW"], 400); // (step in to pick up what it dropped)
+          g.tick(40);
+        }
+        return down
+          ? `The ${name} fell after ${swings} hit${swings === 1 ? "" : "s"}; you stepped in for what it dropped. You're at ${at(g.player)}.`
+          : swings
+            ? `You hit the ${name} ${swings} time${swings === 1 ? "" : "s"}, and it's still up (or got away). You're at ${at(g.player)}.`
+            : `You couldn't get within reach of the ${name}. You're at ${at(g.player)}.`;
+      },
+    },
     select: {
       help: 'hold a hotbar slot: "3", or an item\'s name like "planks"',
       async run(text) {
