@@ -91,13 +91,15 @@ function helper() {
     }
   };
   const FIELDS = "input:not([type=hidden]):not([type=button]):not([type=submit]):not([type=reset]):not([type=checkbox]):not([type=radio]), textarea, [contenteditable=true]";
-  const usable = () => Array.from(document.querySelectorAll(`${FIELDS}, select, button, [role=button], input[type=button], input[type=submit], input[type=checkbox], input[type=radio], a[href]`)).filter(shown);
+  // (a folding section's heading, <summary>, counts too: what's inside it shows once it's clicked open)
+  const usable = () => Array.from(document.querySelectorAll(`${FIELDS}, select, button, [role=button], input[type=button], input[type=submit], input[type=checkbox], input[type=radio], a[href], summary`)).filter(shown);
   const clean = (s) => String(s || "").replace(/\s+/g, " ").trim();
   const labelOf = (el) => {
     const byFor = el.id ? document.querySelector(`label[for="${CSS.escape(el.id)}"]`) : null;
     const wrap = el.closest && el.closest("label");
-    const own = el.matches("button, [role=button], a") ? el.innerText : el.matches("input[type=button], input[type=submit]") ? el.value : "";
-    return clean(el.getAttribute("aria-label") || (byFor && byFor.innerText) || own || (wrap && wrap.innerText) || el.getAttribute("placeholder") || el.getAttribute("title") || el.getAttribute("name") || el.id);
+    const own = el.matches("button, [role=button], a, summary") ? el.innerText : el.matches("input[type=button], input[type=submit]") ? el.value : "";
+    // (a label folded away has no visible text: its words still name the control)
+    return clean(el.getAttribute("aria-label") || (byFor && (byFor.innerText || byFor.textContent)) || own || (wrap && (wrap.innerText || wrap.textContent)) || el.getAttribute("placeholder") || el.getAttribute("title") || el.getAttribute("name") || el.id);
   };
   const describe = (el) => {
     const name = labelOf(el).slice(0, 60);
@@ -108,6 +110,7 @@ function helper() {
       const v = el.matches("[contenteditable=true]") ? el.innerText : el.value;
       return `[field] "${name}"${el.type === "password" ? "" : v ? ` (now: "${clean(v).slice(0, 40)}")` : " (empty)"}`;
     }
+    if (el.matches("summary")) return `[section] "${name}" (${el.parentElement && el.parentElement.open ? "open" : "closed: click it to show what's inside"})`;
     return `[button] "${name}"`;
   };
   /** The control a player means: by id, by its exact label, then by a label that contains the words; a board cell as
