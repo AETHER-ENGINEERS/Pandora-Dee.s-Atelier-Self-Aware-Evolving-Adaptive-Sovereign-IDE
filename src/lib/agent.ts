@@ -44,7 +44,7 @@ import { isLimitError, recordLimit, recordUsage } from "./meter.ts";
 import type { UsageKind } from "./meterCore.ts";
 import { record } from "./trajectories.ts";
 import { fserveOn, parseCommand, serveCommand } from "./fserve.ts";
-import { isImage, splitThink, type Attachment, type ToolUse } from "./room.ts";
+import { isImage, promptParts, splitThink, type Attachment, type PromptContext, type ToolUse } from "./room.ts";
 
 let controller: AbortController | null = null;
 let running = false;
@@ -252,7 +252,8 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
   const playing = Boolean(g && g.players.includes(me.id));
   // a model running on a computer here (not a cloud one) reads every word of its prompt slowly: while she plays, it gets
   // a shorter screen, a shorter guide and fewer of the room's messages
-  const lean = playing && leanModel(me.id);
+  const leanHere = leanModel(me.id); // (her model runs on a computer here: every word of the prompt costs it time)
+  const lean = playing && leanHere;
   const screen = playing ? (await gameScreen.read(me.id)).slice(0, lean ? 1500 : 6000) : "";
   // a game turn has the guide in its instruction; any other turn while she's playing gets it here
   const guide = playing && !opts.game && g ? (await gameGuide(g.slug, g.kind === "xdc" ? g.pkgId : undefined)).slice(0, lean ? 2500 : 6000) : "";
@@ -269,6 +270,7 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
   };
   // the People layer: names for whoever the turn is with (the bridge's own person, or who's signed in here)
   const rel = bridge ? relFor(s.bridges[bridge.source].owner, s.bridges[bridge.source].ownerName) : relFor(s.session ?? "", s.session ?? "");
+  let promptCtx: PromptContext | null = null; // (the room's own prompt, when it is one: see the lean note below)
   const sys0 = bridge && opts.scope !== "locksmith"
     ? scopedPrompt({
         me,
@@ -280,24 +282,33 @@ async function takeTurn(me: Character, opts: TurnOpts): Promise<TurnResult> {
         archive: bridge.source === "discord" ? s.bridges.discord.archiveName : undefined,
         now: new Date(),
       })
-    : systemPrompt({
-    me,
-    files: s.filesOf(me.id),
-    room: room.some((c) => c.id === me.id) ? room : [...room, me],
-    people,
-    game: g && playing ? { title: g.title, players: g.players.map((p) => s.character(p)?.short ?? p), screen, xdc: g.kind === "xdc", guide } : undefined,
-    now: new Date(),
-    length: aiFor(me.id).length,
-    summary: meta?.summary,
-    skillRouter: s.chat.skillRouter,
-    memoryFocus: await focusFor(me.id, history),
-    around: catsNote(s.cats.list, s.cats.on),
-  });
-  const sys = withRel(sys0, rel) + (opts.silent ? "" : watcherTurn(me.id, room.some((c) => c.id === me.id)));
+    : systemPrompt(
+        (promptCtx = {
+          me,
+          files: s.filesOf(me.id),
+          room: room.some((c) => c.id === me.id) ? room : [...room, me],
+          people,
+          game: g && playing ? { title: g.title, players: g.players.map((p) => s.character(p)?.short ?? p), screen, xdc: g.kind === "xdc", guide } : undefined,
+          now: new Date(),
+          length: aiFor(me.id).length,
+          summary: meta?.summary,
+          skillRouter: s.chat.skillRouter,
+          memoryFocus: await focusFor(me.id, history),
+          around: catsNote(s.cats.list, s.cats.on),
+          apart: leanHere,
+        }),
+      );
+  // A model on a computer here: the system prompt (and the tools Ollama puts after it) stays the same from turn to
+  // turn, so it can reuse its reading of them; what changes (memory for this moment, who's here, the time, her
+  // watcher) comes as a note at the start of the conversation instead.
+  const watch = opts.silent ? "" : watcherTurn(me.id, room.some((c) => c.id === me.id));
+  const moment = promptCtx && leanHere ? [promptParts({ ...promptCtx, apart: false }).moment, watch.trim()].filter(Boolean).join("\n\n") : "";
+  const sys = withRel(sys0, rel) + (moment ? "" : watch);
   const base: Turn[] = [
     { role: "system", content: sys },
+    ...(moment ? [{ role: "user" as const, content: `[Desk note: this moment, for you alone; not something anyone said]\n${moment}` }] : []),
     // a game turn reads only the last few lines, so the game (and its guide) isn't drowned out by the chat
-    ...transcriptFor(me, history, opts.game ? Math.min(lean ? 4 : 6, s.chat.historyLimit) : lean ? Math.min(10, s.chat.historyLimit) : s.chat.historyLimit, bridge?.chatId, { stamp: s.chat.stampTimes, after: bridge ? undefined : meta?.summaryUpTo }),
+    ...transcriptFor(me, history, opts.game ? Math.min(lean ? 4 : 6, s.chat.historyLimit) : leanHere ? Math.min(lean ? 10 : 12, s.chat.historyLimit) : s.chat.historyLimit, bridge?.chatId, { stamp: s.chat.stampTimes, after: bridge ? undefined : meta?.summaryUpTo }),
   ];
   if (opts.images?.length) {
     const lastUser = [...base].reverse().find((t) => t.role === "user");

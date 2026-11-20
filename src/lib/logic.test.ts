@@ -488,3 +488,17 @@ test("textToolCalls catches a call written out in a code block or on its own lin
   assert.equal(r.calls.length, 0);
   assert.match(r.rest, /8 r \. \. k/);
 });
+
+import { promptParts as parts2 } from "./room.ts";
+test("for a model on a computer here, the steady half of the prompt never holds what changes from turn to turn", () => {
+  const me = { id: "jade", name: "Jade", short: "Jade" } as never;
+  const base = { me, files: { "SOUL.md": "# Jade\nI love puzzles.", "MEMORY.md": "## What I've learned\n- Gates hold memory" }, room: [me], people: ["Sam"], length: "normal" as const };
+  const a = parts2({ ...base, now: new Date(2026, 10, 19, 21, 5) });
+  const b = parts2({ ...base, now: new Date(2026, 10, 19, 21, 6) });
+  assert.equal(a.steady, b.steady); // a minute later, the steady half is the same, word for word
+  assert.match(a.steady, /I love puzzles/);
+  assert.match(a.steady, /## Where you are/);
+  assert.doesNotMatch(a.steady, /Local time|Gates hold memory/);
+  assert.match(a.moment, /Local time/);
+  assert.match(a.moment, /Gates hold memory/);
+});
