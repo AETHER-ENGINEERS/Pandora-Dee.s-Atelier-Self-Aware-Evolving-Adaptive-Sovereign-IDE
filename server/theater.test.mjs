@@ -105,7 +105,7 @@ test("a watched folder is a shelf of its own, read in the background, and left a
   assert.deepEqual(l.scanning, []);
   const v = l.videos.find((x) => x.name === "matrix");
   assert.ok(v && v.watched && v.shelf === "Movies", JSON.stringify(l.videos));
-  assert.equal(W.owns(v.path), null, "a watched folder's video isn't the Theater's to move or delete");
+  assert.equal(W.owns(v.path), null, "a watched folder's video isn't the Theatre's to move or delete");
   W.dropFolder(away);
   assert.ok(!W.list().shelves.includes("Movies"));
   assert.ok(fs.existsSync(path.join(away, "Films", "1999", "matrix.mkv")), "the folder stays where it was");

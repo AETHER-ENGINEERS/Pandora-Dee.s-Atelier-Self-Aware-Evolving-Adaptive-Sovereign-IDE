@@ -44,7 +44,7 @@ export function createFiles({ dataDir, musicFolders, videoFolders = () => [], ge
       { id: "vector", name: "Vector files", path: path.join(d, "vector-host", "downloads"), kind: "vector" },
       { id: "music", name: "Music added here", path: path.join(d, "music"), kind: "music" },
       ...musicFolders().map((f, i) => ({ id: `music-${i}`, name: path.basename(f) || f, path: f, kind: "music" })),
-      // Theater's watched folders (videos played where they are)
+      // Theatre's watched folders (videos played where they are)
       ...videoFolders().map((f, i) => ({ id: `video-${i}`, name: f.name, path: f.path, kind: "video" })),
     ];
     for (const p of list) if ((p.kind !== "music" && p.kind !== "video") || p.id === "music") fs.mkdirSync(p.path, { recursive: true });

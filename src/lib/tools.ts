@@ -1353,11 +1353,11 @@ const CATS_TOOL: Tool = {
 const MUSIC_TOOL: Tool = {
   name: "music",
   description:
-    "The desktop's music player. now: what's playing; play / pause / next / previous; skip_album / skip_artist: past the rest of this album or artist in the list; back_album / back_artist: back to the start of the album or artist before this one; search: songs in the library (title, artist, album, genre); play_song: play matching songs (query); queue: add matching songs after the current one; stations: saved radio stations; play_station: a saved station by name. Only when {{PERSON_NAME}} asks, or clearly would like it.",
+    "The desktop's music player. now: what's playing; play / pause / next / previous; skip_album / skip_artist: past the rest of this album or artist in the list; back_album / back_artist: back to the start of the album or artist before this one; search: songs in the library (title, artist, album, genre); play_song: play matching songs (query); queue / queue_next: add matching songs right after the current one; queue_last: at the end of the queue; queue_after_album: after the rest of the album that's playing; stations: saved radio stations; play_station: a saved station by name. Only when {{PERSON_NAME}} asks, or clearly would like it.",
   parameters: obj(
     {
-      action: { type: "string", description: "now, play, pause, next, previous, skip_album, skip_artist, back_album, back_artist, search, play_song, queue, stations or play_station" },
-      query: { type: "string", description: "search / play_song / queue: words from the title, artist, album or genre · play_station: the station's name" },
+      action: { type: "string", description: "now, play, pause, next, previous, skip_album, skip_artist, back_album, back_artist, search, play_song, queue_next, queue_last, queue_after_album, stations or play_station" },
+      query: { type: "string", description: "search / play_song / queue_*: words from the title, artist, album or genre · play_station: the station's name" },
     },
     ["action"],
   ),
@@ -1403,10 +1403,9 @@ const MUSIC_TOOL: Tool = {
     if (act === "search") return hits.length ? hits.map((t) => `- ${t.title}${t.artist ? ` · ${t.artist}` : ""}${t.album ? ` (${t.album})` : ""}`).join("\n") : "Nothing in the library matches.";
     if (!hits.length) return "Nothing in the library matches.";
     const items = hits.map((t) => ({ kind: "track" as const, ...t }));
-    if (act === "queue") {
-      m.useMusic.setState((s) => ({ queue: [...s.queue.slice(0, s.index + 1), ...items, ...s.queue.slice(s.index + 1)] }));
-      if (m.useMusic.getState().index < 0) m.playList(items);
-      return `Queued ${items.length} song${items.length === 1 ? "" : "s"}.`;
+    if (act === "queue" || act.startsWith("queue_")) {
+      const { whereOf } = await import("./queueOps.ts");
+      return m.queueAs(items, whereOf(act) ?? "next");
     }
     m.playList(items);
     return `Playing ${hits.length} song${hits.length === 1 ? "" : "s"}: ${hits[0].title}${hits.length > 1 ? " first" : ""}.`;

@@ -1016,7 +1016,7 @@ body.dragging-window iframe, body.dragging-window webview { pointer-events: none
 .cat { position: absolute; left: 0; top: 0; pointer-events: auto; cursor: pointer; will-change: transform; }
 .cat-bubble { position: absolute; left: 0; top: 0; font-size: 11px; font-weight: 600; color: var(--text); text-shadow: 0 1px 3px rgba(0, 0, 0, .7); pointer-events: none; transition: opacity .3s; white-space: nowrap; }
 
-/* Media Theater */
+/* Media Theatre */
 .good-text { color: var(--good); }
 .bad-text { color: var(--bad); }
 .theater { display: flex; flex-direction: column; height: 100%; min-height: 0; position: relative; }
@@ -1161,7 +1161,7 @@ html { touch-action: pan-x pan-y; }
 /* a button that reads like a link, inside a sentence */
 .linkish { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-decoration: underline; text-underline-offset: 2px; }
 
-/* Theater's sidebar: kinds, collections, playlists, shelves by device, folders, other devices */
+/* Theatre's sidebar: kinds, collections, playlists, shelves by device, folders, other devices */
 .theater-body { flex: 1; display: flex; min-height: 0; position: relative; }
 .theater-main { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; padding-top: 6px; }
 .theater-side { width: 220px; overflow-y: auto; padding: 6px; gap: 1px; scrollbar-width: thin; }

@@ -8,6 +8,7 @@ import { allowed, blockedBecause } from "./privacy.ts";
 import { speech } from "./voice.ts";
 import { pack, unpack } from "./musicPlace.ts";
 import { previousRun, runKey } from "./musicRuns.ts";
+import { placeInQueue, type QueueWhere } from "./queueOps.ts";
 import { albumHome } from "./albumGroups.ts";
 import { LEAD, QUIET, TAIL, peakOf, quietEnding, upcoming } from "./gapless.ts";
 
@@ -455,9 +456,27 @@ export function removeAt(i: number) {
 }
 
 export function enqueue(items: Item[]) {
-  const q = mu().queue;
-  useMusic.setState({ queue: [...q, ...items] });
-  if (mu().index < 0) void start(q.length);
+  queueAs(items, "last");
+}
+
+/** Put songs (or stations) in the queue: next, last, or after the album that's playing (lib/queueOps.ts). With
+ *  nothing playing they go at the end and start. Says what it did. */
+export function queueAs(items: Item[], where: QueueWhere): string {
+  if (!items.length) return "Nothing to queue.";
+  const { queue, index } = mu();
+  const placed = placeInQueue(queue, index, items, where, (it) => runKey(it, "album"));
+  useMusic.setState({ queue: placed.queue });
+  if (index < 0) void start(placed.at);
+  const n = `${items.length} ${items.length === 1 ? "song" : "songs"}`;
+  return index < 0 ? `Playing ${n}.` : where === "next" ? `${n} up next.` : where === "last" ? `${n} at the end of the queue.` : `${n} after this album.`;
+}
+
+/** The same by library id, for anything outside this page (a ferry window, a jetty, a tool): plain data, no songs
+ *  passed around. Ids not in the library are skipped. */
+export function queueIds(ids: string[], where: QueueWhere): string {
+  const byId = new Map(mu().tracks.map((t) => [t.id, t]));
+  const items = ids.flatMap((id) => (byId.has(id) ? [{ kind: "track", ...byId.get(id)! } as Item] : []));
+  return queueAs(items, where);
 }
 
 export function toggle() {

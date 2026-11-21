@@ -825,7 +825,7 @@ function openInItems(e: Entry, k: string): MenuItem[] {
       { label: "Music: add to the queue", icon: <ListPlus size={14} />, run: () => void openInMusic(e.path, "queue") },
     );
   }
-  if (k === "video") items.push({ label: "Theater", icon: <Film size={14} />, run: () => openInTheater(e.path) });
+  if (k === "video") items.push({ label: "Theatre", icon: <Film size={14} />, run: () => openInTheater(e.path) });
   items.push({ label: "A new tab", icon: <ExternalLink size={14} />, hint: k === "pdf" || k === "image" || k === "text" || audio || k === "video" ? "in this device's browser" : "it may download instead", run: () => openInTab(e.path) });
   return [{ heading: "Open in…" }, ...items, { sep: true }];
 }

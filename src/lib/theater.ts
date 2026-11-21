@@ -1,8 +1,9 @@
-// Media Theater's side of the desktop: the video library (server/theater.mjs), backing videos up from a phone in
+// Media Theatre's side of the desktop: the video library (server/theater.mjs), backing videos up from a phone in
 // checked pieces that carry on after a dropped connection, thumbnails made by whichever page can play the video,
 // and where each video was left off (kept per device).
 
 import { useSyncExternalStore } from "react";
+import type { QueueWhere } from "./queueOps.ts";
 import { rawUrl } from "./explorer.ts";
 import { deviceName } from "./devshare.ts";
 import { sendPieces, wholeUpload } from "./uploadCore.ts";
@@ -362,16 +363,31 @@ export async function changeCollection(c: { id?: string; name?: string; items?: 
   return saved;
 }
 
-// ── a video handed over from Explorer ("Open in… → Theater") ─────────────────────────────────────────────
+// ── a video handed over from Explorer ("Open in… → Theatre") ─────────────────────────────────────────────
 let asked: string | null = null;
-/** Play this file in the Theater: the library's copy when it's on a shelf, or just the file when it isn't. */
+/** Play this file in the Theatre: the library's copy when it's on a shelf, or just the file when it isn't. */
 export function askTheater(path: string) {
   asked = path;
   window.dispatchEvent(new Event("pdd-theater-ask"));
 }
-/** The file asked for, once (the Theater takes it when it opens, or straight away if it's open). */
+/** The file asked for, once (the Theatre takes it when it opens, or straight away if it's open). */
 export function takeTheaterAsk(): string | null {
   const p = asked;
   asked = null;
   return p;
+}
+
+// ── videos put in the queue from outside the Theatre (a tool, a ferry window, a jetty): by id, plain data ──────
+let queued: { ids: string[]; where: QueueWhere }[] = [];
+/** Queue these videos (by library id) next, last, or after the current show's season; the Theatre takes them when it
+ *  opens, or straight away if it's open. */
+export function queueInTheatre(ids: string[], where: QueueWhere) {
+  queued.push({ ids, where });
+  window.dispatchEvent(new Event("pdd-theater-queue"));
+}
+/** What's waiting to be queued, once. */
+export function takeTheatreQueue(): { ids: string[]; where: QueueWhere }[] {
+  const q = queued;
+  queued = [];
+  return q;
 }

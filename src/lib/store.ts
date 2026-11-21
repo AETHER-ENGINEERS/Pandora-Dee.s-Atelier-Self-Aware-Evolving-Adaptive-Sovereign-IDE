@@ -50,7 +50,7 @@ export const APPS: { id: AppId; title: string; hint: string }[] = [
   { id: "cast", title: "Characters", hint: "Who's here, who's available, and their profiles" },
   { id: "notes", title: "Notes", hint: "Your notes: links, tags, tasks, graph" },
   { id: "music", title: "Music", hint: "Your music, internet radio and visualizers" },
-  { id: "theater", title: "Theater", hint: "Your videos, kept on the desktop: back them up from phones and watch them anywhere" },
+  { id: "theater", title: "Theatre", hint: "Your videos, kept on the desktop: back them up from phones and watch them anywhere" },
   { id: "visualizer", title: "Visualizer", hint: "The music's visualizer in its own window" },
   { id: "vector", title: "Vector", hint: "Your Vector messenger: chats, Communities and Mini Apps" },
   { id: "browser", title: "Browser", hint: "Web pages in tabs, with a reader view" },

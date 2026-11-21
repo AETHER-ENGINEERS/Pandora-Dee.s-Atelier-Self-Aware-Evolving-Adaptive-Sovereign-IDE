@@ -1,4 +1,4 @@
-// Media Theater: a home for videos on the desktop, so phones can let go of them and still watch them anywhere.
+// Media Theatre: a home for videos on the desktop, so phones can let go of them and still watch them anywhere.
 // Videos live in the vault's "Videos" folder (each folder inside it is a shelf), plus any video that came in through
 // the phone's share menu (Vault › From devices). Uploads arrive in checked pieces and can pick up where they stopped,
 // so a big video survives a dropped Wi-Fi connection. Thumbnails and favourites are kept in the vault's .pandora
@@ -204,7 +204,7 @@ export function createTheater({ vaultDir }) {
     return run;
   }
 
-  /** Which of these (name and size, from a phone) are already kept here, anywhere in the Theater. */
+  /** Which of these (name and size, from a phone) are already kept here, anywhere in the Theatre. */
   function have(items) {
     const all = list().videos;
     const key = (name, size) => `${String(name).toLowerCase()}\u0000${size}`;
@@ -343,7 +343,7 @@ export function createTheater({ vaultDir }) {
     if (!Number.isFinite(at) || at < 0) throw fail(400, "Where does this piece go?");
     if (bytes.length > PIECE_MAX) throw fail(413, "That piece is too big.");
     const n = fileName(name);
-    if (!VIDEO_EXT.has(path.extname(n).slice(1).toLowerCase())) throw fail(400, `${n} isn't a video the Theater keeps (mp4, mov, webm, mkv…).`);
+    if (!VIDEO_EXT.has(path.extname(n).slice(1).toLowerCase())) throw fail(400, `${n} isn't a video the Theatre keeps (mp4, mov, webm, mkv…).`);
     if (sha256 && crypto.createHash("sha256").update(bytes).digest("hex") !== String(sha256).toLowerCase()) throw fail(422, "That piece arrived damaged; sending it again.");
     fs.mkdirSync(parts(), { recursive: true });
     const p = partFile(shelf, n, total);
@@ -362,7 +362,7 @@ export function createTheater({ vaultDir }) {
     const total = Number(size);
     if (!Number.isFinite(total) || total <= 0) throw fail(400, "How big is it?");
     const n = fileName(name);
-    if (!VIDEO_EXT.has(path.extname(n).slice(1).toLowerCase())) throw fail(400, `${n} isn't a video the Theater keeps (mp4, mov, webm, mkv…).`);
+    if (!VIDEO_EXT.has(path.extname(n).slice(1).toLowerCase())) throw fail(400, `${n} isn't a video the Theatre keeps (mp4, mov, webm, mkv…).`);
     fs.mkdirSync(parts(), { recursive: true });
     const p = partFile(shelf, n, total);
     let got = 0;
@@ -469,7 +469,7 @@ export function createTheater({ vaultDir }) {
       if (Array.isArray(items)) m.collections[i].items = [...new Set(list)];
     }
     const c = m.collections[i];
-    // what toddler mode shows in the Theater (only collections marked for it)
+    // what toddler mode shows in the Theatre (only collections marked for it)
     if (typeof kids === "boolean") c.kids = kids;
     // moved among the collections
     if (Number.isInteger(at)) {
@@ -501,7 +501,7 @@ export function createTheater({ vaultDir }) {
     return { fav: Boolean(on) };
   }
 
-  /** May this request touch this file? Only videos inside the Theater's own folders. */
+  /** May this request touch this file? Only videos inside the Theatre's own folders. */
   // ---- YouTube links ----
   const linkId = (yt) => `yt-${crypto.createHash("sha1").update(yt).digest("hex").slice(0, 10)}`;
   /** A YouTube link added to a shelf ("YouTube" unless another is chosen). Its title and thumbnail are fetched once
@@ -523,11 +523,11 @@ export function createTheater({ vaultDir }) {
     writeMeta(m);
     return { id, shelf: to, title: l?.title || info.title || "", again: Boolean(l) };
   }
-  /** A link taken out of the Theater (its kept thumbnail, place and favourite go with it). */
+  /** A link taken out of the Theatre (its kept thumbnail, place and favourite go with it). */
   function dropLink(id) {
     const m = readMeta();
     const l = m.links.find((x) => x.id === checkId(id));
-    if (!l) throw fail(404, "That link isn't in the Theater any more.");
+    if (!l) throw fail(404, "That link isn't in the Theatre any more.");
     m.links = m.links.filter((x) => x !== l);
     delete m.favs[l.id];
     delete m.seconds[l.id];
@@ -549,7 +549,7 @@ export function createTheater({ vaultDir }) {
     if (link && /^https:\/\//.test(String(p))) {
       const m = readMeta();
       const l = m.links.find((x) => x.yt === link.yt);
-      if (!l) throw fail(404, "That link isn't in the Theater any more.");
+      if (!l) throw fail(404, "That link isn't in the Theatre any more.");
       l.shelf = String(shelf ?? "") ? safe(shelf, "") : "";
       if (l.shelf) mkShelf(l.shelf);
       writeMeta(m);

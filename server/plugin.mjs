@@ -175,7 +175,7 @@ export function deskServer() {
   });
   const modules = createModules({ dataDir: () => dataDir, importXdc: (bytes, name) => library().importAny(bytes, name) });
   const stdio = createMcpStdio();
-  // Media Theater: videos kept in the vault (see theater.mjs)
+  // Media Theatre: videos kept in the vault (see theater.mjs)
   const theater = createTheater({ vaultDir: () => path.join(dataDir, "vault") });
   // Classic opened on its own (a plain browser tab), paired with this desktop to use its relay (see pairs.mjs)
   const pairs = createPairs({ file: () => path.join(dataDir, "classic-pairs.json") });
@@ -827,7 +827,7 @@ export function deskServer() {
         }
         // a folder watched where it is (a network share, a folder on this computer): added on the computer itself
         if (parts[1] === "folder" && m === "POST") {
-          if (!onThisPc(req)) return send(res, 403, { error: "Folders are added to the Theater on the desktop's own computer." });
+          if (!onThisPc(req)) return send(res, 403, { error: "Folders are added to the Theatre on the desktop's own computer." });
           const b = JSON.parse((await readBody(req, 100_000)).toString("utf8") || "{}");
           return send(res, 200, b.drop ? theater.dropFolder(b.path) : theater.addFolder(files().allowed(b.path, true), b.name));
         }

@@ -1,5 +1,5 @@
 // Sending a big file to the desktop in pieces, carrying on after a dropped connection. No React or DOM here, so it
-// can be tested with a stand-in server (uploadCore.test.ts); the Theater's backups use it (theater.ts).
+// can be tested with a stand-in server (uploadCore.test.ts); the Theatre's backups use it (theater.ts).
 
 export const PIECE = 8 * 1024 * 1024;
 

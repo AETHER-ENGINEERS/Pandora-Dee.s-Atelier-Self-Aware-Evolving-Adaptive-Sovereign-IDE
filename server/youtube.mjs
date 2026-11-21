@@ -1,5 +1,5 @@
-// YouTube links for the Theater: a link's video id (and where in it to start), and its title and thumbnail, fetched
-// once by the desktop when the link is added and kept with the Theater (youtube.test.mjs). Nothing is downloaded but
+// YouTube links for the Theatre: a link's video id (and where in it to start), and its title and thumbnail, fetched
+// once by the desktop when the link is added and kept with the Theatre (youtube.test.mjs). Nothing is downloaded but
 // those; the video plays from YouTube's no-cookie player.
 
 const ID = /^[A-Za-z0-9_-]{11}$/;

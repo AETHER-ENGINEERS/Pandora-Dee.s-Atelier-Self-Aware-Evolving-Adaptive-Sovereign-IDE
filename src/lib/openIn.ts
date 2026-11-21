@@ -1,10 +1,11 @@
 // "Open in…" from Explorer: a file handed to the app made for its kind. Audio goes to Music (the library's own copy
-// when the file is in a music folder, so its cover, tags and .wma conversion come with it), video to the Theater,
+// when the file is in a music folder, so its cover, tags and .wma conversion come with it), video to the Theatre,
 // and any file can open in a new tab of this device's browser, which shows PDFs, pictures and text itself.
 
 import { desk } from "./store.ts";
 import { rawUrl, baseName } from "./explorer.ts";
-import { enqueue, loadLibrary, playList, useMusic, type Item, type Track } from "./music.ts";
+import { loadLibrary, playList, queueAs, useMusic, type Item, type Track } from "./music.ts";
+import type { QueueWhere } from "./queueOps.ts";
 import { askTheater } from "./theater.ts";
 
 const norm = (p: string) => p.replace(/\\/g, "/").toLowerCase();
@@ -20,15 +21,10 @@ export async function songFor(path: string): Promise<Item> {
   return { kind: "track", id: `file:${path}`, title: name.replace(/\.[^.]+$/, ""), artist: "", album: "", year: 0, track: 0, genre: "", duration: 0, cover: false, bitrate: 0, size: 0, folder: "", file: name, src: rawUrl(path) };
 }
 
-export async function openInMusic(path: string, how: "play" | "next" | "queue" = "play") {
+export async function openInMusic(path: string, how: "play" | "next" | "queue" | QueueWhere = "play") {
   const it = await songFor(path);
   if (how === "play") playList([it], 0, true);
-  else if (how === "queue") enqueue([it]);
-  else {
-    const s = useMusic.getState();
-    if (s.index < 0) playList([it], 0, true);
-    else useMusic.setState({ queue: [...s.queue.slice(0, s.index + 1), it, ...s.queue.slice(s.index + 1)] });
-  }
+  else queueAs([it], how === "queue" ? "last" : how === "next" ? "next" : how);
   desk().openApp("music");
 }
 
