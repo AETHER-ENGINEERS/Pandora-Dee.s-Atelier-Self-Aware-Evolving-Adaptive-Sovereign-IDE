@@ -146,6 +146,61 @@ export async function comfyInfo(e: Engine): Promise<{ checkpoints: string[]; yue
   return { checkpoints, yue2 };
 }
 
+/** The models an engine has, for choosing from a list (Scan in its settings): ComfyUI's checkpoints, an
+ *  Automatic1111-style server's models, an OpenAI-style service's models, the music bridge's or mlx-serve's
+ *  downloaded music models. Throws with the engine's own answer when it doesn't list them. */
+export async function engineModels(e: ImageEngine | SongEngine): Promise<string[]> {
+  if (e.kind === "comfyui" || e.kind === "yue2-comfyui") return (await comfyInfo(e)).checkpoints;
+  if (e.kind === "a1111") return (await json<{ title?: string; model_name?: string }[]>(e, "/sdapi/v1/sd-models", { timeout: 30 })).map((m) => m.title || m.model_name || "").filter(Boolean);
+  const ids = async (path: string) => ((await json<{ data?: { id: string }[] }>(e, path, { timeout: 30 })).data ?? []).map((m) => m.id).filter(Boolean);
+  if (e.kind === "openai") {
+    const all = await ids("/models");
+    // the picture models first (gpt-image-1, dall-e…), then the rest
+    return [...all.filter((m) => /image|dall-?e|flux|sd|diffusion/i.test(m)), ...all.filter((m) => !/image|dall-?e|flux|sd|diffusion/i.test(m))];
+  }
+  // music: the bridge and mlx-serve list models at /v1/models; ACE-Step builds that list theirs do so there too
+  let all: string[] = [];
+  let err: unknown = null;
+  for (const path of ["/v1/models", "/models"]) {
+    try {
+      all = await ids(path);
+      if (all.length) break;
+    } catch (x) {
+      err ??= x;
+    }
+  }
+  if (!all.length && err) throw err;
+  const music = all.filter((m) => /music|ace-?step|song|yue/i.test(m));
+  return music.length ? music : all;
+}
+
+/** How much memory the machine running a music bridge has (it says so in /health), or undefined. */
+export async function engineMemory(e: SongEngine): Promise<number | undefined> {
+  if (e.kind !== "mlx-serve") return undefined;
+  try {
+    const h = await json<{ memory_gb?: number }>(e, "/health", { timeout: 15 });
+    return typeof h.memory_gb === "number" ? h.memory_gb : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export type ModelDownload = { state: "none" | "working" | "done" | "error"; got?: number; total?: number; error?: string };
+
+/** Have the music bridge download a model from Hugging Face now (so the first song with it doesn't wait). Older
+ *  bridges can't: the answer says to update it. */
+export async function downloadModel(e: SongEngine, model: string): Promise<ModelDownload> {
+  const r = await call(e, "/v1/models/download", { body: { model }, timeout: 30 });
+  if (r.status === 404) throw new Error(`${e.name} can't download models yet: update the Mac's engines (the one line under the engine's settings), or pick it anyway and it downloads with the first song.`);
+  const j = (await r.json().catch(() => ({}))) as ModelDownload & { error?: string };
+  if (!r.ok) throw new Error(j.error || `${e.name} answered ${r.status}.`);
+  return j;
+}
+
+export async function downloadStatus(e: SongEngine, model: string): Promise<ModelDownload> {
+  return json<ModelDownload>(e, `/v1/models/download?model=${encodeURIComponent(model)}`, { timeout: 20 });
+}
+
 // ---------- pictures ----------
 
 export async function makePictures(e: ImageEngine, a: PictureAsk, progress: Progress, signal?: AbortSignal): Promise<Blob[]> {

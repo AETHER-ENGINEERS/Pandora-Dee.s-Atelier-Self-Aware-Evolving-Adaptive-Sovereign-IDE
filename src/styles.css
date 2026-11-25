@@ -1242,3 +1242,9 @@ html { touch-action: pan-x pan-y; }
 .seat-watch { position: fixed; right: 20px; bottom: 84px; z-index: 61; display: flex; gap: 6px; align-items: center; padding: 4px 8px; border-radius: 999px; background: var(--panel, rgba(20, 16, 30, 0.85)); font-size: 12px; opacity: 0.85; }
 .seat-watch.on { bottom: 412px; }
 .seat-watch .chip.on { outline: 1px solid currentColor; }
+
+/* well-known models (ui/ModelChooser.tsx): grouped by the memory they need */
+.model-catalog { display: grid; gap: 8px; margin-top: 6px; padding: 8px; border: 1px solid var(--line, rgba(127,127,127,.25)); border-radius: 8px; max-height: 320px; overflow: auto; }
+.model-catalog > div > b { display: block; margin: 4px 0 2px; }
+.model-row { display: flex; gap: 6px; align-items: center; padding: 4px 0; border-top: 1px solid var(--line, rgba(127,127,127,.15)); }
+.model-row a.btn { text-decoration: none; }

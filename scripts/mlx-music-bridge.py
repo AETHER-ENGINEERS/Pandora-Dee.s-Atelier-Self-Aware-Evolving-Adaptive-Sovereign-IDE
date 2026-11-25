@@ -72,6 +72,7 @@ def model_for(name):
         raise ValueError("No music model given: pass --model when starting the bridge, or put its name in the desktop's engine.")
     if loaded["name"] != name:
         loaded["model"] = None  # let the old one go before loading the next
+        free_memory()
         print(f"Loading {name} ...", flush=True)
         t = time.time()
         loaded["model"] = load(name)
@@ -208,6 +209,71 @@ def run_job(job_id, req):
             del jobs[old]
 
 
+def free_memory():
+    """Give the old model's memory back before a bigger one loads (Python's and MLX's caches)."""
+    import gc
+
+    gc.collect()
+    try:
+        import mlx.core as mx
+
+        (getattr(mx, "clear_cache", None) or mx.metal.clear_cache)()
+    except Exception:
+        pass
+
+
+def memory_gb():
+    """This Mac's memory, so the desktop can say which models fit."""
+    try:
+        return round(os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 1e9)
+    except Exception:
+        return None
+
+
+# models being downloaded from Hugging Face ahead of use (POST /v1/models/download), so a song doesn't wait on it
+downloads = {}
+MODEL_NAME = re.compile(r"[\w.-]+/[\w.-]+")
+
+
+def hub_dir(name):
+    hub = Path(os.environ.get("HF_HUB_CACHE") or Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface")) / "hub")
+    return hub / ("models--" + name.replace("/", "--"))
+
+
+def fetched_bytes(name):
+    blobs = hub_dir(name) / "blobs"
+    try:
+        return sum(f.stat().st_size for f in blobs.iterdir() if f.is_file())
+    except Exception:
+        return 0
+
+
+def download(name):
+    st = downloads[name]
+    try:
+        from huggingface_hub import HfApi, snapshot_download
+
+        try:
+            info = HfApi().model_info(name, files_metadata=True)
+            st["total"] = sum((s.size or 0) for s in info.siblings or [])
+        except Exception:
+            pass
+        print(f"Downloading {name} ...", flush=True)
+        snapshot_download(name)
+        st.update(state="done", finished=time.time())
+        print(f"Downloaded {name}", flush=True)
+    except Exception as e:
+        st.update(state="error", error=f"{type(e).__name__}: {e}", finished=time.time())
+        print(f"Couldn't download {name}: {e}", flush=True)
+
+
+def download_status(name):
+    st = downloads.get(name)
+    if not st:
+        return {"model": name, "state": "done" if name in cached_models() else "none"}
+    return {"model": name, "state": st["state"], "got": fetched_bytes(name), "total": st.get("total", 0), "error": st.get("error")}
+
+
 def kept_folder():
     return Path(args.keep).expanduser() if args.keep else None
 
@@ -239,7 +305,14 @@ class Handler(BaseHTTPRequestHandler):
             now = int(time.time())
             return self._json(200, {"object": "list", "data": [{"id": n, "object": "model", "created": now, "owned_by": n.split("/")[0], "capabilities": ["music"]} for n in cached_models()]})
         if path in ("/", "/health"):
-            return self._json(200, {"ok": True, "service": "Pandora Dee music bridge (MLX Audio)", "loaded": loaded["name"], "features": ["jobs", "songs"]})
+            return self._json(200, {"ok": True, "service": "Pandora Dee music bridge (MLX Audio)", "loaded": loaded["name"], "features": ["jobs", "songs", "download"], "memory_gb": memory_gb()})
+        if path == "/v1/models/download":
+            from urllib.parse import parse_qs, urlparse
+
+            name = (parse_qs(urlparse(self.path).query).get("model") or [""])[0]
+            if not MODEL_NAME.fullmatch(name):
+                return self._json(400, {"error": "Which model? (?model=owner/name)"})
+            return self._json(200, download_status(name))
         m = re.fullmatch(r"/v1/jobs/([\w-]+)(/audio)?", path)
         if m:
             with jobs_lock:
@@ -282,13 +355,23 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self._allowed():
             return
-        if self.path.split("?")[0] != "/v1/audio/music-generations":
+        path = self.path.split("?")[0]
+        if path not in ("/v1/audio/music-generations", "/v1/models/download"):
             return self._json(404, {"error": "Not found."})
         try:
             n = int(self.headers.get("Content-Length") or 0)
             req = json.loads(self.rfile.read(min(n, 1_000_000)) or b"{}")
         except Exception:
             return self._json(400, {"error": "The request wasn't JSON."})
+        if path == "/v1/models/download":
+            # fetch a model from Hugging Face now, so the first song with it doesn't wait (it lands in the usual cache)
+            name = str(req.get("model") or "")
+            if not MODEL_NAME.fullmatch(name):
+                return self._json(400, {"error": "A model name like mlx-community/MiniMax-Music3-6bit."})
+            if downloads.get(name, {}).get("state") != "working":
+                downloads[name] = {"state": "working", "started": time.time()}
+                threading.Thread(target=download, args=(name,), daemon=True).start()
+            return self._json(202, download_status(name))
         if req.get("async"):
             job_id = f"{int(time.time())}-{os.urandom(3).hex()}"
             with jobs_lock:
