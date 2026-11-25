@@ -1248,3 +1248,7 @@ html { touch-action: pan-x pan-y; }
 .model-catalog > div > b { display: block; margin: 4px 0 2px; }
 .model-row { display: flex; gap: 6px; align-items: center; padding: 4px 0; border-top: 1px solid var(--line, rgba(127,127,127,.15)); }
 .model-row a.btn { text-decoration: none; }
+
+/* songs kept on the engine (apps/SongMaker.tsx): a verdict that is set shows in the accent colour */
+.kept-song-wrap { padding: 2px 0; border-top: 1px solid var(--line, rgba(127,127,127,.12)); }
+.kept-song .icon-btn.on { color: var(--accent); }

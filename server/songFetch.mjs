@@ -7,11 +7,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { httpRequest } from "./httpGet.mjs";
 
 const EXT = (type) => (/mpeg|mp3/i.test(type) ? "mp3" : /flac/i.test(type) ? "flac" : /ogg/i.test(type) ? "ogg" : /aac|mp4|m4a/i.test(type) ? "m4a" : "wav");
 
 /** dir(): the music library's own folder; now(): the clock (tests). */
-export function createSongFetch({ dir, now = Date.now, fetchFn = (...a) => fetch(...a) }) {
+export function createSongFetch({ dir, now = Date.now, fetchFn = httpRequest }) {
   const jobs = new Map();
 
   /** A free name in the folder for this title and extension ("Song.wav", then "Song 2.wav"…). */
@@ -43,7 +44,7 @@ export function createSongFetch({ dir, now = Date.now, fetchFn = (...a) => fetch
       try {
         const method = String(job.method || "GET").toUpperCase();
         const headers = Object.fromEntries(Object.entries(job.headers || {}).filter(([, v]) => typeof v === "string"));
-        const r = await fetchFn(url, { method, headers, body: method === "GET" ? undefined : job.body, signal: st.ctl.signal });
+        const r = await fetchFn(url, { method, headers: job.body && method !== "GET" ? { ...headers, "Content-Length": String(Buffer.byteLength(String(job.body))) } : headers, body: method === "GET" ? undefined : job.body, signal: st.ctl.signal });
         if (!r.ok) throw new Error(`The engine answered ${r.status}: ${(await r.text().catch(() => "")).replace(/<[^>]+>/g, " ").trim().slice(0, 300)}`);
         const type = r.headers.get("content-type") || "";
         st.firstByte = now();
@@ -63,13 +64,11 @@ export function createSongFetch({ dir, now = Date.now, fetchFn = (...a) => fetch
           const target = freePath(job.title, EXT(type));
           part = `${target}.part`;
           const out = fs.createWriteStream(part);
-          const reader = r.body.getReader();
-          for (;;) {
-            const { done, value } = await reader.read();
-            if (done) break;
+          for await (const value of r.body) {
             st.got += value.length;
             if (!out.write(value)) await new Promise((ok) => out.once("drain", ok));
           }
+          if (st.total && st.got < st.total) throw new Error(`The engine stopped sending part-way (${st.got} of ${st.total} bytes).`);
           await new Promise((ok, no) => out.end((e) => (e ? no(e) : ok())));
           fs.renameSync(part, target);
           part = "";
@@ -79,7 +78,7 @@ export function createSongFetch({ dir, now = Date.now, fetchFn = (...a) => fetch
       } catch (e) {
         st.state = "error";
         st.error = st.ctl.signal.aborted ? "Stopped, or it took too long." : e?.cause?.code ? `Couldn't reach the engine (${e.cause.code}).` : e instanceof Error ? e.message : String(e);
-        if (part) fs.rmSync(part, { force: true });
+        if (part) setTimeout(() => fs.rmSync(part, { force: true }), 200);
       } finally {
         clearTimeout(timer);
         st.finished = now();

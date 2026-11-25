@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { create } from "zustand";
-import { Music4, Pause, Play, Settings2, Sparkles, Square, Wand2, X } from "lucide-react";
+import { Music4, Pause, Play, Settings2, Sparkles, Square, ThumbsDown, ThumbsUp, Wand2, X } from "lucide-react";
 import { desk, useDesk } from "../lib/store.ts";
-import { fetchKept, keepSong, keptSongs, makeSong, resumeSong, uid, writeSong, type MadeAudio, type SongAsk } from "../lib/media.ts";
-import { current, playNow, queueAs, toggle, useMusic, type Track } from "../lib/music.ts";
+import { checkKept, deleteKept, engineSongItem, evalKept, fetchKept, keepSong, keptSongs, makeSong, resumeSong, uid, writeSong, type KeptSong, type MadeAudio, type SongAsk, type SoundCheck } from "../lib/media.ts";
+import { askText, askUser } from "../ui/Ask.tsx";
+import { myName } from "../lib/myName.ts";
+import { current, playNow, queueAs, toggle, useMusic, type Item, type Track } from "../lib/music.ts";
 import { QUEUE_WHERE, WHERE_LABEL } from "../lib/queueOps.ts";
 import { fitLength } from "../lib/songText.ts";
 import { SONG_NOTES_DEFAULT, SONG_SECONDS_DEFAULT, type MadeSong, type PendingSong, type SongEngine } from "../lib/mediaPrefs.ts";
@@ -65,8 +67,17 @@ function trackOfSong(s: MadeSong): Track | undefined {
 function queueNewSong(s: MadeSong) {
   const where = desk().media.newSongs ?? "next";
   if (where === "off" || !useMusic.getState().playing) return;
+  void itemOfSong(s).then((it) => it && desk().say(`“${s.title}” is ready: ${queueAs([it], where).replace(/^1 song /, "")}`));
+}
+
+/** What the player plays for a made song: the library's copy, or (left on the engine) a stream from there. */
+async function itemOfSong(s: MadeSong): Promise<Item | null> {
+  if (s.onEngine) {
+    const e = desk().media.songs.find((x) => x.id === s.onEngine!.engineId);
+    return e ? engineSongItem(e, s.onEngine.name, `Title: ${s.title}`) : null;
+  }
   const t = trackOfSong(s);
-  if (t) desk().say(`“${s.title}” is ready: ${queueAs([{ kind: "track", ...t }], where).replace(/^1 song /, "")}`);
+  return t ? { kind: "track", ...t } : null;
 }
 
 /** Make a song in the background (from here, or from a character's make_song tool); it shows in the list while it works.
@@ -249,6 +260,13 @@ export function SongMaker() {
               <option value="off">Just keep it in the library</option>
             </select>
           </div>
+          <div className="row small">
+            <span className="muted">Finished songs:</span>
+            <select className="select" value={media.songsStay ?? "library"} onChange={(e) => desk().set({ media: { ...desk().media, songsStay: e.target.value as "library" } })} aria-label="Where finished songs live">
+              <option value="library">Copy into SEASIDE's music library</option>
+              <option value="engine">Leave on the engine, play from there</option>
+            </select>
+          </div>
         </details>
         <button className="btn primary" disabled={writing || !engine || (mode === "simple" ? !desc.trim() : !d.style.trim())} onClick={() => void go()}>
           <Sparkles size={14} /> {writing ? "Writing the words…" : "Create"}
@@ -275,6 +293,10 @@ function SongList({ made, jobs, onRemix }: { made: MadeSong[]; jobs: Job[]; onRe
     return mine.find((t) => t.title === base) ?? mine.find((t) => t.title === s.title);
   };
   const play = (s: MadeSong) => {
+    if (s.onEngine) {
+      if (cur?.kind === "track" && cur.id === `engine:${s.onEngine.engineId}:${s.onEngine.name}`) return toggle();
+      return void itemOfSong(s).then((it) => (it ? playNow([it]) : desk().say("That song's engine isn't set up any more.")), (e) => desk().say(e instanceof Error ? e.message : String(e)));
+    }
     const t = trackOf(s);
     if (!t) return desk().say("That song isn't in the music library any more.");
     if (cur?.kind === "track" && cur.id === t.id) return toggle();
@@ -307,7 +329,7 @@ function SongList({ made, jobs, onRemix }: { made: MadeSong[]; jobs: Job[]; onRe
           <div key={s.id} className={`made-song${on ? " on" : ""}`} onContextMenu={(e) => openMenu(e, [
             { heading: s.title },
             { label: "Play", run: () => play(s) },
-            ...QUEUE_WHERE.map((w) => ({ label: WHERE_LABEL[w], disabled: !t, run: () => void (t && queueAs([{ kind: "track", ...t }], w)) })),
+            ...QUEUE_WHERE.map((w) => ({ label: WHERE_LABEL[w], disabled: !t && !s.onEngine, run: () => void itemOfSong(s).then((it) => it && queueAs([it], w)) })),
             { sep: true },
             { label: "Remix (load into Custom)", run: () => onRemix(s) },
             { label: "Copy the lyrics", run: () => void copyText(s.lyrics), disabled: !s.lyrics },
@@ -321,7 +343,7 @@ function SongList({ made, jobs, onRemix }: { made: MadeSong[]; jobs: Job[]; onRe
             <div className="grow" style={{ minWidth: 0 }}>
               <b>{s.title}</b>
               <div className="small muted ellipsis" title={s.style}>{s.style}</div>
-              <div className="small faint">{Math.floor(s.seconds / 60)}:{String(s.seconds % 60).padStart(2, "0")} · {s.engine} · {new Date(s.at).toLocaleDateString()}{t ? "" : " · not in the library"}</div>
+              <div className="small faint">{Math.floor(s.seconds / 60)}:{String(s.seconds % 60).padStart(2, "0")} · {s.engine} · {new Date(s.at).toLocaleDateString()}{s.onEngine ? " · on the engine" : t ? "" : " · not in the library"}</div>
               {open === s.id && s.lyrics ? <pre className="made-lyrics small">{s.lyrics}</pre> : null}
             </div>
             {s.lyrics ? <button className="btn small" onClick={() => setOpen(open === s.id ? null : s.id)}>{open === s.id ? "Hide words" : "Words"}</button> : null}
@@ -334,12 +356,17 @@ function SongList({ made, jobs, onRemix }: { made: MadeSong[]; jobs: Job[]; onRe
   );
 }
 
-/** Songs the MLX Audio bridge kept on the Mac: every song it made, even one the desktop never got (a reload, a lost connection). */
+/** Songs the music bridge keeps on the Mac: every song it made, even one the desktop never got (a reload, a lost
+ *  connection). They play straight from there, like a network share; Add to library copies one into SEASIDE's
+ *  library. Each can be checked (what can be measured: clipping, loudness, dynamics, a cut-off ending), given a
+ *  verdict (good or bad, and why, which the song writer learns from), or deleted from the engine. */
 function KeptOnEngines({ made }: { made: MadeSong[] }) {
   const engines = useDesk((s) => s.media.songs).filter((e) => e.enabled && e.kind === "mlx-serve");
   const [open, setOpen] = useState(false);
-  const [lists, setLists] = useState<Record<string, { name: string; size: number; made: number; about: string }[] | string>>({});
-  const [busy, setBusy] = useState("");
+  const [lists, setLists] = useState<Record<string, KeptSong[] | string>>({});
+  const [status, setStatus] = useState<Record<string, string>>({});
+  const [checks, setChecks] = useState<Record<string, SoundCheck | string>>({});
+  const say = (name: string, text: string) => setStatus((x) => ({ ...x, [name]: text }));
   const load = () =>
     engines.forEach((e) =>
       keptSongs(e).then(
@@ -348,10 +375,48 @@ function KeptOnEngines({ made }: { made: MadeSong[] }) {
       ),
     );
   if (!engines.length) return null;
-  const have = (name: string) => made.some((m) => name.endsWith(m.title));
+  const have = (name: string) => made.some((m) => m.onEngine?.name === name || (m.file && name.endsWith(m.title)));
+  const err = (name: string) => (e: unknown) => say(name, e instanceof Error ? e.message : String(e));
+
+  const play = (e: SongEngine, k: KeptSong) => void engineSongItem(e, k.name, k.about).then((it) => playNow([it]), err(k.name));
+  const queue = (e: SongEngine, k: KeptSong, w: (typeof QUEUE_WHERE)[number]) => void engineSongItem(e, k.name, k.about).then((it) => say(k.name, queueAs([it], w)), err(k.name));
+  const add = (e: SongEngine, k: KeptSong) => {
+    say(k.name, "Asking the engine for the song…");
+    fetchKept(e, k.name, k.about, (p) => say(k.name, p)).then((s) => (say(k.name, "In your library."), desk().say(`“${s.title}” is in your library.`)), err(k.name));
+  };
+  const check = (e: SongEngine, k: KeptSong) => {
+    setChecks((x) => ({ ...x, [k.name]: "Listening for clipping, loudness and the ending…" }));
+    checkKept(e, k.name).then(
+      (c) => setChecks((x) => ({ ...x, [k.name]: c })),
+      (x) => setChecks((y) => ({ ...y, [k.name]: /404/.test(String(x)) ? "This engine can't check songs yet: update the Mac's engines (Song engines → Update or restart)." : String(x instanceof Error ? x.message : x) })),
+    );
+  };
+  const judge = async (e: SongEngine, k: KeptSong, verdict: "good" | "bad") => {
+    const c = checks[k.name];
+    const measured = typeof c === "object" && c.notes.length ? `Sound check: ${c.notes.join("; ")}.` : "";
+    const why = await askText(verdict === "good" ? `What's good about “${k.name.replace(/^\S+ \S+ /, "")}”?` : `What's wrong with “${k.name.replace(/^\S+ \S+ /, "")}”?`, k.eval?.verdict === verdict ? k.eval.why : measured, {
+      body: "In your own words: the sound, the singing, the words, the mix, the length. The song writer reads these to learn what you like.",
+      placeholder: verdict === "good" ? "The chorus lands, warm mix, vocals clear…" : "Vocals buried, harsh and distorted at the loud parts, cut off at the end…",
+      yes: "Save",
+    });
+    if (why === null) return;
+    evalKept(e, k.name, k.about, { verdict, why: why.trim(), by: myName() }).then(
+      (saved) => setLists((x) => ({ ...x, [e.id]: Array.isArray(x[e.id]) ? (x[e.id] as KeptSong[]).map((s) => (s.name === k.name ? { ...s, eval: saved } : s)) : x[e.id] })),
+      (x) => say(k.name, /404/.test(String(x)) ? "This engine can't keep verdicts yet: update the Mac's engines (Song engines → Update or restart)." : String(x instanceof Error ? x.message : x)),
+    );
+  };
+  const remove = async (e: SongEngine, k: KeptSong) => {
+    const sure = await askUser(`Delete “${k.name}” from ${e.name}?`, `Its audio, words and verdict are deleted on the engine, and can't be brought back from there.${have(k.name) ? " Your library's copy stays." : " SEASIDE has no copy of it."}`, "Delete it", "Keep it");
+    if (!sure) return;
+    deleteKept(e, k.name).then(
+      () => setLists((x) => ({ ...x, [e.id]: Array.isArray(x[e.id]) ? (x[e.id] as KeptSong[]).filter((s) => s.name !== k.name) : x[e.id] })),
+      (x) => say(k.name, /404|405|501/.test(String(x)) ? "This engine can't delete songs yet: update the Mac's engines (Song engines → Update or restart)." : String(x instanceof Error ? x.message : x)),
+    );
+  };
+
   return (
     <details className="kept" open={open} onToggle={(e) => (setOpen(e.currentTarget.open), e.currentTarget.open && load())}>
-      <summary className="small muted">Songs kept on the engine (every song it made, even ones the desktop missed)</summary>
+      <summary className="small muted">Songs kept on the engine (every song it made: play them from there, or copy them in)</summary>
       {engines.map((e) => {
         const l = lists[e.id];
         return (
@@ -359,25 +424,54 @@ function KeptOnEngines({ made }: { made: MadeSong[] }) {
             <div className="small faint">{e.name}</div>
             {l === undefined ? <div className="small faint">Asking…</div> : typeof l === "string" ? <div className="small faint">{l}</div> : !l.length ? <div className="small faint">None yet.</div> : null}
             {Array.isArray(l)
-              ? l.map((k) => (
-                  <div key={k.name} className="kept-song">
-                    <span className="grow ellipsis" title={k.about}>{k.name}</span>
-                    <span className="small faint">{(k.size / 1048576).toFixed(1)} MB</span>
-                    <button
-                      className="btn small"
-                      disabled={busy === k.name}
-                      onClick={() => {
-                        setBusy(k.name);
-                        fetchKept(e, k.name, k.about).then(
-                          (s) => (setBusy(""), desk().say(`“${s.title}” is in your library.`)),
-                          (err) => (setBusy(""), desk().say(err instanceof Error ? err.message : String(err))),
-                        );
-                      }}
-                    >
-                      {busy === k.name ? "Adding…" : have(k.name) ? "Add again" : "Add to library"}
-                    </button>
-                  </div>
-                ))
+              ? l.map((k) => {
+                  const c = checks[k.name];
+                  return (
+                    <div key={k.name} className="kept-song-wrap">
+                      <div
+                        className="kept-song"
+                        onContextMenu={(ev) =>
+                          openMenu(ev, [
+                            { heading: k.name },
+                            { label: "Play from the engine", run: () => play(e, k) },
+                            ...QUEUE_WHERE.map((w) => ({ label: WHERE_LABEL[w], run: () => queue(e, k, w) })),
+                            { sep: true },
+                            { label: have(k.name) ? "Add to library again" : "Add to library (copy it)", run: () => add(e, k) },
+                            { label: "Sound check", run: () => check(e, k) },
+                            { label: "Good…", run: () => void judge(e, k, "good") },
+                            { label: "Not good…", run: () => void judge(e, k, "bad") },
+                            { sep: true },
+                            { label: "Delete from the engine…", danger: true, run: () => void remove(e, k) },
+                          ])
+                        }
+                      >
+                        <button className="icon-btn" aria-label={`Play ${k.name} from the engine`} data-tip="Play from the engine (nothing copied)" onClick={() => play(e, k)}>
+                          <Play size={13} />
+                        </button>
+                        <span className="grow ellipsis" title={k.about}>{k.name}</span>
+                        <span className="small faint">{(k.size / 1048576).toFixed(1)} MB</span>
+                        <button className={`icon-btn${k.eval?.verdict === "good" ? " on" : ""}`} aria-label="Good" data-tip={k.eval?.verdict === "good" ? `Good: ${k.eval.why}` : "Good…"} onClick={() => void judge(e, k, "good")}>
+                          <ThumbsUp size={13} />
+                        </button>
+                        <button className={`icon-btn${k.eval?.verdict === "bad" ? " on" : ""}`} aria-label="Not good" data-tip={k.eval?.verdict === "bad" ? `Not good: ${k.eval.why}` : "Not good…"} onClick={() => void judge(e, k, "bad")}>
+                          <ThumbsDown size={13} />
+                        </button>
+                        <button className="btn small" onClick={() => add(e, k)} disabled={/^Fetching|^Asking|^Adding/.test(status[k.name] ?? "")}>
+                          {have(k.name) ? "Add again" : "Add to library"}
+                        </button>
+                      </div>
+                      {status[k.name] ? <div className="small muted">{status[k.name]}</div> : null}
+                      {k.eval?.verdict ? <div className="small faint">{k.eval.verdict === "good" ? "👍" : "👎"} {k.eval.why || "(no reason given)"}{k.eval.by ? ` · ${k.eval.by}` : ""}</div> : null}
+                      {typeof c === "string" ? <div className="small faint">{c}</div> : c ? (
+                        <div className="small faint">
+                          {c.error
+                            ? c.error
+                            : `${Math.floor(c.seconds / 60)}:${String(Math.round(c.seconds) % 60).padStart(2, "0")} · peak ${c.peak_dbfs} dBFS · average ${c.loudness_dbfs} dBFS · ${c.dynamics_db} dB between quiet and loud · ${c.clipped_percent}% clipped. ${c.notes.length ? c.notes.join("; ") : "Nothing measurably wrong."}`}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })
               : null}
           </div>
         );

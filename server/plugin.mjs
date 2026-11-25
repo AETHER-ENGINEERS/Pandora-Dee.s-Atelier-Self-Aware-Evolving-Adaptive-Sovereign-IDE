@@ -50,6 +50,7 @@ import { createPeers } from "./peers.mjs";
 import { createGameLinks } from "./gameLinks.mjs";
 import { createPadsLink } from "./padsLink.mjs";
 import { createSongFetch } from "./songFetch.mjs";
+import { createEngineStream } from "./engineStream.mjs";
 import os from "node:os";
 import dns from "node:dns";
 import { createHash } from "node:crypto";
@@ -124,6 +125,8 @@ export function deskServer() {
   let sf;
   // songs fetched by this server straight from a song engine into the library (songFetch.mjs)
   const songFetch = () => (sf ??= createSongFetch({ dir: () => music().ownDir() }));
+  // songs played straight from a song engine, not copied (engineStream.mjs)
+  const engineStream = createEngineStream();
   let crt;
   const creative = () => (crt ??= createCreative(() => dataDir));
   const browser = createBrowser();
@@ -1012,6 +1015,14 @@ export function deskServer() {
           return send(res, e?.status ?? 400, { error: e instanceof Error ? e.message : String(e) });
         }
       }
+      if (parts[1] === "engine-link" && m === "POST") {
+        try {
+          return send(res, 200, { id: engineStream.link(JSON.parse((await readBody(req, 100_000)).toString("utf8") || "{}")) });
+        } catch (e) {
+          return send(res, e?.status ?? 400, { error: e instanceof Error ? e.message : String(e) });
+        }
+      }
+      if (parts[1] === "engine-song" && parts[2]) return void (await engineStream.serve(req, res, String(parts[2])));
       if (parts[1] === "fetch-song") {
         try {
           if (m === "POST") return send(res, 200, { id: songFetch().start(JSON.parse((await readBody(req, 2_000_000)).toString("utf8") || "{}")) });

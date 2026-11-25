@@ -97,6 +97,13 @@ export function EnginesDialog({ type, onClose }: { type: "images" | "songs"; onC
                   <input className="input mono" value={e.keyName ?? ""} onChange={(ev) => edit(e.id, { keyName: ev.target.value.trim() || undefined })} aria-label="Key name in Keys" placeholder="Key name (if any)" />
                 </label>
               </div>
+              {/^https?:\/\/100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(e.url) ? (
+                <div className="small faint">
+                  This is a Tailscale address. When the computer is on your home network too, its home address (192.168.… or 10.…) is
+                  often far faster: Tailscale sometimes relays the traffic through its own servers when it can't connect the two
+                  directly, and songs then crawl (kilobytes a second). Tailscale is still the way to reach it from away.
+                </div>
+              ) : null}
               {e.kind !== "yue2-comfyui" ? (
                 <div className="row">
                   <ModelChooser

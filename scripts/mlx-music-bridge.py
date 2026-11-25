@@ -16,7 +16,11 @@ of an hour), as a job:
     GET  /v1/jobs/<id>                 {"state": "queued" | "working" | "done" | "error", "elapsed", "error",
                                         "said": the engine's own latest progress line, "percent": from it, if it gave one}
     GET  /v1/jobs/<id>/audio           the WAV, once done
-    GET  /v1/songs                     the songs kept in the keep folder; GET /v1/songs/<name>.wav (or .txt)
+    GET  /v1/songs                     the songs kept in the keep folder; GET /v1/songs/<name>.wav (or .txt), with
+                                       Range, so a player can stream and seek it straight from here
+    DELETE /v1/songs/<name>            delete a kept song (its .wav, .txt and .eval.json)
+    GET  /v1/songs/<name>/check        a sound check: peak, clipping, loudness, dynamics, silence, how it ends
+    POST /v1/songs/<name>/eval         {"verdict": "good" | "bad" | "", "why": "..."}: kept beside the song
 
 Run it in the same Python that has mlx-audio installed:
 
@@ -92,6 +96,12 @@ def to_wav(audio, rate):
         a = a.T  # channels first -> samples first
     elif a.ndim > 2:
         a = a.reshape(-1, a.shape[-1]) if a.shape[-1] in (1, 2) else a.reshape(a.shape[-2], -1).T
+    peak = float(np.max(np.abs(a))) if a.size else 0.0
+    if peak > 0.999:
+        # the model went past full scale: turn the whole song down instead of clipping its peaks (clipping is the
+        # harsh, "redlined" sound)
+        print(f"The song peaked at {peak:.2f} (over full scale); turned down to fit instead of clipping.", flush=True)
+        a = a * (0.98 / peak)
     a = np.clip(a, -1.0, 1.0)
     pcm = (a * 32767.0).astype("<i2")
     out = io.BytesIO()
@@ -274,6 +284,61 @@ def download_status(name):
     return {"model": name, "state": st["state"], "got": fetched_bytes(name), "total": st.get("total", 0), "error": st.get("error")}
 
 
+def sound_check(path):
+    """What can be measured about a song without ears: how loud and how dynamic it is, whether it clips, and whether
+    it ends cleanly or is cut off (an engine stops at its length, sometimes mid-phrase)."""
+    import numpy as np
+
+    with wave.open(str(path), "rb") as w:
+        ch, width, rate, n = w.getnchannels(), w.getsampwidth(), w.getframerate(), w.getnframes()
+        raw = w.readframes(n)
+    if width != 2:
+        return {"error": "Only 16-bit WAV can be checked."}
+    a = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
+    a = a.reshape(-1, ch) if ch > 1 else a[:, None]
+    mono = a.mean(axis=1)
+    seconds = len(mono) / rate if rate else 0
+    peak = float(np.max(np.abs(a))) if a.size else 0.0
+    rms = float(np.sqrt(np.mean(mono ** 2))) if mono.size else 0.0
+
+    def db(x):
+        return round(20 * float(np.log10(max(float(x), 1e-9))), 1)
+
+    clipped = float(np.mean(np.abs(a) >= 0.999)) if a.size else 0.0
+    # loudness over time in half-second blocks: how much it moves (dynamics) and where it goes quiet
+    block = max(1, rate // 2)
+    blocks = [float(np.sqrt(np.mean(mono[i:i + block] ** 2))) for i in range(0, len(mono) - block + 1, block)]
+    loud = [b for b in blocks if b > 1e-4]
+    spread = db(np.percentile(loud, 95)) - db(np.percentile(loud, 10)) if len(loud) > 4 else 0.0
+    quiet_tail = 0.0
+    for b in reversed(blocks):
+        if b > 0.003:
+            break
+        quiet_tail += 0.5
+    last = blocks[-1] if blocks else 0.0
+    body = float(np.median(loud)) if loud else 0.0
+    cut_off = bool(body and last > body * 0.5 and quiet_tail == 0)
+    notes = []
+    if clipped > 0.0005:
+        notes.append(f"clips: {clipped * 100:.2f}% of samples at full scale (harsh, distorted peaks)")
+    elif peak > 0.99:
+        notes.append("peaks right at full scale (no headroom)")
+    if db(rms) > -9:
+        notes.append(f"very loud on average ({db(rms)} dBFS): likely squashed, little room to breathe")
+    elif db(rms) < -26:
+        notes.append(f"quiet on average ({db(rms)} dBFS)")
+    if len(loud) > 4 and spread < 4:
+        notes.append(f"flat dynamics ({spread:.1f} dB between quiet and loud parts): sounds compressed")
+    if cut_off:
+        notes.append("ends abruptly at full volume: probably cut off by the length (give it more time)")
+    if quiet_tail > 20:
+        notes.append(f"{quiet_tail:.0f} s of silence at the end: it finished early (a shorter length would do)")
+    return {
+        "seconds": round(seconds, 1), "peak_dbfs": db(peak), "loudness_dbfs": db(rms), "clipped_percent": round(clipped * 100, 3),
+        "dynamics_db": round(spread, 1), "silent_end_seconds": quiet_tail, "cut_off": cut_off, "notes": notes,
+    }
+
+
 def kept_folder():
     return Path(args.keep).expanduser() if args.keep else None
 
@@ -331,19 +396,95 @@ class Handler(BaseHTTPRequestHandler):
             items = []
             if folder and folder.is_dir():
                 for f in sorted(folder.glob("*.wav"), key=lambda x: x.stat().st_mtime, reverse=True):
-                    items.append({"name": f.stem, "size": f.stat().st_size, "made": int(f.stat().st_mtime), "about": (f.with_suffix(".txt").read_text(encoding="utf-8")[:2000] if f.with_suffix(".txt").exists() else "")})
+                    ev = f.with_name(f.stem + ".eval.json")
+                    try:
+                        verdict = json.loads(ev.read_text(encoding="utf-8")) if ev.exists() else None
+                    except Exception:
+                        verdict = None
+                    items.append({"name": f.stem, "size": f.stat().st_size, "made": int(f.stat().st_mtime), "about": (f.with_suffix(".txt").read_text(encoding="utf-8")[:2000] if f.with_suffix(".txt").exists() else ""), "eval": verdict})
             return self._json(200, {"object": "list", "data": items})
+        m = re.fullmatch(r"/v1/songs/(.+)/check", path)
+        if m:
+            f = self._kept(m.group(1), "wav")
+            if not f:
+                return self._json(404, {"error": "No such song."})
+            try:
+                return self._json(200, sound_check(f))
+            except Exception as e:
+                return self._json(500, {"error": f"{type(e).__name__}: {e}"})
         m = re.fullmatch(r"/v1/songs/(.+)\.(wav|txt)", path)
         if m:
-            from urllib.parse import unquote
-            folder = kept_folder()
-            name = unquote(m.group(1))
-            f = (folder / f"{name}.{m.group(2)}") if folder else None
-            # only files in the keep folder itself
-            if not f or f.resolve().parent != folder.resolve() or not f.is_file():
+            f = self._kept(m.group(1), m.group(2))
+            if not f:
                 return self._json(404, {"error": "No such song."})
-            return self._send(200, "audio/wav" if m.group(2) == "wav" else "text/plain; charset=utf-8", f.read_bytes())
+            if m.group(2) == "wav":
+                return self._send_file(f, "audio/wav")
+            return self._send(200, "text/plain; charset=utf-8", f.read_bytes())
         self._json(404, {"error": "Not found."})
+
+    def _kept(self, quoted, ext):
+        """A file in the keep folder itself (never outside it), or None."""
+        from urllib.parse import unquote
+
+        folder = kept_folder()
+        if not folder:
+            return None
+        f = folder / f"{unquote(quoted)}.{ext}"
+        if f.resolve().parent != folder.resolve() or not f.is_file():
+            return None
+        return f
+
+    def _send_file(self, f, kind):
+        """A file, all of it or the part a Range asks for (so a player can start at once and seek)."""
+        size = f.stat().st_size
+        start, end = 0, size - 1
+        rng = re.fullmatch(r"bytes=(\d*)-(\d*)", self.headers.get("Range", "").strip())
+        if rng and (rng.group(1) or rng.group(2)):
+            if rng.group(1):
+                start = int(rng.group(1))
+                end = min(int(rng.group(2)), size - 1) if rng.group(2) else size - 1
+            else:
+                start = max(0, size - int(rng.group(2)))
+            if start > end or start >= size:
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{size}")
+                self.end_headers()
+                return
+            self.send_response(206)
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        else:
+            self.send_response(200)
+        self.send_header("Content-Type", kind)
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(end - start + 1))
+        self.end_headers()
+        with open(f, "rb") as fh:
+            fh.seek(start)
+            left = end - start + 1
+            while left > 0:
+                chunk = fh.read(min(1 << 20, left))
+                if not chunk:
+                    break
+                try:
+                    self.wfile.write(chunk)
+                except (BrokenPipeError, ConnectionResetError):
+                    return  # the player moved on (a seek): fine
+                left -= len(chunk)
+
+    def do_DELETE(self):
+        if not self._allowed():
+            return
+        m = re.fullmatch(r"/v1/songs/(.+)", self.path.split("?")[0])
+        f = self._kept(m.group(1), "wav") if m else None
+        if not f:
+            return self._json(404, {"error": "No such song."})
+        for g in (f, f.with_suffix(".txt"), f.with_name(f.stem + ".eval.json")):
+            try:
+                g.unlink()
+            except FileNotFoundError:
+                pass
+        print(f"Deleted the kept song {f.stem}", flush=True)
+        return self._json(200, {"ok": True})
 
     def _send(self, code, kind, body):
         self.send_response(code)
@@ -356,13 +497,25 @@ class Handler(BaseHTTPRequestHandler):
         if not self._allowed():
             return
         path = self.path.split("?")[0]
-        if path not in ("/v1/audio/music-generations", "/v1/models/download"):
+        ev = re.fullmatch(r"/v1/songs/(.+)/eval", path)
+        if path not in ("/v1/audio/music-generations", "/v1/models/download") and not ev:
             return self._json(404, {"error": "Not found."})
         try:
             n = int(self.headers.get("Content-Length") or 0)
             req = json.loads(self.rfile.read(min(n, 1_000_000)) or b"{}")
         except Exception:
             return self._json(400, {"error": "The request wasn't JSON."})
+        if ev:
+            # a verdict on a kept song, kept beside it: good, bad (or cleared), and why
+            f = self._kept(ev.group(1), "wav")
+            if not f:
+                return self._json(404, {"error": "No such song."})
+            verdict = str(req.get("verdict") or "")
+            if verdict not in ("good", "bad", ""):
+                return self._json(400, {"error": 'verdict is "good", "bad" or "".'})
+            data = {"verdict": verdict, "why": str(req.get("why") or "")[:2000], "by": str(req.get("by") or "")[:80], "at": int(time.time())}
+            f.with_name(f.stem + ".eval.json").write_text(json.dumps(data), encoding="utf-8")
+            return self._json(200, data)
         if path == "/v1/models/download":
             # fetch a model from Hugging Face now, so the first song with it doesn't wait (it lands in the usual cache)
             name = str(req.get("model") or "")

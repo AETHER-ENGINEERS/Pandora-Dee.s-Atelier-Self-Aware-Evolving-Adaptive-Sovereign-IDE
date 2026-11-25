@@ -8,7 +8,7 @@ import { desk } from "./store.ts";
 import { outbound } from "./outbound.ts";
 import { scopeOf } from "./model.ts";
 import { allowed, blockedBecause, type Feature } from "./privacy.ts";
-import { scan } from "./music.ts";
+import { scan, type Item } from "./music.ts";
 import { SONG_NOTES_DEFAULT, type ImageEngine, type MadeSong, type SongEngine } from "./mediaPrefs.ts";
 import yue2Workflow from "./workflows/yue2-text2music.json";
 import { parseSong } from "./songText.ts";
@@ -317,7 +317,7 @@ export async function savePictures(pics: Blob[], prompt: string): Promise<string
 
 /** A made song's audio, and the seed it was made with; or, when the desktop's server fetched it straight into the
  *  music library, the file's name there instead of the audio. */
-export type MadeAudio = { audio?: Blob; ext: string; seed: number; file?: string };
+export type MadeAudio = { audio?: Blob; ext: string; seed: number; file?: string; onEngine?: string };
 
 /** A made song's audio (for callers that didn't ask for it to go into the library). */
 export function audioOf(m: MadeAudio): Blob {
@@ -533,10 +533,10 @@ async function finished(e: SongEngine, path: string, ext: string, progress: Prog
   return { audio: await blob(e, path, signal), ext };
 }
 
-async function waitBridge(e: SongEngine, id: string, progress: Progress, signal?: AbortSignal, lib?: { title: string; seconds: number }): Promise<{ audio?: Blob; file?: string; ext: string }> {
+async function waitBridge(e: SongEngine, id: string, progress: Progress, signal?: AbortSignal, lib?: { title: string; seconds: number }): Promise<{ audio?: Blob; file?: string; ext: string; onEngine?: string }> {
   for (;;) {
     await sleep(3000, signal);
-    let s: { state?: string; elapsed?: number; error?: string; said?: string; percent?: number | null };
+    let s: { state?: string; elapsed?: number; error?: string; said?: string; percent?: number | null; kept?: string | null };
     try {
       s = await json(e, `/v1/jobs/${encodeURIComponent(id)}`, { timeout: 30, signal });
     } catch (err) {
@@ -548,6 +548,8 @@ async function waitBridge(e: SongEngine, id: string, progress: Progress, signal?
     if (s.state === "error") throw new Error(`${e.name} couldn't make the song: ${s.error ?? "unknown reason"}`);
     if (s.state === "done") {
       if (lib) learnPace(e, s.elapsed ?? 0, lib.seconds);
+      // left on the engine (Make a song → where finished songs live): it plays from there, nothing is copied
+      if (lib && s.kept && desk().media.songsStay === "engine") return { onEngine: s.kept, ext: "wav" };
       return finished(e, `/v1/jobs/${encodeURIComponent(id)}/audio`, "wav", progress, signal, lib);
     }
     // the engine's own words for where it is (the newest bridge passes on the model's progress line)
@@ -579,23 +581,82 @@ async function waitAce(e: SongEngine, id: string, progress: Progress, signal?: A
 }
 
 /** Songs the MLX Audio bridge kept (every song it made), newest first. */
-export async function keptSongs(e: SongEngine): Promise<{ name: string; size: number; made: number; about: string }[]> {
-  const j = await json<{ data?: { name: string; size: number; made: number; about: string }[] }>(e, "/v1/songs", { timeout: 30 });
+/** A verdict on a song: good or bad, and why (by a person or a character). */
+export type SongEval = { verdict: "good" | "bad" | ""; why: string; by?: string; at?: number };
+export type KeptSong = { name: string; size: number; made: number; about: string; eval?: SongEval | null };
+
+export async function keptSongs(e: SongEngine): Promise<KeptSong[]> {
+  const j = await json<{ data?: KeptSong[] }>(e, "/v1/songs", { timeout: 30 });
   return j.data ?? [];
 }
 
-/** Bring a song the bridge kept into the music library (and the list of made songs). */
-export async function fetchKept(e: SongEngine, name: string, about: string): Promise<MadeSong> {
-  const audio = await blob(e, `/v1/songs/${encodeURIComponent(name)}.wav`);
+/** What a kept song's notes say (the bridge writes Title, Style, Length asked, Seed, then the words). */
+function aboutOf(name: string, about: string) {
   const line = (k: string) => new RegExp(`^${k}: (.*)$`, "m").exec(about)?.[1]?.trim() ?? "";
   const lyrics = about.split(/\n\n/).slice(1).join("\n\n").trim();
-  const title = line("Title") || name.replace(/^\d{4}-\d\d-\d\d \d\d\.\d\d\.\d\d /, "");
-  return keepSong({ title, style: line("Style"), lyrics: lyrics === "[instrumental]" ? "" : lyrics, seconds: Number(line("Length asked").replace(/\D/g, "")) || 0, instrumental: lyrics === "[instrumental]" }, { audio, ext: "wav", seed: Number(line("Seed")) || 0 }, e);
+  return {
+    title: line("Title") || name.replace(/^\d{4}-\d\d-\d\d \d\d\.\d\d\.\d\d /, ""),
+    style: line("Style"),
+    lyrics: lyrics === "[instrumental]" ? "" : lyrics,
+    seconds: Number(line("Length asked").replace(/\D/g, "")) || 0,
+    instrumental: lyrics === "[instrumental]",
+    seed: Number(line("Seed")) || 0,
+  };
+}
+
+/** Bring a song the bridge kept into the music library (and the list of made songs). The desktop's server fetches
+ *  it straight from the engine, so `progress` hears MB so far and the speed. */
+export async function fetchKept(e: SongEngine, name: string, about: string, progress: Progress = () => {}, signal?: AbortSignal): Promise<MadeSong> {
+  const a = aboutOf(name, about);
+  const got = await finished(e, `/v1/songs/${encodeURIComponent(name)}.wav`, "wav", progress, signal, { title: a.title });
+  return keepSong(a, { ...got, seed: a.seed }, e);
+}
+
+/** A song on the engine as something the music player can play, straight from there (nothing copied): the
+ *  desktop's server streams it, seeking included (server/engineStream.mjs). */
+export async function engineSongItem(e: SongEngine, name: string, about = ""): Promise<Item> {
+  const why = engineAllowed(e.url);
+  if (why) throw new Error(why);
+  const r = await fetch("/api/music/engine-link", { method: "POST", body: JSON.stringify({ url: `${trim(e.url)}/v1/songs/${encodeURIComponent(name)}.wav`, headers: headersFor(e, false) }) });
+  const j = (await r.json().catch(() => ({}))) as { id?: string; error?: string };
+  if (!r.ok || !j.id) throw new Error(j.error || `The desktop's server answered ${r.status}.`);
+  const a = aboutOf(name, about);
+  return { kind: "track", id: `engine:${e.id}:${name}`, title: a.title, artist: e.name, album: "Songs on the engine", year: 0, track: 0, genre: "", duration: 0, cover: false, bitrate: 0, size: 0, folder: "", src: `/api/music/engine-song/${j.id}` };
+}
+
+/** Delete a song from the engine (its audio, words and verdict). It can't be undone there. */
+export async function deleteKept(e: SongEngine, name: string): Promise<void> {
+  await json(e, `/v1/songs/${encodeURIComponent(name)}`, { method: "DELETE", timeout: 30 });
+}
+
+export type SoundCheck = { seconds: number; peak_dbfs: number; loudness_dbfs: number; clipped_percent: number; dynamics_db: number; silent_end_seconds: number; cut_off: boolean; notes: string[]; error?: string };
+
+/** What the engine can measure about a kept song: clipping, loudness, dynamics, and whether it was cut off. */
+export async function checkKept(e: SongEngine, name: string): Promise<SoundCheck> {
+  return json<SoundCheck>(e, `/v1/songs/${encodeURIComponent(name)}/check`, { timeout: 120 });
+}
+
+/** Give a kept song a verdict. It's kept beside the song on the engine, and in SEASIDE (the newest 40), where the
+ *  song writer reads them to learn what's liked and what isn't. */
+export async function evalKept(e: SongEngine, name: string, about: string, ev: SongEval): Promise<SongEval> {
+  const saved = await json<SongEval>(e, `/v1/songs/${encodeURIComponent(name)}/eval`, { body: ev, timeout: 30 });
+  const a = aboutOf(name, about);
+  const m = desk().media;
+  const rest = (m.evals ?? []).filter((x) => x.song !== name);
+  desk().set({ media: { ...m, evals: ev.verdict ? [{ song: name, title: a.title, style: a.style, verdict: ev.verdict, why: ev.why, by: ev.by, at: Date.now() }, ...rest].slice(0, 40) : rest } });
+  return saved;
 }
 
 /** Put a made song into the music library and the list of made songs. */
 export async function keepSong(a: SongAsk, made: MadeAudio, engine: SongEngine): Promise<MadeSong> {
   const name = `${(a.title || "Untitled").replace(/[\\/:*?"<>|]+/g, " ").trim().slice(0, 80) || "Untitled"}.${made.ext}`;
+  if (made.onEngine) {
+    // left on the engine: listed here, played from there
+    const song: MadeSong = { id: uid(), title: a.title || "Untitled", style: a.style, lyrics: a.instrumental ? "" : a.lyrics, seconds: a.seconds, seed: made.seed, engine: engine.name, file: "", onEngine: { engineId: engine.id, name: made.onEngine }, at: Date.now() };
+    const m = desk().media;
+    desk().set({ media: { ...m, made: [song, ...m.made].slice(0, 500) } });
+    return song;
+  }
   let j: { name?: string; error?: string } = { name: made.file };
   if (!made.file) {
     // (the desktop's server didn't fetch it into the library itself: this page sends it there)
@@ -614,6 +675,13 @@ export async function keepSong(a: SongAsk, made: MadeAudio, engine: SongEngine):
 // ---------- words for songs, written by a character ----------
 
 /** A character writes a title, a style and lyrics from a description (Suno's "simple" mode). */
+/** What the household thought of recent songs (their verdicts, with why), so the next one learns from them. */
+function verdictsNote(): string {
+  const v = (desk().media.evals ?? []).filter((x) => x.why.trim()).slice(0, 8);
+  if (!v.length) return "";
+  return `\n\nHow recent songs went (learn from these; don't copy them):\n${v.map((x) => `- ${x.verdict === "good" ? "Liked" : "Not liked"}: “${x.title}” (${x.style.slice(0, 80)}): ${x.why.slice(0, 200)}`).join("\n")}`;
+}
+
 export async function writeSong(charId: string, description: string, instrumental: boolean): Promise<{ title: string; style: string; lyrics: string }> {
   if (desk().toddler) throw new Error("The AI is resting: toddler mode is on.");
   const { chainFor } = await import("./agent.ts");
@@ -626,7 +694,7 @@ export async function writeSong(charId: string, description: string, instrumenta
       content:
         "You write songs for a music generator. Answer with exactly three parts and nothing else:\nTITLE: a short title\nSTYLE: one line of comma-separated genre, mood, instruments, tempo and vocal description, then production notes (how it's mixed and recorded: e.g. warm analog mix, tight punchy drums, airy vocals) (under 240 characters)\nLYRICS:\n the lyrics, with section tags on their own lines like [Intro], [Verse], [Chorus], [Bridge], [Outro]; a tag may say how that part should sound, like [Chorus - full band, layered harmonies] or [Bridge - stripped back, piano only]. Two verses, a chorus that repeats, about 16 to 28 lines.",
     },
-    { role: "user" as const, content: `${description.trim()}${instrumental ? "\n\n(Instrumental: write LYRICS: [Instrumental])" : ""}` },
+    { role: "user" as const, content: `${description.trim()}${instrumental ? "\n\n(Instrumental: write LYRICS: [Instrumental])" : ""}${verdictsNote()}` },
   ];
   let last = "";
   for (const { conn, model } of list) {
