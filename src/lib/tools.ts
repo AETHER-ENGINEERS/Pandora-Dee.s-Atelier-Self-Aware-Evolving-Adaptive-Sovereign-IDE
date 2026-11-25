@@ -1440,13 +1440,13 @@ const MAKE_PICTURE: Tool = {
 const MAKE_SONG: Tool = {
   name: "make_song",
   description:
-    "Make a song with the desktop's song engine. Give a title, a style line (genre, mood, instruments, vocals) and lyrics with [Verse] / [Chorus] / [Bridge] tags. It takes a few minutes and runs in the background; it lands in the music library and Music → Make a song. Only when {{PERSON_NAME}} asks.",
+    "Make a song with the desktop's song engine. Give a title, a style line (genre, mood, instruments, vocals, and production notes such as \"warm analog mix, punchy drums, wide stereo\") and lyrics with [Verse] / [Chorus] / [Bridge] tags; a tag may carry how that part should sound, like [Chorus - full band, big harmonies]. Set seconds long enough for your lyrics: the engine stops at that length, so a full song wants 240 to 360. It takes a few minutes and runs in the background; it lands in the music library (next in the queue if music is playing) and Music → Make a song. Only when {{PERSON_NAME}} asks.",
   parameters: obj(
     {
       title: { type: "string", description: "The song's title" },
       style: { type: "string", description: "Comma-separated genre, mood, instruments, tempo, vocals" },
       lyrics: { type: "string", description: "Lyrics with section tags; leave empty for an instrumental" },
-      seconds: { type: "number", description: "Length in seconds (30-240, default 120)" },
+      seconds: { type: "number", description: "Length in seconds (30-360; left out, it fits the lyrics, at least 240)" },
     },
     ["title", "style"],
   ),
@@ -1457,10 +1457,14 @@ const MAKE_SONG: Tool = {
     const title = str(a.title) || "Untitled";
     const lyrics = str(a.lyrics);
     const name = desk().character(charId)?.name ?? charId;
-    startSong(engine, { title, style: str(a.style), lyrics, instrumental: !lyrics.trim(), seconds: Math.max(30, Math.min(240, Number(a.seconds) || 120)) }, (song, error) =>
+    const { fitLength } = await import("./songText.ts");
+    const most = engine.kind === "yue2-comfyui" ? 240 : 360;
+    // left out: long enough for the lyrics, and never the old two minutes that cut songs off half-way
+    const seconds = Math.max(30, Math.min(most, Number(a.seconds) || fitLength(lyrics, 240, most)));
+    startSong(engine, { title, style: str(a.style), lyrics, instrumental: !lyrics.trim(), seconds }, (song, error) =>
       desk().post({ kind: "notice", who: "desk", name: "Desk", text: song ? `${name}'s song “${song.title}” is ready in Music.` : `${name}'s song “${title}” didn't work out: ${error}`, source: "desk", quiet: !song }),
     );
-    return `Started “${title}” on ${engine.name}. It takes a few minutes; the desk will say when it's ready.`;
+    return `Started “${title}” (${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}) on ${engine.name}. It takes a few minutes; the desk will say when it's ready.`;
   },
 };
 

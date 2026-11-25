@@ -3,8 +3,10 @@ import { create } from "zustand";
 import { Music4, Pause, Play, Settings2, Sparkles, Square, Wand2, X } from "lucide-react";
 import { desk, useDesk } from "../lib/store.ts";
 import { fetchKept, keepSong, keptSongs, makeSong, resumeSong, uid, writeSong, type MadeAudio, type SongAsk } from "../lib/media.ts";
-import { current, playList, toggle, useMusic, type Track } from "../lib/music.ts";
-import type { MadeSong, PendingSong, SongEngine } from "../lib/mediaPrefs.ts";
+import { current, playNow, queueAs, toggle, useMusic, type Track } from "../lib/music.ts";
+import { QUEUE_WHERE, WHERE_LABEL } from "../lib/queueOps.ts";
+import { fitLength } from "../lib/songText.ts";
+import { SONG_NOTES_DEFAULT, SONG_SECONDS_DEFAULT, type MadeSong, type PendingSong, type SongEngine } from "../lib/mediaPrefs.ts";
 import { CharacterPicker } from "./Files.tsx";
 import { EnginesDialog } from "./Engines.tsx";
 import { openMenu } from "../ui/ContextMenu.tsx";
@@ -38,6 +40,7 @@ function run(engine: SongEngine, ask: SongAsk, job: Job, getAudio: (progress: (s
       const song = await keepSong(ask, made, engine);
       setPending(pendingOf().filter((p) => p.id !== job.id));
       dropJob(job.id);
+      queueNewSong(song);
       done?.(song);
     } catch (e) {
       const error = job.ctl.signal.aborted ? "Stopped. (The engine may finish the job anyway.)" : e instanceof Error ? e.message : String(e);
@@ -49,14 +52,32 @@ function run(engine: SongEngine, ask: SongAsk, job: Job, getAudio: (progress: (s
   })();
 }
 
-/** Make a song in the background (from here, or from a character's make_song tool); it shows in the list while it works. */
+/** The library's track for a made song (by its file name, then its title). */
+function trackOfSong(s: MadeSong): Track | undefined {
+  const { tracks, own } = useMusic.getState();
+  const base = s.file.replace(/\.[^.]+$/, "");
+  const mine = tracks.filter((t) => !own || t.folder === own);
+  return mine.find((t) => t.title === base) ?? mine.find((t) => t.title === s.title);
+}
+
+/** A song just made: while music is playing it joins the queue (next, by default: Make a song → settings), instead
+ *  of waiting to be found; with nothing playing it waits in the library and the made-songs list. */
+function queueNewSong(s: MadeSong) {
+  const where = desk().media.newSongs ?? "next";
+  if (where === "off" || !useMusic.getState().playing) return;
+  const t = trackOfSong(s);
+  if (t) desk().say(`“${s.title}” is ready: ${queueAs([{ kind: "track", ...t }], where).replace(/^1 song /, "")}`);
+}
+
+/** Make a song in the background (from here, or from a character's make_song tool); it shows in the list while it works.
+ *  The desktop's server fetches the finished song straight into the library. */
 export function startSong(engine: SongEngine, ask: SongAsk, done?: (s: MadeSong | null, error?: string) => void) {
   const job: Job = { id: uid(), title: ask.title || "Untitled", status: "Starting…", ctl: new AbortController() };
   run(engine, ask, job, (progress, signal) =>
     makeSong(engine, ask, progress, signal, (ref, seed) =>
       // the engine took it as a job: remember it, so a reload or a closed tab doesn't lose the song
       setPending([...pendingOf(), { id: job.id, ref, seed, engineId: engine.id, ask: { title: ask.title, style: ask.style, lyrics: ask.lyrics, seconds: ask.seconds, instrumental: ask.instrumental }, at: Date.now() }]),
-    ), done);
+    true), done);
 }
 
 let resumed = false;
@@ -71,12 +92,12 @@ export function resumeSongs() {
       continue;
     }
     const job: Job = { id: p.id, title: p.ask.title || "Untitled", status: "Picking up where it left off…", ctl: new AbortController() };
-    run(engine, p.ask, job, (progress, signal) => resumeSong(engine, p.ref, p.seed, progress, signal));
+    run(engine, p.ask, job, (progress, signal) => resumeSong(engine, p.ref, p.seed, progress, signal, { title: p.ask.title, seconds: p.ask.seconds }));
   }
 }
 
 type Draft = { title: string; style: string; lyrics: string; instrumental: boolean; seconds: number; seed: string };
-let kept: Draft = { title: "", style: "", lyrics: "", instrumental: false, seconds: 120, seed: "" };
+let kept: Draft = { title: "", style: "", lyrics: "", instrumental: false, seconds: SONG_SECONDS_DEFAULT, seed: "" };
 
 export function SongMaker() {
   const media = useDesk((s) => s.media);
@@ -95,13 +116,16 @@ export function SongMaker() {
   const update = (f: (x: Draft) => Partial<Draft>) => setD((x) => (kept = { ...x, ...f(x) }));
   const pickMode = (m: "simple" | "custom") => (setMode(m), sessionStorage.setItem("pdd-song-mode", m));
 
+  const most = engine?.kind === "acestep" || engine?.kind === "mlx-serve" ? 360 : 240;
   const write = async (about: string, instrumental: boolean) => {
     setWriting(true);
     setNote("");
     try {
       const w = await writeSong(writer, about, instrumental);
-      set({ title: w.title, style: w.style, lyrics: w.lyrics, instrumental });
-      return w;
+      // long enough for the words written (an engine cuts a song off at its length)
+      const seconds = instrumental ? kept.seconds : Math.max(kept.seconds, fitLength(w.lyrics, 30, most));
+      set({ title: w.title, style: w.style, lyrics: w.lyrics, instrumental, seconds });
+      return { ...w, seconds };
     } catch (e) {
       setNote(e instanceof Error ? e.message : String(e));
       return null;
@@ -116,7 +140,7 @@ export function SongMaker() {
     if (mode === "simple") {
       if (!desc.trim()) return;
       const w = await write(desc, d.instrumental);
-      if (w) start({ title: w.title, style: w.style, lyrics: w.lyrics, seconds: d.seconds, instrumental: d.instrumental });
+      if (w) start({ title: w.title, style: w.style, lyrics: w.lyrics, seconds: w.seconds, instrumental: d.instrumental });
       return;
     }
     if (!d.style.trim()) return setNote("Give it a style of music first.");
@@ -195,9 +219,37 @@ export function SongMaker() {
         </label>
         <div className="row small">
           <span className="muted">Length</span>
-          <input className="grow" type="range" min={30} max={engine?.kind === "acestep" || engine?.kind === "mlx-serve" ? 360 : 240} step={10} value={d.seconds} onChange={(e) => set({ seconds: Number(e.target.value) })} aria-label="Length in seconds" />
+          <input className="grow" type="range" min={30} max={most} step={10} value={d.seconds} onChange={(e) => set({ seconds: Number(e.target.value) })} aria-label="Length in seconds" />
           <span className="mono">{Math.floor(d.seconds / 60)}:{String(d.seconds % 60).padStart(2, "0")}</span>
         </div>
+        {!d.instrumental && d.lyrics.trim() && fitLength(d.lyrics, 30, most) > d.seconds ? (
+          <div className="small faint">
+            These words likely need about {Math.floor(fitLength(d.lyrics, 30, most) / 60)}:{String(fitLength(d.lyrics, 30, most) % 60).padStart(2, "0")}; the engine stops at the length.{" "}
+            <button className="btn small ghost" onClick={() => set({ seconds: fitLength(d.lyrics, 30, most) })}>Use it</button>
+          </div>
+        ) : null}
+        <details className="small">
+          <summary className="muted">Production notes, and where new songs go</summary>
+          <label className="check small" style={{ padding: 0 }}>
+            <input type="checkbox" checked={media.songNotesOn !== false} onChange={(e) => desk().set({ media: { ...desk().media, songNotesOn: e.target.checked } })} />
+            <span>Add production notes to every song's style</span>
+          </label>
+          <textarea
+            className="input small"
+            rows={2}
+            disabled={media.songNotesOn === false}
+            value={media.songNotes ?? SONG_NOTES_DEFAULT}
+            onChange={(e) => desk().set({ media: { ...desk().media, songNotes: e.target.value } })}
+            aria-label="Production notes"
+          />
+          <div className="row small">
+            <span className="muted">A new song, while music plays:</span>
+            <select className="select" value={media.newSongs ?? "next"} onChange={(e) => desk().set({ media: { ...desk().media, newSongs: e.target.value as "next" } })} aria-label="Where a new song goes">
+              {QUEUE_WHERE.map((w) => <option key={w} value={w}>{WHERE_LABEL[w]}</option>)}
+              <option value="off">Just keep it in the library</option>
+            </select>
+          </div>
+        </details>
         <button className="btn primary" disabled={writing || !engine || (mode === "simple" ? !desc.trim() : !d.style.trim())} onClick={() => void go()}>
           <Sparkles size={14} /> {writing ? "Writing the words…" : "Create"}
         </button>
@@ -226,7 +278,8 @@ function SongList({ made, jobs, onRemix }: { made: MadeSong[]; jobs: Job[]; onRe
     const t = trackOf(s);
     if (!t) return desk().say("That song isn't in the music library any more.");
     if (cur?.kind === "track" && cur.id === t.id) return toggle();
-    playList([{ kind: "track", ...t }]);
+    // now, without losing the queue: the rest of it carries on afterwards
+    playNow([{ kind: "track", ...t }]);
   };
   const forget = (id: string) => desk().set({ media: { ...desk().media, made: desk().media.made.filter((x) => x.id !== id) } });
   return (
@@ -254,6 +307,8 @@ function SongList({ made, jobs, onRemix }: { made: MadeSong[]; jobs: Job[]; onRe
           <div key={s.id} className={`made-song${on ? " on" : ""}`} onContextMenu={(e) => openMenu(e, [
             { heading: s.title },
             { label: "Play", run: () => play(s) },
+            ...QUEUE_WHERE.map((w) => ({ label: WHERE_LABEL[w], disabled: !t, run: () => void (t && queueAs([{ kind: "track", ...t }], w)) })),
+            { sep: true },
             { label: "Remix (load into Custom)", run: () => onRemix(s) },
             { label: "Copy the lyrics", run: () => void copyText(s.lyrics), disabled: !s.lyrics },
             { label: "Properties…", run: () => openSongInfo({ track: t, made: s }) },

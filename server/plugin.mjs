@@ -49,6 +49,7 @@ import { createRequire } from "node:module";
 import { createPeers } from "./peers.mjs";
 import { createGameLinks } from "./gameLinks.mjs";
 import { createPadsLink } from "./padsLink.mjs";
+import { createSongFetch } from "./songFetch.mjs";
 import os from "node:os";
 import dns from "node:dns";
 import { createHash } from "node:crypto";
@@ -120,6 +121,9 @@ export function deskServer() {
   let lib;
   let mus;
   const music = () => (mus ??= createMusic(dataDir));
+  let sf;
+  // songs fetched by this server straight from a song engine into the library (songFetch.mjs)
+  const songFetch = () => (sf ??= createSongFetch({ dir: () => music().ownDir() }));
   let crt;
   const creative = () => (crt ??= createCreative(() => dataDir));
   const browser = createBrowser();
@@ -1004,6 +1008,16 @@ export function deskServer() {
         try {
           const b = JSON.parse((await readBody(req, 10_000)).toString("utf8") || "{}");
           return send(res, 200, M.rename(String(b.id || ""), b.name, { local: onThisPc(req) }));
+        } catch (e) {
+          return send(res, e?.status ?? 400, { error: e instanceof Error ? e.message : String(e) });
+        }
+      }
+      if (parts[1] === "fetch-song") {
+        try {
+          if (m === "POST") return send(res, 200, { id: songFetch().start(JSON.parse((await readBody(req, 2_000_000)).toString("utf8") || "{}")) });
+          if (m === "DELETE") return (songFetch().stop(String(parts[2] || "")), send(res, 200, { ok: true }));
+          const st = songFetch().status(String(parts[2] || ""));
+          return st ? send(res, 200, st) : send(res, 404, { error: "No such fetch (the desktop's server may have restarted)." });
         } catch (e) {
           return send(res, e?.status ?? 400, { error: e instanceof Error ? e.message : String(e) });
         }

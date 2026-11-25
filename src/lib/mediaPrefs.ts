@@ -71,6 +71,17 @@ export type MediaPrefs = {
   pending?: PendingSong[];
   /** Characters may make pictures and songs with a tool (off until switched on). */
   characterTools: boolean;
+  /** Production notes added to every song's style, so a lazy engine still aims for a proper mix (on unless switched
+   *  off; blank uses SONG_NOTES_DEFAULT). */
+  songNotesOn?: boolean;
+  songNotes?: string;
+  /** Where a newly made song goes when music is already playing: next in the queue (the default), last, after the
+   *  current album, or nowhere (it just waits in the library). With nothing playing it isn't started. */
+  newSongs?: "next" | "last" | "after-album" | "off";
 };
+
+export const SONG_NOTES_DEFAULT = "professional studio production, clean balanced mix, mastered, no clipping or distortion, wide dynamic range, clear vocals";
+/** How long a new song is when nobody says: two minutes is rarely enough for a whole song. */
+export const SONG_SECONDS_DEFAULT = 240;
 
 export const MEDIA_DEFAULT: MediaPrefs = { images: [], songs: [], pictureFolder: "pictures/made", made: [], characterTools: false };

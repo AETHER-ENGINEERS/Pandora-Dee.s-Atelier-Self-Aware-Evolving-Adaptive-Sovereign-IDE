@@ -13,7 +13,8 @@ and, so a long song can't be lost to a connection that gave up waiting (a three-
 of an hour), as a job:
 
     POST /v1/audio/music-generations   {..., "async": true}  -> 202 {"id"}
-    GET  /v1/jobs/<id>                 {"state": "queued" | "working" | "done" | "error", "elapsed", "error"}
+    GET  /v1/jobs/<id>                 {"state": "queued" | "working" | "done" | "error", "elapsed", "error",
+                                        "said": the engine's own latest progress line, "percent": from it, if it gave one}
     GET  /v1/jobs/<id>/audio           the WAV, once done
     GET  /v1/songs                     the songs kept in the keep folder; GET /v1/songs/<name>.wav (or .txt)
 
@@ -34,6 +35,7 @@ import io
 import json
 import os
 import re
+import sys
 import threading
 import time
 import wave
@@ -139,6 +141,49 @@ def keep(wav, req, style, lyrics, seconds, seed, model):
         return None
 
 
+class Heard:
+    """What the music model prints while it works (progress bars, stages), passed on as usual and remembered, so a
+    job's status can say where it is in the engine's own words. One song at a time, so one line is enough."""
+
+    def __init__(self, stream):
+        self.stream = stream
+        self.line = ""
+        self.at = 0.0
+        self.buf = ""
+
+    def write(self, text):
+        try:
+            # (a terminal's colour and clear-line codes count as line breaks)
+            self.buf = (self.buf + re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "\n", str(text)))[-2000:]
+            parts = [p.strip() for p in re.split(r"[\r\n]+", self.buf) if p.strip()]
+            if parts:
+                self.line = parts[-1][:200]
+                self.at = time.time()
+        except Exception:
+            pass
+        return self.stream.write(text)
+
+    def flush(self):
+        return self.stream.flush()
+
+    def __getattr__(self, name):
+        return getattr(self.stream, name)
+
+
+heard = Heard(sys.stderr)
+
+
+def percent_of(line):
+    """45% from a progress bar ("45%|####"), or 14 of 30 ("14/30"), or None."""
+    m = re.search(r"(\d{1,3})%", line)
+    if m:
+        return min(100, int(m.group(1)))
+    m = re.search(r"\b(\d+)\s*/\s*(\d+)\b", line)
+    if m and int(m.group(2)) > 0 and int(m.group(1)) <= int(m.group(2)):
+        return round(100 * int(m.group(1)) / int(m.group(2)))
+    return None
+
+
 # songs being made as jobs (the newest few are remembered, with their audio until it's fetched or replaced)
 jobs = {}
 jobs_lock = threading.Lock()
@@ -206,7 +251,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(409, {"error": f"Not ready ({job.get('state')})."})
                 return self._send(200, "audio/wav", job["wav"])
             start = job.get("started") or job["created"]
-            return self._json(200, {"id": m.group(1), "state": job["state"], "elapsed": round((job.get("finished") or time.time()) - start), "error": job.get("error"), "kept": job.get("kept")})
+            said = heard.line if job["state"] == "working" and heard.at >= start else ""
+            return self._json(200, {"id": m.group(1), "state": job["state"], "elapsed": round((job.get("finished") or time.time()) - start), "error": job.get("error"), "kept": job.get("kept"), "said": said, "percent": percent_of(said) if said else None})
         if path == "/v1/songs":
             folder = kept_folder()
             items = []
@@ -275,6 +321,8 @@ def main():
     p.add_argument("--preload", action="store_true", help="load the --model now instead of on the first song")
     p.add_argument("--keep", default=str(Path(__file__).resolve().parent / "songs"), help='folder that keeps a copy of every song (default: songs/ next to this script; "" keeps none)')
     args = p.parse_args()
+    # the model's own progress output (tqdm bars and the like go to stderr) is remembered for the job's status
+    sys.stderr = heard
     if args.preload and args.model:
         model_for(args.model)
     found = cached_models()

@@ -501,5 +501,5 @@ export function createMusic(dataDir) {
     return { id: nid, file: path.basename(target) };
   }
 
-  return { scan, list, serve, cover, radio, upload, info, rename, folders: () => index.folders };
+  return { scan, list, serve, cover, radio, upload, info, rename, folders: () => index.folders, ownDir: () => ownDir };
 }

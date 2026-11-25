@@ -8,7 +8,7 @@ import { desk } from "./store.ts";
 import { library, type Pkg } from "./xdc.ts";
 import { filesForChange, gameSystem, manifestFor, nextVersion, parseGame, type Asset } from "./gameFiles.ts";
 import { kindFor, render, sfxOf, wav } from "./sfx.ts";
-import { makePictures, makeSong } from "./media.ts";
+import { audioOf, makePictures, makeSong } from "./media.ts";
 
 export type Made = { pkg: Pkg; title: string; note: string; made: string[]; skipped: string[] };
 export type Imagine = {
@@ -106,7 +106,7 @@ export async function imagineGame(o: Imagine): Promise<Made> {
         o.progress(`Making ${a.path} (this can take a few minutes)…`);
         const song = await makeSong(songs[0], { title: answer.title || "Theme", style: a.about, lyrics: "[Instrumental]", seconds: 60, instrumental: true }, o.progress, o.signal);
         const p = a.path.replace(/\.[a-z0-9]+$/i, `.${song.ext}`);
-        files[p] = new Uint8Array(await song.audio.arrayBuffer());
+        files[p] = new Uint8Array(await audioOf(song).arrayBuffer());
         if (p !== a.path) for (const k of Object.keys(files)) if (TEXT.test(k)) files[k] = strToU8(new TextDecoder().decode(files[k]).split(a.path).join(p));
         made.push(p);
       } else skipped.push(a.path);

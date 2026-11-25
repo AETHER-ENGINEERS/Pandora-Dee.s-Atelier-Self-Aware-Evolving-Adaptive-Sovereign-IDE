@@ -64,17 +64,54 @@ function makePlayer(): HTMLAudioElement {
   });
   el.addEventListener("play", () => mine() && useMusic.setState({ playing: true, error: "" }));
   el.addEventListener("pause", () => mine() && useMusic.setState({ playing: false }));
-  el.addEventListener("ended", () => mine() && void next(true));
+  // a station that keeps playing: its next drop gets a fresh round of reconnecting
+  el.addEventListener("playing", () => mine() && (clearTimeout(radio.stall), (radio.since = Date.now())));
+  // a station stuck buffering for a while has dropped as surely as one that ended
+  el.addEventListener("waiting", () => {
+    if (!mine() || current()?.kind !== "radio") return;
+    clearTimeout(radio.stall);
+    radio.stall = window.setTimeout(() => mine() && !el.paused && el.readyState < 3 && radioDropped(), 15000);
+  });
+  // a live stream "ends" when the station (or the connection to it) drops: reconnect rather than move on
+  el.addEventListener("ended", () => mine() && !radioDropped() && void next(true));
   el.addEventListener("error", () => {
     if (!mine()) return;
     const cur = current();
     const code = el.error?.code ?? 0;
-    if (cur?.kind === "radio") return useMusic.setState({ playing: false, error: `${cur.name} isn't answering.` });
+    if (cur?.kind === "radio") return radioDropped() || useMusic.setState({ playing: false, error: `${cur.name} isn't answering.` });
     useMusic.setState({ playing: false, error: "That file couldn't be played." });
     if (cur?.kind === "track") void whyNot(cur, code).then((error) => current() === cur && useMusic.setState({ error }));
   });
   wire(el);
   return el;
+}
+
+// reconnecting a station that dropped (the station's server, or the internet, for a moment): a few tries, further
+// apart each time; a station that then plays for a minute starts with fresh tries at its next drop
+const RETRY_WAIT = [1, 2, 4, 8, 15, 30];
+const radio = { tries: 0, since: 0, timer: 0, stall: 0, url: "", waiting: false };
+/** The station playing dropped: try it again in a moment (true), or give up (false: it dropped too often). */
+function radioDropped(): boolean {
+  const cur = current();
+  if (cur?.kind !== "radio") return false;
+  // (an error and an end can both report one drop: a try already waiting covers it)
+  if (radio.waiting && radio.url === cur.url) return true;
+  // another station, or this one played well for a minute since it last dropped: fresh tries
+  if (radio.url !== cur.url || (radio.since && Date.now() - radio.since > 60_000)) radio.tries = 0;
+  radio.url = cur.url;
+  radio.since = 0;
+  if (radio.tries >= RETRY_WAIT.length) return false;
+  const wait = RETRY_WAIT[radio.tries++] * 1000;
+  useMusic.setState({ error: `${cur.name} dropped out; reconnecting${radio.tries > 1 ? ` (try ${radio.tries} of ${RETRY_WAIT.length})` : ""}…` });
+  const at = mu().index;
+  window.clearTimeout(radio.timer);
+  radio.waiting = true;
+  radio.timer = window.setTimeout(() => {
+    radio.waiting = false;
+    // only if it's still the station chosen (not another song, not stopped meanwhile)
+    if (mu().index === at && current() === cur) void start(at);
+  }, wait);
+  return true;
 }
 
 function element(): HTMLAudioElement {
@@ -469,6 +506,16 @@ export function queueAs(items: Item[], where: QueueWhere): string {
   if (index < 0) void start(placed.at);
   const n = `${items.length} ${items.length === 1 ? "song" : "songs"}`;
   return index < 0 ? `Playing ${n}.` : where === "next" ? `${n} up next.` : where === "last" ? `${n} at the end of the queue.` : `${n} after this album.`;
+}
+
+/** Play these now without losing the queue: they go in right after what's playing and start, and the rest of the
+ *  queue carries on after them. With no queue they simply play. */
+export function playNow(items: Item[]) {
+  if (!items.length) return;
+  const { queue, index } = mu();
+  if (!queue.length || index < 0) return playList(items, 0, true);
+  useMusic.setState({ queue: [...queue.slice(0, index + 1), ...items, ...queue.slice(index + 1)] });
+  void start(index + 1);
 }
 
 /** The same by library id, for anything outside this page (a ferry window, a jetty, a tool): plain data, no songs

@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { desk, useDesk } from "../lib/store.ts";
 import { library } from "../lib/xdc.ts";
-import { makePictures, makeSong, writeSong } from "../lib/media.ts";
+import { audioOf, makePictures, makeSong, writeSong } from "../lib/media.ts";
 import { KINDS, KIND_NAMES, RATE, render, sfxOf, wav, type SfxKind } from "../lib/sfx.ts";
 import { Seg } from "../ui/common.tsx";
 
@@ -103,7 +103,7 @@ export function StudioMake({ pkgId, onSaved, onClose }: { pkgId: string; onSaved
       setBusy("Making the music (this can take a few minutes)…");
       const made = await makeSong(engine, { title, style: style.trim(), lyrics, seconds, instrumental: !words }, setBusy, stop.current.signal);
       const p = `music/${slugOf(name || title, "music")}.${made.ext}`;
-      await save(p, made.audio, `const music = new Audio("${p}"); music.loop = true; music.play();`);
+      await save(p, audioOf(made), `const music = new Audio("${p}"); music.loop = true; music.play();`);
     } catch (e) {
       fail(e);
     } finally {
