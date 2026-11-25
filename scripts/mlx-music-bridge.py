@@ -225,7 +225,7 @@ def free_memory():
 def memory_gb():
     """This Mac's memory, so the desktop can say which models fit."""
     try:
-        return round(os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 1e9)
+        return round(os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 1024**3)
     except Exception:
         return None
 
