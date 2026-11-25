@@ -7,7 +7,7 @@ import { askText, askUser } from "../ui/Ask.tsx";
 import { myName } from "../lib/myName.ts";
 import { current, playNow, queueAs, toggle, useMusic, type Item, type Track } from "../lib/music.ts";
 import { QUEUE_WHERE, WHERE_LABEL } from "../lib/queueOps.ts";
-import { fitLength } from "../lib/songText.ts";
+import { engineLyrics, fitLength } from "../lib/songText.ts";
 import { SONG_NOTES_DEFAULT, SONG_SECONDS_DEFAULT, type MadeSong, type PendingSong, type SongEngine } from "../lib/mediaPrefs.ts";
 import { CharacterPicker } from "./Files.tsx";
 import { EnginesDialog } from "./Engines.tsx";
@@ -233,6 +233,12 @@ export function SongMaker() {
           <input className="grow" type="range" min={30} max={most} step={10} value={d.seconds} onChange={(e) => set({ seconds: Number(e.target.value) })} aria-label="Length in seconds" />
           <span className="mono">{Math.floor(d.seconds / 60)}:{String(d.seconds % 60).padStart(2, "0")}</span>
         </div>
+        {!d.instrumental && engineLyrics(d.lyrics).notes.length ? (
+          <div className="small faint" title={engineLyrics(d.lyrics).lyrics}>
+            Directions in square brackets won't be sung: they go to the engine as the arrangement ({engineLyrics(d.lyrics).notes.join("; ").slice(0, 160)}
+            {engineLyrics(d.lyrics).notes.join("; ").length > 160 ? "…" : ""}).
+          </div>
+        ) : null}
         {!d.instrumental && d.lyrics.trim() && fitLength(d.lyrics, 30, most) > d.seconds ? (
           <div className="small faint">
             These words likely need about {Math.floor(fitLength(d.lyrics, 30, most) / 60)}:{String(fitLength(d.lyrics, 30, most) % 60).padStart(2, "0")}; the engine stops at the length.{" "}

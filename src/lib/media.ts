@@ -11,7 +11,7 @@ import { allowed, blockedBecause, type Feature } from "./privacy.ts";
 import { scan, type Item } from "./music.ts";
 import { SONG_NOTES_DEFAULT, type ImageEngine, type MadeSong, type SongEngine } from "./mediaPrefs.ts";
 import yue2Workflow from "./workflows/yue2-text2music.json";
-import { parseSong } from "./songText.ts";
+import { engineLyrics, parseSong, styleWithArrangement } from "./songText.ts";
 
 export type PictureAsk = { prompt: string; negative?: string; width: number; height: number; seed?: number; count?: number };
 export type SongAsk = { title: string; style: string; lyrics: string; seconds: number; seed?: number; instrumental?: boolean };
@@ -423,9 +423,12 @@ async function followFetch(e: Engine, id: string, making: number, progress: Prog
  */
 export async function makeSong(e: SongEngine, a: SongAsk, progress: Progress, signal?: AbortSignal, onJob?: (ref: string, seed: number) => void, toLibrary = false): Promise<MadeAudio> {
   const seed = a.seed ?? randomSeed();
-  const lyrics = a.instrumental || !a.lyrics.trim() ? "[Instrumental]" : a.lyrics;
+  // what's in square brackets besides a section's name ("[Verse 1 - soft piano]") would be sung word for word:
+  // the tags go plain, and those directions join the style as its arrangement (lib/songText.ts)
+  const sent = a.instrumental || !a.lyrics.trim() ? { lyrics: "[Instrumental]", notes: [] } : engineLyrics(a.lyrics);
+  const lyrics = sent.lyrics;
   const seconds = Math.max(10, Math.min(600, Math.round(a.seconds)));
-  const style = withNotes(a.style);
+  const style = styleWithArrangement(withNotes(a.style), sent.notes);
   if (e.kind === "mlx-serve") {
     const body = { ...(e.model ? { model: e.model } : {}), prompt: style, lyrics, duration_seconds: seconds, seed, ...(a.title ? { title: a.title } : {}) };
     if (await bridgeJobs(e)) {
@@ -692,7 +695,7 @@ export async function writeSong(charId: string, description: string, instrumenta
     {
       role: "system" as const,
       content:
-        "You write songs for a music generator. Answer with exactly three parts and nothing else:\nTITLE: a short title\nSTYLE: one line of comma-separated genre, mood, instruments, tempo and vocal description, then production notes (how it's mixed and recorded: e.g. warm analog mix, tight punchy drums, airy vocals) (under 240 characters)\nLYRICS:\n the lyrics, with section tags on their own lines like [Intro], [Verse], [Chorus], [Bridge], [Outro]; a tag may say how that part should sound, like [Chorus - full band, layered harmonies] or [Bridge - stripped back, piano only]. Two verses, a chorus that repeats, about 16 to 28 lines.",
+        "You write songs for a music generator. Answer with exactly three parts and nothing else:\nTITLE: a short title\nSTYLE: one line of comma-separated genre, mood, instruments, tempo and vocal description, then production notes (how it's mixed and recorded: e.g. warm analog mix, tight punchy drums, airy vocals) (under 240 characters)\nLYRICS:\n the lyrics, with section tags on their own lines like [Intro], [Verse], [Chorus], [Bridge], [Outro]; a tag may say how that part should sound, like [Chorus - full band, layered harmonies] or [Bridge - stripped back, piano only] (those directions are taken out before singing and given to the engine as the arrangement, so they're never sung). Round brackets are sung, as backing vocals: use them only for words to sing. Two verses, a chorus that repeats, about 16 to 28 lines.",
     },
     { role: "user" as const, content: `${description.trim()}${instrumental ? "\n\n(Instrumental: write LYRICS: [Instrumental])" : ""}${verdictsNote()}` },
   ];

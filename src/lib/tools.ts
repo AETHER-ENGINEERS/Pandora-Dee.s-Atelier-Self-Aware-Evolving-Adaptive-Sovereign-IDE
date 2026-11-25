@@ -1440,7 +1440,7 @@ const MAKE_PICTURE: Tool = {
 const MAKE_SONG: Tool = {
   name: "make_song",
   description:
-    "Make a song with the desktop's song engine. Give a title, a style line (genre, mood, instruments, vocals, and production notes such as \"warm analog mix, punchy drums, wide stereo\") and lyrics with [Verse] / [Chorus] / [Bridge] tags; a tag may carry how that part should sound, like [Chorus - full band, big harmonies]. Set seconds long enough for your lyrics: the engine stops at that length, so a full song wants 240 to 360. It takes a few minutes and runs in the background; it lands in the music library (next in the queue if music is playing) and Music → Make a song. Only when {{PERSON_NAME}} asks.",
+    "Make a song with the desktop's song engine. Give a title, a style line (genre, mood, instruments, vocals, and production notes such as \"warm analog mix, punchy drums, wide stereo\") and lyrics with [Verse] / [Chorus] / [Bridge] tags; a tag may carry how that part should sound, like [Chorus - full band, big harmonies], or a direction may sit on its own line in square brackets: the desktop takes those out of what's sung and gives them to the engine as the arrangement. Round brackets are sung (backing vocals). Set seconds long enough for your lyrics: the engine stops at that length, so a full song wants 240 to 360. It takes a few minutes and runs in the background; it lands in the music library (next in the queue if music is playing) and Music → Make a song. Only when {{PERSON_NAME}} asks.",
   parameters: obj(
     {
       title: { type: "string", description: "The song's title" },
