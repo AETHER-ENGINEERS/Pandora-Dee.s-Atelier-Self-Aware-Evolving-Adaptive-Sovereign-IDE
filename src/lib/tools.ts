@@ -1072,11 +1072,18 @@ const APPS: Tool = {
       payload: { type: "object", description: "send: the update payload" },
       info: { type: "string", description: "send: a short line about it" },
       path: { type: "string", description: "source: a file inside the app; install: a .xdc under /vault" },
+      inspiration: { type: "string", description: "install / open: a sentence on why you chose it. It goes in the Workshop log for everyone to read." },
     },
     ["action"],
   ),
   run: async (id, a) => appsTool(id, a),
 };
+
+/** A line in the Workshop log from a resident (what they did, and what inspired it). */
+async function workshopOf(charId: string, what: string, inspiration: string) {
+  const { workshopLine, workshopNote } = await import("./workshop.ts");
+  await workshopNote(workshopLine(desk().character(charId)?.name ?? charId, what, inspiration));
+}
 
 async function appsTool(charId: string, a: Record<string, unknown>) {
   const all = await library.list();
@@ -1093,6 +1100,7 @@ async function appsTool(charId: string, a: Record<string, unknown>) {
     if (!res.ok) throw new Error(`There's no file at /vault/${p}.`);
     const r = await library.import(new File([await res.blob()], p.split("/").pop() || "app.xdc"));
     window.dispatchEvent(new Event("pdd-xdc-changed"));
+    if (r.added.length) void workshopOf(charId, `installed ${r.added.map((x) => `${x.name} ${x.version}`).join(", ")} in Games & Apps.`, str(a.inspiration));
     return r.added.length ? `Installed ${r.added.map((x) => `${x.name} ${x.version}`).join(", ")}.` : r.duplicates ? "That exact version is already installed." : `Couldn't install: ${r.errors.join(" ")}`;
   }
   const key = str(a.app).toLowerCase();
@@ -1114,6 +1122,7 @@ async function appsTool(charId: string, a: Record<string, unknown>) {
     const room = s.roomCharacters().map((x) => x.id);
     s.set({ game: { kind: "xdc", slug: pkg.appKey, title: pkg.name, players: room.includes(charId) ? [charId] : [], pkgId: pkg.id, scope } });
     s.openApp("games");
+    void workshopOf(charId, `opened ${pkg.name} ${pkg.version} in Games & Apps.`, str(a.inspiration));
     return `Opened ${pkg.name} ${pkg.version} for the person.`;
   }
   if (act === "files") return (await library.files(pkg.id)).join("\n");
