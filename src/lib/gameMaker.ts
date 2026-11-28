@@ -41,7 +41,26 @@ async function filesOf(pkg: Pkg): Promise<{ text: Record<string, string>; bytes:
 
 const seedOf = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 7) >>> 0;
 
+/** Imagine (or change) a game, and keep the Workshop log: that she started, then what came of it. */
 export async function imagineGame(o: Imagine): Promise<Made> {
+  const { workshopLine, workshopNote } = await import("./workshop.ts");
+  const who = desk().visibleCharacters().find((c) => c.id === o.charId)?.name ?? "A friend";
+  const ask = o.ask.trim().replace(/\s+/g, " ").slice(0, 240);
+  void workshopNote(`🎮 ${who} is ${o.base ? `changing ${o.base.name}` : "imagining a new game"}.
+> Asked for: ${ask}`);
+  try {
+    const r = await imagineGameNow(o);
+    void workshopNote(workshopLine(who, `finished ${r.title} ${o.base ? `(version ${r.pkg.version}) ` : ""}in Games & Apps.`, r.note) + (r.made.length ? `
+Made for it: ${r.made.join(", ")}.` : ""));
+    return r;
+  } catch (e) {
+    const stopped = e instanceof DOMException && e.name === "AbortError";
+    void workshopNote(`⚠️ ${who}'s game ${stopped ? "was stopped" : `didn't work out: ${e instanceof Error ? e.message : String(e)}`}`);
+    throw e;
+  }
+}
+
+async function imagineGameNow(o: Imagine): Promise<Made> {
   const s = desk();
   if (s.toddler) throw new Error("The AI is resting: toddler mode is on.");
   const who = s.visibleCharacters().find((c) => c.id === o.charId)?.name ?? "a friend";
