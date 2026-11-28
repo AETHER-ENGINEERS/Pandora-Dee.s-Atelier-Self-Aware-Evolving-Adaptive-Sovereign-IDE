@@ -6,7 +6,7 @@ import { desk, useDesk } from "./store.ts";
 import { outbound } from "./outbound.ts";
 import { allowed, blockedBecause } from "./privacy.ts";
 import { speech } from "./voice.ts";
-import { pack, unpack } from "./musicPlace.ts";
+import { pack, unpack, type Saved } from "./musicPlace.ts";
 import { previousRun, runKey } from "./musicRuns.ts";
 import { placeInQueue, type QueueWhere } from "./queueOps.ts";
 import { albumHome } from "./albumGroups.ts";
@@ -454,6 +454,7 @@ async function start(i: number, at = 0) {
 
 /** Play these (a list, an album, a station), starting at `at`. `inOrder` keeps the order given even when shuffle is on. */
 export function playList(items: Item[], at = 0, inOrder = false) {
+  rememberQueue();
   let list = items;
   let first = at;
   if (prefs().shuffle && !inOrder && items.length > 1) {
@@ -464,6 +465,59 @@ export function playList(items: Item[], at = 0, inOrder = false) {
   useMusic.setState({ queue: list });
   void start(first);
 }
+
+// The queues that were replaced, newest first, so a queue set up with care isn't lost to one wrong click (or to a
+// character starting a song). Kept on this device, a few of them; songs are kept by id like the queue itself.
+const EARLIER_KEY = "pdd-music-earlier";
+const EARLIER_MAX = 5;
+type Earlier = { at: number; i: number; q: Saved["q"] };
+export const useEarlier = create<{ list: { at: number; count: number }[] }>(() => ({ list: [] }));
+
+function readEarlier(): Earlier[] {
+  try {
+    const l = JSON.parse(localStorage.getItem(EARLIER_KEY) ?? "[]") as Earlier[];
+    return Array.isArray(l) ? l : [];
+  } catch {
+    return [];
+  }
+}
+function writeEarlier(l: Earlier[]) {
+  try {
+    localStorage.setItem(EARLIER_KEY, JSON.stringify(l));
+  } catch {
+    /* full or blocked: it just won't be remembered */
+  }
+  useEarlier.setState({ list: l.map((e) => ({ at: e.at, count: e.q.length })) });
+}
+
+/** Keep the queue as it is, before something replaces it. A queue of one song, or the same one again, isn't worth it. */
+export function rememberQueue() {
+  const { queue, index } = mu();
+  if (queue.length < 2) return;
+  const packed = pack(queue, index, 0);
+  const l = readEarlier();
+  const same = (a: Saved["q"], b: Saved["q"]) => a.length === b.length && JSON.stringify(a) === JSON.stringify(b);
+  if (l[0] && same(l[0].q, packed.q)) return;
+  writeEarlier([{ at: Date.now(), i: packed.i, q: packed.q }, ...l].slice(0, EARLIER_MAX));
+}
+
+/** Bring back an earlier queue (0: the one replaced last) and play from where it was. The queue being left is kept,
+ *  so it can be undone too. Says what it did. */
+export function restoreQueue(n = 0): string {
+  const l = readEarlier();
+  const e = l[n];
+  if (!e) return "There's no earlier queue to bring back.";
+  const back = unpack({ v: 1, q: e.q, i: e.i, at: 0 }, mu().tracks);
+  if (!back) return "That queue's songs aren't in the library any more.";
+  rememberQueue();
+  const rest = readEarlier().filter((x) => x.at !== e.at);
+  writeEarlier(rest);
+  useMusic.setState({ queue: back.queue });
+  void start(back.index);
+  return `Your earlier queue is back: ${back.queue.length} songs.`;
+}
+
+if (typeof window !== "undefined") useEarlier.setState({ list: readEarlier().map((e) => ({ at: e.at, count: e.q.length })) });
 
 /** A copy in random order. */
 export function shuffled<T>(xs: T[]): T[] {

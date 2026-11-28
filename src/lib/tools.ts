@@ -1362,10 +1362,10 @@ const CATS_TOOL: Tool = {
 const MUSIC_TOOL: Tool = {
   name: "music",
   description:
-    "The desktop's music player. now: what's playing; play / pause / next / previous; skip_album / skip_artist: past the rest of this album or artist in the list; back_album / back_artist: back to the start of the album or artist before this one; search: songs in the library (title, artist, album, genre); play_song: play matching songs (query); queue / queue_next: add matching songs right after the current one; queue_last: at the end of the queue; queue_after_album: after the rest of the album that's playing; stations: saved radio stations; play_station: a saved station by name. Only when {{PERSON_NAME}} asks, or clearly would like it.",
+    "The desktop's music player. now: what's playing; play / pause / next / previous; skip_album / skip_artist: past the rest of this album or artist in the list; back_album / back_artist: back to the start of the album or artist before this one; search: songs in the library (title, artist, album, genre); play_song: matching songs go up next when music is already playing (the queue is never wiped), or play when nothing is; play_now: play them right now with the queue kept; restore_queue: bring back the queue that was replaced last; queue / queue_next: add matching songs right after the current one; queue_last: at the end of the queue; queue_after_album: after the rest of the album that's playing; stations: saved radio stations; play_station: a saved station by name. Only when {{PERSON_NAME}} asks, or clearly would like it.",
   parameters: obj(
     {
-      action: { type: "string", description: "now, play, pause, next, previous, skip_album, skip_artist, back_album, back_artist, search, play_song, queue_next, queue_last, queue_after_album, stations or play_station" },
+      action: { type: "string", description: "now, play, pause, next, previous, skip_album, skip_artist, back_album, back_artist, search, play_song, play_now, restore_queue, queue_next, queue_last, queue_after_album, stations or play_station" },
       query: { type: "string", description: "search / play_song / queue_*: words from the title, artist, album or genre · play_station: the station's name" },
     },
     ["action"],
@@ -1401,6 +1401,7 @@ const MUSIC_TOOL: Tool = {
       const st = desk().music.stations;
       return st.length ? st.map((s) => `- ${s.name}${s.tags ? ` (${s.tags.split(",").slice(0, 3).join(", ")})` : ""}`).join("\n") : "No saved stations.";
     }
+    if (act === "restore_queue") return m.restoreQueue();
     if (act === "play_station") {
       const st = desk().music.stations;
       const i = st.findIndex((s) => s.name.toLowerCase().includes(q.toLowerCase()));
@@ -1416,6 +1417,13 @@ const MUSIC_TOOL: Tool = {
       const { whereOf } = await import("./queueOps.ts");
       return m.queueAs(items, whereOf(act) ?? "next");
     }
+    const busy = m.useMusic.getState().index >= 0 && m.useMusic.getState().queue.length > 0;
+    if (busy && act === "play_now") {
+      m.playNow(items);
+      return `Playing ${hits.length} song${hits.length === 1 ? "" : "s"} now: ${hits[0].title}. The queue carries on after.`;
+    }
+    // something is already playing: a song asked for goes up next, so the queue someone set up isn't wiped
+    if (busy) return `${m.queueAs(items, "next")} (Music was already playing, so it's queued; use play_now to start it right away.)`;
     m.playList(items);
     return `Playing ${hits.length} song${hits.length === 1 ? "" : "s"}: ${hits[0].title}${hits.length > 1 ? " first" : ""}.`;
   },

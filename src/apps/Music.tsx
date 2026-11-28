@@ -29,6 +29,8 @@ import {
   backBy,
   playAt,
   removeAt,
+  restoreQueue,
+  useEarlier,
   queueAs,
 } from "../lib/music.ts";
 import { QUEUE_WHERE, WHERE_LABEL } from "../lib/queueOps.ts";
@@ -1111,6 +1113,7 @@ function QueueView({ onClose, infoOf }: { onClose: () => void; infoOf: (t: Track
   const index = useMusic((s) => s.index);
   const [before, setBefore] = useState(20);
   const [after, setAfter] = useState(50);
+  const earlier = useEarlier((s) => s.list);
   const nowRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     nowRef.current?.scrollIntoView({ block: "nearest" });
@@ -1129,6 +1132,15 @@ function QueueView({ onClose, infoOf }: { onClose: () => void; infoOf: (t: Track
         <b>The queue</b>
         <span className="faint small">{index >= 0 ? `${index + 1} of ${queue.length}` : `${queue.length} songs`}</span>
         <span className="grow" />
+        {earlier.length ? (
+          <button
+            className="btn small"
+            title={`Bring back the queue that was replaced (${earlier[0].count} songs, ${new Date(earlier[0].at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })})`}
+            onClick={() => desk().say(restoreQueue())}
+          >
+            Restore previous queue
+          </button>
+        ) : null}
         <button className="icon-btn" aria-label="Hide the queue" onClick={onClose}>
           <X size={14} />
         </button>
