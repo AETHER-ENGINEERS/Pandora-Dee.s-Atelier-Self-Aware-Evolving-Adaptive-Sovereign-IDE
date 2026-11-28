@@ -15,6 +15,11 @@ export type MusicPrefs = {
   repeat: "off" | "all" | "one";
   /** The queue view beside the player: the songs before, the one playing, and what comes next. */
   showQueue?: boolean;
+  /** Height of the queue view, in pixels (dragged by its top edge); unset: it sizes itself. */
+  queueHeight?: number;
+  /** When someone picks a song while music is playing: ask where it goes (on, the default), or just do what they
+   *  asked (off: for when the queue isn't being used). */
+  askWhere?: boolean;
   /** Songs run straight into each other: the next one waits loaded, and a song's silent last stretch is skipped. */
   gapless?: boolean;
   /** Lower the music while a character speaks. */

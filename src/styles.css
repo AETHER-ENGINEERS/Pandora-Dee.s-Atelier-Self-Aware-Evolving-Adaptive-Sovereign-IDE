@@ -1252,3 +1252,11 @@ html { touch-action: pan-x pan-y; }
 /* songs kept on the engine (apps/SongMaker.tsx): a verdict that is set shows in the accent colour */
 .kept-song-wrap { padding: 2px 0; border-top: 1px solid var(--line, rgba(127,127,127,.12)); }
 .kept-song .icon-btn.on { color: var(--accent); }
+
+/* Music: the "where should it go?" card (it floats; the music keeps playing) */
+.play-where { position: absolute; left: 50%; bottom: 84px; transform: translateX(-50%); z-index: 30; width: min(520px, calc(100% - 24px)); padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel, #1b1626); box-shadow: 0 8px 30px rgba(0,0,0,.45); }
+
+/* side panels can be dragged wider or narrower by their right edge (lib/sideGrip.ts) */
+.side.side-grip { cursor: col-resize; }
+.side.side-grip > * { cursor: auto; }
+body.side-dragging { cursor: col-resize; user-select: none; }

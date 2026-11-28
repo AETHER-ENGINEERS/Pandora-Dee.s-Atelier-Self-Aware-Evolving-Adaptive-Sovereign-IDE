@@ -11,7 +11,6 @@ import {
   forgetStation,
   loadLibrary,
   next,
-  playList,
   previous,
   saveStation,
   scan,
@@ -45,6 +44,7 @@ import { SongMaker } from "./SongMaker.tsx";
 import { openSongInfo, SongInfoHost } from "../ui/SongInfo.tsx";
 import { copyText } from "../lib/clipboard.ts";
 import { askText, askUser } from "../ui/Ask.tsx";
+import { PlayWhereHost, playPicked } from "../ui/PlayWhere.tsx";
 import { baseName, pickInExplorer, rawUrl } from "../lib/explorer.ts";
 import { matchEntries, nameFromFile, parsePlaylist, readDeviceFile, saveTextToDevice, saveToVault, writeM3u } from "../lib/playlistFile.ts";
 
@@ -140,7 +140,7 @@ export function MusicApp() {
     ];
   };
   const trackMenu = (list: Track[], i: number): MenuItem[] => [
-    { label: "Play", run: () => playList(asItems(list), i) },
+    { label: "Play", run: () => playPicked(asItems(list), i) },
     ...queueMenu(asItems([list[i]])),
     { sep: true },
     { label: "Copy title and artist", run: () => void copyText(`${list[i].title}${list[i].artist ? ` · ${list[i].artist}` : ""}`) },
@@ -274,9 +274,9 @@ export function MusicApp() {
                 disabled={!songs.length}
                 data-tip={view === "albums" && !album ? "Albums in a random order, each played through" : view === "artists" ? "Artists in a random order, each one's albums in order" : "Every song, in a random order"}
                 onClick={() => {
-                  if (view === "albums" && !album) playList(asItems(shuffled(albums).flatMap((a) => a.tracks)), 0, true);
-                  else if (view === "artists") playList(asItems(shuffled(artists).flatMap(([, ts]) => albumOrder(ts))), 0, true);
-                  else playList(asItems(shuffled(album ? albums.find((x) => x.key === album)?.tracks ?? [] : songs)), 0, true);
+                  if (view === "albums" && !album) playPicked(asItems(shuffled(albums).flatMap((a) => a.tracks)), 0, true);
+                  else if (view === "artists") playPicked(asItems(shuffled(artists).flatMap(([, ts]) => albumOrder(ts))), 0, true);
+                  else playPicked(asItems(shuffled(album ? albums.find((x) => x.key === album)?.tracks ?? [] : songs)), 0, true);
                 }}
               >
                 <Shuffle size={13} /> {view === "albums" && !album ? "Shuffle albums" : view === "artists" ? "Shuffle artists" : "Shuffle all"}
@@ -293,11 +293,11 @@ export function MusicApp() {
                       <tr
                         key={t.id}
                         className={cur?.kind === "track" && cur.id === t.id ? "on" : ""}
-                        onDoubleClick={() => playList(asItems(songs), i)}
+                        onDoubleClick={() => playPicked(asItems(songs), i)}
                         onContextMenu={(e) => openMenu(e, trackMenu(songs, i))}
                       >
                         <td className="play-cell">
-                          <button className="icon-btn" aria-label={`Play ${t.title}`} onClick={() => playList(asItems(songs), i)}>
+                          <button className="icon-btn" aria-label={`Play ${t.title}`} onClick={() => playPicked(asItems(songs), i)}>
                             {cur?.kind === "track" && cur.id === t.id && m.playing ? <Volume2 size={13} /> : <Play size={13} />}
                           </button>
                         </td>
@@ -328,18 +328,18 @@ export function MusicApp() {
                   if (!a) return null;
                   return (
                     <div className="album-view">
-                      <div className="album-head" onContextMenu={(e) => openMenu(e, [{ heading: a.name }, { label: "Play", run: () => playList(asItems(a.tracks)) }, ...queueMenu(asItems(a.tracks))])}>
+                      <div className="album-head" onContextMenu={(e) => openMenu(e, [{ heading: a.name }, { label: "Play", run: () => playPicked(asItems(a.tracks)) }, ...queueMenu(asItems(a.tracks))])}>
                         {a.cover ? <img src={`/api/music/cover?id=${a.cover.id}`} alt="" /> : <div className="no-cover"><Disc3 size={40} /></div>}
                         <div>
                           <h3 style={{ margin: 0 }}>{a.name}</h3>
                           <div className="muted">{[a.artist, a.label].filter(Boolean).join(" · ")}</div>
-                          <button className="btn primary small" style={{ marginTop: 8 }} onClick={() => playList(asItems(a.tracks))}>
+                          <button className="btn primary small" style={{ marginTop: 8 }} onClick={() => playPicked(asItems(a.tracks))}>
                             <Play size={13} /> Play
                           </button>
                         </div>
                       </div>
                       {a.tracks.map((t, i) => (
-                        <div key={t.id} className={`album-track${cur?.kind === "track" && cur.id === t.id ? " on" : ""}`} onDoubleClick={() => playList(asItems(a.tracks), i)} onContextMenu={(e) => openMenu(e, trackMenu(a.tracks, i))}>
+                        <div key={t.id} className={`album-track${cur?.kind === "track" && cur.id === t.id ? " on" : ""}`} onDoubleClick={() => playPicked(asItems(a.tracks), i)} onContextMenu={(e) => openMenu(e, trackMenu(a.tracks, i))}>
                           <span className="faint">{t.track || i + 1}</span> {t.title} <span className="grow" /> <span className="faint">{time(t.duration)}</span>
                         </div>
                       ))}
@@ -353,8 +353,8 @@ export function MusicApp() {
                       key={a.key}
                       className="album"
                       onClick={() => setAlbum(a.key)}
-                      onDoubleClick={() => playList(asItems(a.tracks))}
-                      onContextMenu={(e) => openMenu(e, [{ heading: a.name }, { label: "Play", run: () => playList(asItems(a.tracks)) }, ...queueMenu(asItems(a.tracks)), { sep: true }, { label: "Open", run: () => setAlbum(a.key) }])}
+                      onDoubleClick={() => playPicked(asItems(a.tracks))}
+                      onContextMenu={(e) => openMenu(e, [{ heading: a.name }, { label: "Play", run: () => playPicked(asItems(a.tracks)) }, ...queueMenu(asItems(a.tracks)), { sep: true }, { label: "Open", run: () => setAlbum(a.key) }])}
                     >
                       {a.cover ? <img src={`/api/music/cover?id=${a.cover.id}`} alt="" loading="lazy" /> : <div className="no-cover"><Disc3 size={34} /></div>}
                       <b>{a.name}</b>
@@ -371,12 +371,12 @@ export function MusicApp() {
                   <div
                     key={name}
                     className="artist-row"
-                    onDoubleClick={() => playList(asItems(albumOrder(ts)), 0, true)}
-                    onContextMenu={(e) => openMenu(e, [{ heading: name }, { label: "Play", run: () => playList(asItems(albumOrder(ts)), 0, true) }, ...queueMenu(asItems(albumOrder(ts)))])}
+                    onDoubleClick={() => playPicked(asItems(albumOrder(ts)), 0, true)}
+                    onContextMenu={(e) => openMenu(e, [{ heading: name }, { label: "Play", run: () => playPicked(asItems(albumOrder(ts)), 0, true) }, ...queueMenu(asItems(albumOrder(ts)))])}
                   >
                     <Mic2 size={14} className="faint" /> <b>{name}</b> <span className="faint small">{ts.length} songs</span>
                     <span className="grow" />
-                    <button className="btn small" onClick={() => playList(asItems(albumOrder(ts)), 0, true)}>
+                    <button className="btn small" onClick={() => playPicked(asItems(albumOrder(ts)), 0, true)}>
                       <Play size={12} /> Play
                     </button>
                   </div>
@@ -395,6 +395,7 @@ export function MusicApp() {
       </div>
 
       <SongInfoHost />
+      <PlayWhereHost />
       {prefs.showQueue ? <QueueView onClose={() => setPrefs({ showQueue: false })} infoOf={infoOf} /> : null}
       <footer className="now-playing">
         <div className="np-art" onContextMenu={(e) => cur && openMenu(e, nowMenu())}>{cur && coverOf(cur) ? <img src={coverOf(cur)} alt="" /> : <Disc3 size={28} className="faint" />}</div>
@@ -453,6 +454,16 @@ export function MusicApp() {
             onClick={() => setPrefs({ gapless: !prefs.gapless })}
           >
             <Link2 size={15} />
+          </button>
+          <button
+            className={`icon-btn${prefs.askWhere === false ? "" : " on"}`}
+            aria-label="Ask where a song goes"
+            aria-pressed={prefs.askWhere !== false}
+            data-tip-up=""
+            data-tip={prefs.askWhere === false ? "Picking a song just plays it, even while music is playing" : "While music is playing, picking a song asks: now, next, after the album, or last"}
+            onClick={() => setPrefs({ askWhere: prefs.askWhere === false })}
+          >
+            <ListMusic size={15} />
           </button>
         </div>
         <div className="np-seek">
@@ -553,10 +564,10 @@ function Stations({ list, saved }: { list: Station[]; saved?: boolean }) {
         <div
           key={st.url}
           className={`station${cur?.kind === "radio" && cur.url === st.url ? " on" : ""}`}
-          onDoubleClick={() => playList(items, i)}
+          onDoubleClick={() => playPicked(items, i)}
           onContextMenu={(e) =>
             openMenu(e, [
-              { label: "Play", run: () => playList(items, i) },
+              { label: "Play", run: () => playPicked(items, i) },
               ...queueMenu([items[i]]),
               saved ? { label: "Forget this station", danger: true, run: () => forgetStation(st.url) } : { label: "Save", run: () => saveStation(st) },
               ...(st.homepage ? [{ label: "Open its website", run: () => window.open(st.homepage, "_blank", "noopener") }] : []),
@@ -568,7 +579,7 @@ function Stations({ list, saved }: { list: Station[]; saved?: boolean }) {
             <b>{st.name}</b>
             <span className="faint small">{[st.country, st.tags?.split(",").slice(0, 4).join(", "), st.codec && `${st.codec}${st.bitrate ? ` ${st.bitrate}k` : ""}`].filter(Boolean).join(" · ")}</span>
           </div>
-          <button className="btn small" onClick={() => playList(items, i)}>
+          <button className="btn small" onClick={() => playPicked(items, i)}>
             <Play size={12} /> Play
           </button>
           {saved ? (
@@ -866,10 +877,10 @@ function SharedLibraries() {
               · {lib.name} · {lib.tracks.length} songs{mineIds.has(lib.id) ? " · this device" : ""}
             </span>
             <span className="grow" />
-            <button className="btn small" onClick={() => playList(asItems(lib.tracks), 0)}>
+            <button className="btn small" onClick={() => playPicked(asItems(lib.tracks), 0)}>
               <Play size={13} /> Play all
             </button>
-            <button className="btn small" onClick={() => playList(asItems(shuffled(lib.tracks)), 0, true)}>
+            <button className="btn small" onClick={() => playPicked(asItems(shuffled(lib.tracks)), 0, true)}>
               <Shuffle size={13} /> Shuffle
             </button>
             {mineIds.has(lib.id) ? null : (
@@ -881,7 +892,7 @@ function SharedLibraries() {
           <div style={{ marginTop: 4 }}>
             {lib.tracks.slice(0, 400).map((t, i) => (
               <div key={t.id} className={`row small${cur?.kind === "track" && cur.id === t.id ? " on" : ""}`} style={{ gap: 6, alignItems: "center", padding: "2px 0" }}>
-                <button className="icon-btn" aria-label={`Play ${t.title}`} onClick={() => playList(asItems(lib.tracks), i)}>
+                <button className="icon-btn" aria-label={`Play ${t.title}`} onClick={() => playPicked(asItems(lib.tracks), i)}>
                   <Play size={12} />
                 </button>
                 <span className="grow">
@@ -1030,10 +1041,10 @@ function PlaylistView({ id, trackMenu, onGone }: { id: string; trackMenu: (list:
           {songs.length} song{songs.length === 1 ? "" : "s"}
           {p.items.length > songs.length ? ` · ${p.items.length - songs.length} not in the library now` : ""}
         </span>
-        <button className="btn small primary" disabled={!songs.length} onClick={() => playList(asItems(songs), 0, true)}>
+        <button className="btn small primary" disabled={!songs.length} onClick={() => playPicked(asItems(songs), 0, true)}>
           <Play size={13} /> Play
         </button>
-        <button className="btn small" disabled={!songs.length} onClick={() => playList(asItems(shuffled(songs)), 0, true)}>
+        <button className="btn small" disabled={!songs.length} onClick={() => playPicked(asItems(shuffled(songs)), 0, true)}>
           <Shuffle size={13} /> Shuffle
         </button>
         <button
@@ -1073,7 +1084,7 @@ function PlaylistView({ id, trackMenu, onGone }: { id: string; trackMenu: (list:
               <tr
                 key={t.id}
                 className={cur?.kind === "track" && cur.id === t.id ? "on" : ""}
-                onDoubleClick={() => playList(asItems(songs), i, true)}
+                onDoubleClick={() => playPicked(asItems(songs), i, true)}
                 onContextMenu={(e) =>
                   openMenu(e, [
                     { label: "Earlier in the playlist", icon: <ArrowUp size={14} />, disabled: i === 0, run: () => move(i, -1) },
@@ -1085,7 +1096,7 @@ function PlaylistView({ id, trackMenu, onGone }: { id: string; trackMenu: (list:
                 }
               >
                 <td className="play-cell">
-                  <button className="icon-btn" aria-label={`Play ${t.title}`} onClick={() => playList(asItems(songs), i, true)}>
+                  <button className="icon-btn" aria-label={`Play ${t.title}`} onClick={() => playPicked(asItems(songs), i, true)}>
                     {cur?.kind === "track" && cur.id === t.id && m.playing ? <Volume2 size={13} /> : <Play size={13} />}
                   </button>
                 </td>
@@ -1114,6 +1125,13 @@ function QueueView({ onClose, infoOf }: { onClose: () => void; infoOf: (t: Track
   const [before, setBefore] = useState(20);
   const [after, setAfter] = useState(50);
   const earlier = useEarlier((s) => s.list);
+  const height = useDesk((s) => s.music.queueHeight);
+  const saveAsPlaylist = async () => {
+    const ids = queue.filter((it): it is Extract<Item, { kind: "track" }> => it.kind === "track").map((t) => t.id);
+    if (!ids.length) return void desk().say("There are no songs in the queue to save.");
+    const name = (await askText("Save the queue as a playlist", "", { placeholder: "Friday night", yes: "Save it", body: `${ids.length} songs, in the queue's order. Radio stations aren't included.` }))?.trim();
+    if (name) desk().say(`Saved “${makePlaylist(name, ids).name}”: ${new Set(ids).size} songs. It's in the sidebar under Playlists.`);
+  };
   const nowRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     nowRef.current?.scrollIntoView({ block: "nearest" });
@@ -1127,11 +1145,42 @@ function QueueView({ onClose, infoOf }: { onClose: () => void; infoOf: (t: Track
     { label: "Take it out of the queue", disabled: i === index, run: () => removeAt(i) },
   ];
   return (
-    <section className="music-queue" aria-label="The queue">
+    <section className="music-queue" aria-label="The queue" style={height ? { height, maxHeight: "none" } : undefined}>
+      <div
+        className="music-split"
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="Queue height: drag, or use the arrow keys"
+        aria-valuenow={height ?? 0}
+        tabIndex={0}
+        data-tip="Drag to resize · double-click to reset"
+        onPointerDown={(e) => {
+          const start = e.clientY;
+          const box = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect();
+          const parent = (e.currentTarget.parentElement?.parentElement as HTMLElement | null)?.getBoundingClientRect();
+          const from = toCss(box.height);
+          const most = Math.max(140, toCss(parent?.height ?? 600) - 120);
+          e.currentTarget.setPointerCapture(e.pointerId);
+          const move = (ev: PointerEvent) => setPrefs({ queueHeight: Math.round(Math.max(90, Math.min(most, from - toCss(ev.clientY - start)))) });
+          const up = () => (window.removeEventListener("pointermove", move), window.removeEventListener("pointerup", up));
+          window.addEventListener("pointermove", move);
+          window.addEventListener("pointerup", up);
+        }}
+        onDoubleClick={() => setPrefs({ queueHeight: undefined })}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+            e.preventDefault();
+            setPrefs({ queueHeight: Math.max(90, (height ?? 240) + (e.key === "ArrowUp" ? 20 : -20)) });
+          }
+        }}
+      />
       <div className="music-queue-head">
         <b>The queue</b>
         <span className="faint small">{index >= 0 ? `${index + 1} of ${queue.length}` : `${queue.length} songs`}</span>
         <span className="grow" />
+        <button className="btn small" title="Keep this queue as a playlist" disabled={!queue.length} onClick={() => void saveAsPlaylist()}>
+          Save as playlist
+        </button>
         {earlier.length ? (
           <button
             className="btn small"

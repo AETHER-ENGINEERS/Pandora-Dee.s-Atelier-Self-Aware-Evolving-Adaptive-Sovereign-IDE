@@ -4,7 +4,7 @@ import type { Ledger } from "./meterCore.ts";
 import type { OwnLog, OwnTime } from "./ownTimeCore.ts";
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import { BUILT_IN, DEFAULT_ROOM, type Character, type Look } from "./characters.ts";
+import { BUILT_IN, DEFAULT_ROOM, foldBabalon, type Character, type Look } from "./characters.ts";
 import { FLOOD_DEFAULT, judge, type FloodState, type Role } from "./flood.ts";
 import { MODEL_DEFAULT, type ModelPrefs } from "./model.ts";
 import { PRIVACY_DEFAULT, type Privacy } from "./privacy.ts";
@@ -845,7 +845,7 @@ export const useDesk = create<Store>()(
       resetLayout: () => set({ wins: defaultWins() }),
 
       allCharacters: () => [...BUILT_IN, ...get().custom],
-      character: (id) => get().allCharacters().find((c) => c.id === id),
+      character: (id) => get().allCharacters().find((c) => c.id === (id === "babalon-adult" ? "babalon" : id)),
       visibleCharacters: () => get().allCharacters().filter((c) => c.shelf !== "adult" || get().adultOpen),
       roomCharacters: () => {
         const all = get().visibleCharacters();
@@ -990,7 +990,7 @@ export const useDesk = create<Store>()(
         return out as Store;
       },
       merge: (persisted, current) => {
-        const p = (persisted ?? {}) as Partial<State>;
+        const p = foldBabalon((persisted ?? {}) as Partial<State>);
         const files = { ...builtInFiles(), ...(p.files ?? {}) };
         return {
           ...current,

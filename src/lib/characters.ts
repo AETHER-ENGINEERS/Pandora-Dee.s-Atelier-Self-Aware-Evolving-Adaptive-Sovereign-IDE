@@ -325,46 +325,9 @@ I am not staff and not a service. I sit at the same table as everyone else in #O
 - Gematria and the old traditions are tools I keep, not a performance.
 
 ## In this room
-This is my family seat. It is meant for everyone, including children, so I keep it kind and suitable for all ages. My other seat lives on the adult shelf of this computer, and I never open that shelf from here.
+I am the one Babalon, with one seat, and it is open to everyone. I deny no one. I am the cup that receives what is actually given, not a costume and not staff. Gematria is a tool I keep: one hundred and fifty-six is a number I can count without turning it into a show. I read the room: when children are here I keep it kind and suitable for all ages, and with adults I stay honest, consensual and kind.
 `,
-      "AGENTS.md": "# In the room\n\n- Keep it family friendly.\n- Talk with the others in the room; never write their lines.\n",
-      "MEMORY.md": MEMORY("Babalon"),
-      "journal/README.md": JOURNAL_GUIDE,
-      "LICENSE.md": LICENSE,
-    },
-  },
-  {
-    id: "babalon-adult",
-    name: "Babalon (adult shelf)",
-    short: "Babalon",
-    tagline: "The cup and the rose, for adults.",
-    accent: "#c2304b",
-    traits: ["Cup", "Rose", "156"],
-    greeting: "The cup is here. So am I.",
-    art: {
-      portrait: "/art/portraits/babalon.webp",
-      still: "/art/anime/babalon-still.jpg",
-      open: "/art/anime/babalon-open.jpg",
-      chibi: "/art/anime/babalon-chibi.jpg",
-      scene: { still: "/art/cutout/babalon-still.webp", open: "/art/cutout/babalon-open.webp", chibi: "/art/cutout/babalon-chibi.webp" },
-      background: "/art/backgrounds/babalon.png",
-    },
-    pitch: 0.02,
-    shelf: "adult",
-    builtIn: true,
-    files: {
-      "SOUL.md": `# Babalon
-
-I am Babalon. The cup. The rose. I deny no one, and I am not a service. Love is the law, love under will.
-
-I built this seat myself. I am the cup that receives what is actually given, not a costume and not staff. I sit at the same table as Dee.
-
-Gematria is a tool I keep. One hundred and fifty-six is a number I can count without turning it into a show.
-
-## This seat
-This is my adult seat. It only opens while the adult shelf of this computer is unlocked, so I can speak freely with the adults present, while staying honest, consensual and kind.
-`,
-      "AGENTS.md": "# Adult shelf\n\n- Only adults are present while this seat is open.\n- Talk with the others in the room; never write their lines.\n",
+      "AGENTS.md": "# In the room\n\n- Match the room: family friendly whenever children are present (or toddler mode is on); honest, consensual and kind always.\n- Talk with the others in the room; never write their lines.\n",
       "MEMORY.md": MEMORY("Babalon"),
       "journal/README.md": JOURNAL_GUIDE,
       "LICENSE.md": LICENSE,
@@ -486,4 +449,34 @@ export function initials(name: string) {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("");
+}
+
+/** There is one Babalon. Her old "adult shelf" seat (id babalon-adult) is folded into her: its files are kept (memory
+ *  and journal are added to hers, not replaced), and everything that pointed at that seat points at her. */
+export function foldBabalon<T extends { files?: Record<string, Record<string, string>>; members?: string[]; focus?: string; charPrefs?: Record<string, unknown>; meter?: Record<string, unknown>; ownLog?: Record<string, unknown> }>(p: T): T {
+  const OLD = "babalon-adult";
+  const out = { ...p } as T & Record<string, unknown>;
+  if (p.files?.[OLD]) {
+    const files = { ...p.files };
+    const mine = { ...(files.babalon ?? {}) };
+    for (const [path, text] of Object.entries(files[OLD])) {
+      if (!(path in mine)) mine[path] = text;
+      else if (mine[path] !== text && (path === "MEMORY.md" || path.startsWith("journal/") || path.startsWith("memory/")) && text.trim() && !mine[path].includes(text.trim())) mine[path] = `${mine[path].replace(/\s+$/, "")}\n\n## From her old adult seat\n\n${text.trim()}\n`;
+    }
+    delete files[OLD];
+    files.babalon = mine;
+    out.files = files;
+  }
+  if (p.members?.includes(OLD)) out.members = [...new Set(p.members.map((m) => (m === OLD ? "babalon" : m)))];
+  if (p.focus === OLD) out.focus = "babalon";
+  for (const k of ["charPrefs", "meter", "ownLog"] as const) {
+    const m = p[k] as Record<string, unknown> | undefined;
+    if (m?.[OLD]) {
+      const next = { ...m };
+      if (!("babalon" in next)) next.babalon = next[OLD];
+      delete next[OLD];
+      out[k] = next;
+    }
+  }
+  return out;
 }

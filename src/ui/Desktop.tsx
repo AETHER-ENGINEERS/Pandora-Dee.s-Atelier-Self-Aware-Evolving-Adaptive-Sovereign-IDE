@@ -1,3 +1,4 @@
+import { startSideGrips } from "../lib/sideGrip.ts";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { startHeartbeat } from "../lib/heartbeat.ts";
 import { startMemory, useUnloaded } from "../lib/memory.ts";
@@ -163,6 +164,7 @@ export function Desktop() {
     startGestures();
     const backups = startBackupSchedule();
     startChatSync();
+    startSideGrips();
     void loadResidentKeys();
     startHeart();
     startOwnTime();
