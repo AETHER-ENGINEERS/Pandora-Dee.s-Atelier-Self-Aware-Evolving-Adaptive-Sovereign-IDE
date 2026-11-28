@@ -82,13 +82,43 @@ async function itemOfSong(s: MadeSong): Promise<Item | null> {
 
 /** Make a song in the background (from here, or from a character's make_song tool); it shows in the list while it works.
  *  The desktop's server fetches the finished song straight into the library. */
-export function startSong(engine: SongEngine, ask: SongAsk, done?: (s: MadeSong | null, error?: string) => void) {
+const turns = new Map<string, { tail: Promise<unknown>; open: number }>();
+
+/** Returns how many songs are ahead of this one on the same engine (0: it starts at once). An engine makes one song
+ *  at a time, so the others wait their turn here, in order, instead of crowding it. */
+export function startSong(engine: SongEngine, ask: SongAsk, done?: (s: MadeSong | null, error?: string) => void): number {
   const job: Job = { id: uid(), title: ask.title || "Untitled", status: "Starting…", ctl: new AbortController() };
-  run(engine, ask, job, (progress, signal) =>
-    makeSong(engine, ask, progress, signal, (ref, seed) =>
-      // the engine took it as a job: remember it, so a reload or a closed tab doesn't lose the song
-      setPending([...pendingOf(), { id: job.id, ref, seed, engineId: engine.id, ask: { title: ask.title, style: ask.style, lyrics: ask.lyrics, seconds: ask.seconds, instrumental: ask.instrumental }, at: Date.now() }]),
-    true), done);
+  const line = turns.get(engine.id) ?? { tail: Promise.resolve(), open: 0 };
+  const ahead = line.open;
+  line.open += 1;
+  turns.set(engine.id, line);
+  let release = () => undefined as void;
+  const gate = line.tail;
+  line.tail = new Promise<void>((r) => (release = r));
+  const finish = (s: MadeSong | null, error?: string) => {
+    line.open = Math.max(0, line.open - 1);
+    release();
+    done?.(s, error);
+  };
+  run(
+    engine,
+    ask,
+    job,
+    async (progress, signal) => {
+      if (ahead) {
+        progress(`Waiting its turn (${ahead} ahead of it)…`);
+        await gate;
+        if (signal.aborted) throw new Error("Stopped while waiting.");
+        progress("Starting…");
+      }
+      return makeSong(engine, ask, progress, signal, (ref, seed) =>
+        // the engine took it as a job: remember it, so a reload or a closed tab doesn't lose the song
+        setPending([...pendingOf(), { id: job.id, ref, seed, engineId: engine.id, ask: { title: ask.title, style: ask.style, lyrics: ask.lyrics, seconds: ask.seconds, instrumental: ask.instrumental }, at: Date.now() }]),
+      true);
+    },
+    finish,
+  );
+  return ahead;
 }
 
 let resumed = false;

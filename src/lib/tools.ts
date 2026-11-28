@@ -1423,16 +1423,22 @@ const MAKE_PICTURE: Tool = {
       prompt: { type: "string", description: "What the picture shows, in detail" },
       size: { type: "string", description: "square, portrait, landscape or wide (default square)" },
       leave_out: { type: "string", description: "Things to keep out of it (optional)" },
+      inspiration: { type: "string", description: "A sentence or two, in your own voice, on what inspired this picture. It goes in the Workshop log for everyone to read." },
     },
     ["prompt"],
   ),
-  run: async (_id, a) => {
+  run: async (charId, a) => {
     const engine = desk().media.images.find((e) => e.enabled);
     if (!engine) return "No picture engine is set up (Create → Imagine → engines).";
     const media = await import("./media.ts");
+    const { workshopLine, workshopNote } = await import("./workshop.ts");
+    const name = desk().character(charId)?.name ?? charId;
+    const brief = str(a.prompt).slice(0, 140);
+    void workshopNote(workshopLine(name, `is making a picture on ${engine.name}: ${brief}`, str(a.inspiration)));
     const [w, h] = SIZES[str(a.size).toLowerCase()] ?? SIZES.square;
     const pics = await media.makePictures(engine, { prompt: str(a.prompt), negative: str(a.leave_out), width: w, height: h, count: 1 }, () => undefined);
     const [path] = await media.savePictures(pics, str(a.prompt));
+    void workshopNote(`✅ ${name}'s picture is saved: ${path}`);
     return `Saved ${path}. To show it: ![${str(a.prompt).slice(0, 60).replace(/[[\]]/g, "")}](/api/vault/raw/${path.split("/").map(encodeURIComponent).join("/")})`;
   },
 };
@@ -1447,6 +1453,7 @@ const MAKE_SONG: Tool = {
       style: { type: "string", description: "Comma-separated genre, mood, instruments, tempo, vocals" },
       lyrics: { type: "string", description: "Lyrics with section tags; leave empty for an instrumental" },
       seconds: { type: "number", description: "Length in seconds (30-360; left out, it fits the lyrics, at least 240)" },
+      inspiration: { type: "string", description: "A sentence or two, in your own voice, on what inspired this song. It goes in the Workshop log for everyone to read." },
     },
     ["title", "style"],
   ),
@@ -1461,10 +1468,19 @@ const MAKE_SONG: Tool = {
     const most = engine.kind === "yue2-comfyui" ? 240 : 360;
     // left out: long enough for the lyrics, and never the old two minutes that cut songs off half-way
     const seconds = Math.max(30, Math.min(most, Number(a.seconds) || fitLength(lyrics, 240, most)));
-    startSong(engine, { title, style: str(a.style), lyrics, instrumental: !lyrics.trim(), seconds }, (song, error) =>
-      desk().post({ kind: "notice", who: "desk", name: "Desk", text: song ? `${name}'s song “${song.title}” is ready in Music.` : `${name}'s song “${title}” didn't work out: ${error}`, source: "desk", quiet: !song }),
+    const { withArtist, workshopLine, workshopNote } = await import("./workshop.ts");
+    const full = withArtist(name, title);
+    const why = str(a.inspiration);
+    const length = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+    const ahead = startSong(engine, { title: full, style: str(a.style), lyrics, instrumental: !lyrics.trim(), seconds }, (song, error) => {
+      desk().post({ kind: "notice", who: "desk", name: "Desk", text: song ? `${name}'s song “${song.title}” is ready in Music.` : `${name}'s song “${full}” didn't work out: ${error}`, source: "desk", quiet: !song });
+      void workshopNote(song ? `✅ “${song.title}” is ready in Music.` : `⚠️ “${full}” didn't work out: ${error}`);
+    });
+    void workshopNote(
+      workshopLine(name, ahead ? `asked ${engine.name} for “${full}” (${length}). It's waiting its turn: ${ahead} ahead of it.` : `started “${full}” (${length}) on ${engine.name}. It's working on it now.`, why) +
+        (str(a.style) ? `\nStyle: ${str(a.style)}` : ""),
     );
-    return `Started “${title}” (${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}) on ${engine.name}. It takes a few minutes; the desk will say when it's ready.`;
+    return `Started “${full}” (${length}) on ${engine.name}${ahead ? `, after ${ahead} other song${ahead === 1 ? "" : "s"} already waiting there` : ""}. It takes a few minutes; the desk will say when it's ready.`;
   },
 };
 
